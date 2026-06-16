@@ -1,43 +1,124 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
-const conversations = [
-  { id: '1', contact: 'Julien Martin', email: 'julien@produnjour.com', preview: 'Bonjour, je souhaite louer un Sony FX3 pour un tournage de 3 jours…', date: 'Aujourd\'hui 14:32', unread: true, amount: '598 €' },
-  { id: '2', contact: 'Emma Salomon', email: 'emma.salomon96@gmail.com', preview: 'Merci pour le devis ! Est-ce que le trépied est inclus dans le pack ?', date: 'Hier 09:15', unread: true, amount: '842 €' },
-  { id: '3', contact: 'Naoual Dahou', email: 'naoual@revolvr.fr', preview: 'Je voudrais louer le pack cinéma DZOFilm Arles pour une semaine complète.', date: '14/06', unread: false, amount: '2 241 €' },
-  { id: '4', contact: 'Jonathan Leroux', email: 'jonathan@lightyshare.com', preview: 'Le Sony FX6 est-il disponible le weekend du 20 juin ?', date: '13/06', unread: false, amount: '1 180 €' },
-  { id: '5', contact: 'Marie Fontaine', email: 'marie.fontaine@cineproduction.fr', preview: 'Avez-vous des cartes CFexpress en stock ? J\'en aurais besoin pour vendredi.', date: '12/06', unread: false, amount: '120 €' },
-]
+interface LastMessage {
+  content: string
+  role: string
+  created_at: string
+}
+
+interface Conversation {
+  id: string
+  contact_name: string | null
+  contact_email: string | null
+  status: string
+  booqable_order_id: string | null
+  booqable_order_url: string | null
+  created_at: string
+  updated_at: string
+  last_message: LastMessage | null
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffDays === 0) {
+    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  } else if (diffDays === 1) {
+    return 'Hier ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  } else {
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+  }
+}
+
+function getInitial(name: string | null, email: string | null): string {
+  if (name && name.length > 0) return name[0].toUpperCase()
+  if (email && email.length > 0) return email[0].toUpperCase()
+  return '?'
+}
+
+function getDisplayName(name: string | null, email: string | null): string {
+  return name || email || 'Visiteur anonyme'
+}
 
 export default function InboxPage() {
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/conversations')
+      .then(r => r.json())
+      .then((data: Conversation[]) => {
+        setConversations(Array.isArray(data) ? data : [])
+      })
+      .catch(() => setConversations([]))
+      .finally(() => setLoading(false))
+  }, [])
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Inbox</h1>
-          <p className="text-sm text-gray-500 mt-0.5">2 messages non lus</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {loading ? 'Chargement…' : `${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}`}
+          </p>
         </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm divide-y divide-gray-50">
-        {conversations.map(c => (
-          <Link key={c.id} href={`/inbox/${c.id}`} className="flex items-start gap-4 px-6 py-4 hover:bg-gray-50 transition-colors">
-            <div className="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center text-sm font-medium shrink-0 mt-0.5">
-              {c.contact[0]}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <span className={`text-sm ${c.unread ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>{c.contact}</span>
-                <span className="text-xs text-gray-400 ml-4 shrink-0">{c.date}</span>
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-start gap-4 px-6 py-4">
+              <div className="w-9 h-9 rounded-full bg-gray-200 animate-pulse shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3.5 bg-gray-200 rounded animate-pulse w-1/3" />
+                <div className="h-3 bg-gray-100 rounded animate-pulse w-1/4" />
+                <div className="h-3 bg-gray-100 rounded animate-pulse w-2/3" />
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">{c.email}</p>
-              <p className="text-sm text-gray-600 mt-1 truncate">{c.preview}</p>
             </div>
-            {c.amount && (
-              <span className="text-sm font-medium text-gray-900 shrink-0 mt-1">{c.amount}</span>
-            )}
-            {c.unread && <div className="w-2 h-2 bg-black rounded-full mt-2 shrink-0" />}
-          </Link>
-        ))}
+          ))
+        ) : conversations.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-gray-400">
+            Aucune conversation pour l&apos;instant.
+          </div>
+        ) : (
+          conversations.map(c => (
+            <Link
+              key={c.id}
+              href={`/inbox/${c.id}`}
+              className="flex items-start gap-4 px-6 py-4 hover:bg-gray-50 transition-colors"
+            >
+              <div className="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center text-sm font-medium shrink-0 mt-0.5">
+                {getInitial(c.contact_name, c.contact_email)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-900">
+                    {getDisplayName(c.contact_name, c.contact_email)}
+                  </span>
+                  <span className="text-xs text-gray-400 ml-4 shrink-0">{formatDate(c.updated_at)}</span>
+                </div>
+                {c.contact_email && (
+                  <p className="text-xs text-gray-500 mt-0.5">{c.contact_email}</p>
+                )}
+                {c.last_message && (
+                  <p className="text-sm text-gray-600 mt-1 truncate">{c.last_message.content}</p>
+                )}
+              </div>
+              {c.booqable_order_id && (
+                <span className="text-xs font-medium text-gray-500 shrink-0 mt-1 bg-gray-100 px-2 py-0.5 rounded-full">
+                  Devis
+                </span>
+              )}
+            </Link>
+          ))
+        )}
       </div>
     </div>
   )

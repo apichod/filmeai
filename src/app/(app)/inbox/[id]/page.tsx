@@ -1,111 +1,150 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
-const data: Record<string, {
-  contact: string
-  email: string
-  messages: { role: 'user' | 'assistant'; text: string; time: string }[]
-  quote?: { items: { name: string; qty: number; price: number }[]; total: number; status: string }
-}> = {
-  '1': {
-    contact: 'Julien Martin',
-    email: 'julien@produnjour.com',
-    messages: [
-      { role: 'user', text: 'Bonjour, je souhaite louer un Sony FX3 pour un tournage de 3 jours, du 20 au 22 juin.', time: '14:28' },
-      { role: 'assistant', text: 'Bonjour Julien ! Bien sûr, le Sony FX3 est disponible du 20 au 22 juin. Je vous prépare un devis. Souhaitez-vous ajouter un trépied ou des accessoires ?', time: '14:29' },
-      { role: 'user', text: 'Oui, un trépied serait parfait. Et si possible une carte CFexpress.', time: '14:31' },
-      { role: 'assistant', text: "Parfait ! Voici votre devis pour 3 jours : Sony FX3 × 1 = 450 €, Trépied × 1 = 90 €, Carte CFexpress × 1 = 58 €. Total : 598 €. Souhaitez-vous valider ce devis ?", time: '14:32' },
-    ],
-    quote: {
-      items: [
-        { name: 'Sony FX3', qty: 1, price: 450 },
-        { name: 'Trépied', qty: 1, price: 90 },
-        { name: 'Carte CFexpress', qty: 1, price: 58 },
-      ],
-      total: 598,
-      status: 'En attente',
-    },
-  },
-  '2': {
-    contact: 'Emma Salomon',
-    email: 'emma.salomon96@gmail.com',
-    messages: [
-      { role: 'user', text: "Bonjour ! Je voudrais louer un Sony FX3 avec trépied pour un shooting photo le weekend prochain.", time: '09:10' },
-      { role: 'assistant', text: 'Bonjour Emma ! Votre devis : Sony FX3 × 1 = 650 €, Trépied × 1 = 90 €, Carte CFexpress × 1 = 102 €. Total : 842 € pour 2 jours. Tout est inclus.', time: '09:12' },
-      { role: 'user', text: 'Merci pour le devis ! Est-ce que le trépied est inclus dans le pack ?', time: '09:15' },
-    ],
-    quote: {
-      items: [
-        { name: 'Sony FX3', qty: 1, price: 650 },
-        { name: 'Trépied', qty: 1, price: 90 },
-        { name: 'Carte CFexpress', qty: 2, price: 102 },
-      ],
-      total: 842,
-      status: 'Accepté',
-    },
-  },
+interface Message {
+  id: string
+  role: string
+  content: string
+  created_at: string
+}
+
+interface ConversationDetail {
+  id: string
+  contact_name: string | null
+  contact_email: string | null
+  status: string
+  booqable_order_id: string | null
+  booqable_order_url: string | null
+  created_at: string
+  updated_at: string
+  messages: Message[]
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function getDisplayName(name: string | null, email: string | null): string {
+  return name || email || 'Visiteur anonyme'
+}
+
+function getInitial(name: string | null, email: string | null): string {
+  if (name && name.length > 0) return name[0].toUpperCase()
+  if (email && email.length > 0) return email[0].toUpperCase()
+  return '?'
 }
 
 export default function InboxDetailPage({ params }: { params: { id: string } }) {
-  const conv = data[params.id] ?? data['1']
+  const [conv, setConv] = useState<ConversationDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/conversations/${params.id}`)
+      .then(r => {
+        if (!r.ok) { setNotFound(true); return null }
+        return r.json()
+      })
+      .then((data: ConversationDetail | null) => {
+        if (data) setConv(data)
+      })
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false))
+  }, [params.id])
+
+  if (loading) {
+    return (
+      <div className="space-y-4 h-full flex flex-col">
+        <div className="flex items-center gap-3">
+          <Link href="/inbox" className="text-sm text-gray-500 hover:text-gray-900">← Inbox</Link>
+        </div>
+        <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm animate-pulse" />
+      </div>
+    )
+  }
+
+  if (notFound || !conv) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Link href="/inbox" className="text-sm text-gray-500 hover:text-gray-900">← Inbox</Link>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-6 py-12 text-center text-sm text-gray-400">
+          Conversation introuvable.
+        </div>
+      </div>
+    )
+  }
+
+  const displayName = getDisplayName(conv.contact_name, conv.contact_email)
 
   return (
     <div className="space-y-4 h-full flex flex-col">
       <div className="flex items-center gap-3">
         <Link href="/inbox" className="text-sm text-gray-500 hover:text-gray-900">← Inbox</Link>
         <span className="text-gray-300">/</span>
-        <span className="text-sm font-medium text-gray-900">{conv.contact}</span>
+        <span className="text-sm font-medium text-gray-900">{displayName}</span>
       </div>
 
       <div className="flex gap-4 flex-1">
         <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-sm font-medium">
-              {conv.contact[0]}
+              {getInitial(conv.contact_name, conv.contact_email)}
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-900">{conv.contact}</p>
-              <p className="text-xs text-gray-500">{conv.email}</p>
+              <p className="text-sm font-medium text-gray-900">{displayName}</p>
+              {conv.contact_email && (
+                <p className="text-xs text-gray-500">{conv.contact_email}</p>
+              )}
             </div>
           </div>
           <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
-            {conv.messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'assistant' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl text-sm ${
-                  m.role === 'assistant'
-                    ? 'bg-black text-white rounded-br-sm'
-                    : 'bg-gray-100 text-gray-900 rounded-bl-sm'
-                }`}>
-                  {m.text}
-                  <div className={`text-xs mt-1 ${m.role === 'assistant' ? 'text-white/50' : 'text-gray-400'}`}>{m.time}</div>
+            {conv.messages.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">Aucun message.</p>
+            ) : (
+              conv.messages.map(m => (
+                <div key={m.id} className={`flex ${m.role === 'assistant' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl text-sm ${
+                    m.role === 'assistant'
+                      ? 'bg-black text-white rounded-br-sm'
+                      : 'bg-gray-100 text-gray-900 rounded-bl-sm'
+                  }`}>
+                    <p className="whitespace-pre-wrap">{m.content}</p>
+                    <div className={`text-xs mt-1 ${m.role === 'assistant' ? 'text-white/50' : 'text-gray-400'}`}>
+                      {formatTime(m.created_at)}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
-        {conv.quote && (
+        {conv.booqable_order_id && (
           <div className="w-64 bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3 h-fit">
             <h3 className="text-sm font-semibold text-gray-900">Devis généré</h3>
-            <div className="space-y-1.5">
-              {conv.quote.items.map((item, i) => (
-                <div key={i} className="flex justify-between text-sm">
-                  <span className="text-gray-600">{item.name} ×{item.qty}</span>
-                  <span className="font-medium text-gray-900">{item.price} €</span>
-                </div>
-              ))}
+            <div className="text-xs text-gray-500">
+              Référence Booqable&nbsp;:
+              <span className="font-mono text-gray-900 ml-1">{conv.booqable_order_id}</span>
             </div>
-            <div className="border-t border-gray-100 pt-2 flex justify-between text-sm font-semibold">
-              <span>Total</span>
-              <span>{conv.quote.total} €</span>
-            </div>
+            {conv.booqable_order_url && (
+              <a
+                href={conv.booqable_order_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full bg-black text-white rounded-lg py-2 text-xs font-medium hover:bg-gray-800 transition-colors text-center"
+              >
+                Voir le devis →
+              </a>
+            )}
             <div>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${
-                conv.quote.status === 'Accepté' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
-              }`}>{conv.quote.status}</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200">
+                En attente
+              </span>
             </div>
-            <button className="w-full bg-black text-white rounded-lg py-2 text-xs font-medium hover:bg-gray-800 transition-colors">
-              Envoyer le devis
-            </button>
           </div>
         )}
       </div>

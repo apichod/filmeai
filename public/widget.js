@@ -123,7 +123,7 @@
   var isOpen = false;
   var isLoading = false;
   var messages = []; // {role, content}
-  var sessionData = { customerName: null, customerEmail: null, startsAt: null, stopsAt: null, selectedProductIds: [] };
+  var sessionData = { customerName: null, customerEmail: null, startsAt: null, stopsAt: null, selectedProductIds: [], conversationId: null };
   var typingEl = null;
 
   var panel = document.getElementById('filmeai-panel');
@@ -303,6 +303,8 @@
         if (botEl) botEl.innerHTML = formatMarkdown(botContent);
       } else if (evt.type === 'quote_created') {
         sessionData.orderId = evt.orderId;
+      } else if (evt.type === 'conversation_saved') {
+        if (evt.conversationId) sessionData.conversationId = evt.conversationId;
       } else if (evt.type === 'done') {
         hideTyping();
         isLoading = false;

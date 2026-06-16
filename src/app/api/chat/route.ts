@@ -29,6 +29,7 @@ type SessionData = {
   startsAt?: string
   stopsAt?: string
   selectedProductIds?: string[]
+  conversationId?: string
 }
 
 // ── Hybrid search ─────────────────────────────────────────────────────────────
@@ -198,6 +199,9 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
           }
 
           // ── Step 4: Create Booqable quote if confirmed ──────────────────────
+          let booqableOrderId: string | null = null
+          let booqableOrderUrl: string | null = null
+
           if (fullResponse.includes('[CREATE_QUOTE]') && sessionData?.customerEmail) {
             send({ type: 'creating_quote' })
 
@@ -241,15 +245,76 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
                 }
               }
 
-              const quoteUrl = `https://filme.booqable.com/orders/${orderId}`
-              send({ type: 'quote_created', orderId, customerId, quoteUrl })
-              send({ type: 'delta', content: `\n\n✅ **Devis créé !** Vous recevrez une confirmation à **${sessionData.customerEmail}**.\n[Voir le devis →](${quoteUrl})` })
+              booqableOrderId = orderId as string
+              booqableOrderUrl = `https://filme.booqable.com/orders/${orderId}`
+              send({ type: 'quote_created', orderId, customerId, quoteUrl: booqableOrderUrl })
+              send({ type: 'delta', content: `\n\n✅ **Devis créé !** Vous recevrez une confirmation à **${sessionData.customerEmail}**.\n[Voir le devis →](${booqableOrderUrl})` })
 
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err)
               console.error('Quote error:', msg)
               send({ type: 'delta', content: `\n\nJe n'ai pas pu créer le devis automatiquement (${msg}). Contactez-nous à bonjour@filme.fr.` })
             }
+          }
+
+          // ── Step 5: Save conversation to Supabase ───────────────────────
+          try {
+            const supabase = getSupabaseAdmin()
+            let conversationId = sessionData?.conversationId || null
+
+            if (conversationId) {
+              // Update existing conversation if contact info changed
+              const updatePayload: Record<string, string> = {}
+              if (sessionData?.customerName) updatePayload.contact_name = sessionData.customerName
+              if (sessionData?.customerEmail) updatePayload.contact_email = sessionData.customerEmail
+              if (Object.keys(updatePayload).length > 0) {
+                await supabase.from('conversations').update(updatePayload).eq('id', conversationId)
+              }
+            } else {
+              // Create new conversation
+              const { data: conv } = await supabase
+                .from('conversations')
+                .insert({
+                  contact_name: sessionData?.customerName || null,
+                  contact_email: sessionData?.customerEmail || null,
+                  status: 'open',
+                })
+                .select('id')
+                .single()
+              conversationId = conv?.id || null
+            }
+
+            if (conversationId) {
+              // Save all messages from this exchange (user messages + AI response)
+              const userMessages = (messages as { role: string; content: string }[]).map(m => ({
+                conversation_id: conversationId,
+                role: m.role,
+                content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+              }))
+
+              const assistantMessage = {
+                conversation_id: conversationId,
+                role: 'assistant',
+                content: fullResponse.replace(/\[(?:SEARCH|CREATE_QUOTE)[^\]]*\]/g, '').trim(),
+              }
+
+              // Only insert user messages that aren't already saved (last user message is new)
+              const lastUserMsg = userMessages.filter(m => m.role === 'user').slice(-1)
+              await supabase.from('messages').insert([...lastUserMsg, assistantMessage])
+
+              // Update conversation with booqable order if created
+              if (booqableOrderId && booqableOrderUrl) {
+                await supabase
+                  .from('conversations')
+                  .update({ booqable_order_id: booqableOrderId, booqable_order_url: booqableOrderUrl })
+                  .eq('id', conversationId)
+              }
+
+              send({ type: 'conversation_saved', conversationId })
+            }
+          } catch (saveErr) {
+            console.error('Supabase save error:', saveErr)
+            // Don't fail the response if saving fails
           }
 
           send({ type: 'done' })
