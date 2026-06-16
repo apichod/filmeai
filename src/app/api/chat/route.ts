@@ -114,7 +114,6 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`))
 
         let fullResponse = ''
-        let botDisplayContent = ''
 
         try {
           // ── Step 1: Stream GPT-4o response ─────────────────────────────────
@@ -133,7 +132,6 @@ export async function POST(req: NextRequest) {
             // Filter internal commands from display
             const display = delta.replace(/\[(?:SEARCH|CREATE_QUOTE)[^\]]*\]/g, '')
             if (display) {
-              botDisplayContent += display
               send({ type: 'delta', content: display })
             }
           }
