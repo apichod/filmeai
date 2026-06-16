@@ -13,8 +13,8 @@ async function searchProducts(query: string) {
   if (!res.ok) return []
   const data = await res.json()
   return (data.products || [])
-    .filter((p: any) => !p.archived)
-    .map((p: any) => ({
+    .filter((p: Record<string, unknown>) => !p.archived)
+    .map((p: Record<string, unknown>) => ({
       id: p.id,
       name: p.name,
       price_per_day: p.base_price_as_decimal,
@@ -124,8 +124,7 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         let fullResponse = ''
-        let productResults: any[] = []
-        let quoteCreated = false
+        let productResults: { id: string; name: string; price_per_day: string; deposit: string; description: string; photo_url: string | null }[] = []
 
         try {
           const completion = await openai.chat.completions.create({
@@ -199,7 +198,6 @@ export async function POST(req: NextRequest) {
               const quoteMsg = `\n\n✅ **Votre devis a été créé !**\n\nVous recevrez une confirmation à **${sessionData.customerEmail}**.\nVous pouvez aussi consulter votre devis ici : ${quoteUrl}`
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'quote_created', orderId, quoteUrl })}\n\n`))
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: quoteMsg })}\n\n`))
-              quoteCreated = true
             } catch (err) {
               console.error('Quote creation error:', err)
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: '\n\nJe rencontre une difficulté pour créer le devis. Veuillez contacter bonjour@filme.fr' })}\n\n`))
