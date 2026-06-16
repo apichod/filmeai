@@ -1,129 +1,106 @@
 import OpenAI from 'openai'
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-type BooqableProduct = {
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type Product = {
   id: string
   name: string
-  archived: boolean
-  base_price_as_decimal: string
-  deposit_as_decimal: string
-  description?: string
-  photo_url?: string
-}
-const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
-const BOOQABLE_KEY = process.env.BOOQABLE_API_KEY
-
-// ── Booqable helpers ─────────────────────────────────────────────────────────
-
-async function searchProducts(query: string) {
-  const url = `${BOOQABLE_BASE}/products?api_key=${BOOQABLE_KEY}&q=${encodeURIComponent(query)}&per=10`
-  const res = await fetch(url)
-  if (!res.ok) return []
-  const data = await res.json()
-  return (data.products || [])
-    .filter((p: BooqableProduct) => !p.archived)
-    .map((p: BooqableProduct) => ({
-      id: p.id,
-      name: p.name,
-      price_per_day: p.base_price_as_decimal,
-      deposit: p.deposit_as_decimal,
-      description: p.description?.replace(/<[^>]*>/g, '').slice(0, 200) || '',
-      photo_url: p.photo_url || null,
-    }))
+  description: string | null
+  price_per_day: number | null
+  deposit: number | null
+  photo_url: string | null
+  similarity?: number
 }
 
-async function createOrder(
-  customerName: string,
-  customerEmail: string,
-  startsAt: string,
-  stopsAt: string
-) {
-  // 1. Create or find customer
-  const customerRes = await fetch(`${BOOQABLE_BASE}/customers?api_key=${BOOQABLE_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      customer: {
-        name: customerName,
-        email: customerEmail,
-      },
-    }),
+type SessionData = {
+  customerName?: string
+  customerEmail?: string
+  startsAt?: string
+  stopsAt?: string
+  selectedProductIds?: string[]
+}
+
+// ── Hybrid search ─────────────────────────────────────────────────────────────
+
+async function hybridSearch(query: string, limit = 10): Promise<Product[]> {
+  const supabase = getSupabaseAdmin()
+
+  // 1. Generate embedding for the query
+  const embRes = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: query,
   })
-  const customerData = await customerRes.json()
-  const customerId = customerData.customer?.id
+  const embedding = embRes.data[0].embedding
 
-  // 2. Create order
-  const orderRes = await fetch(`${BOOQABLE_BASE}/orders?api_key=${BOOQABLE_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      order: {
-        customer_id: customerId,
-        starts_at: startsAt,
-        stops_at: stopsAt,
-        status: 'concept',
-      },
-    }),
+  // 2. Call hybrid search function in Supabase
+  const { data, error } = await supabase.rpc('search_products', {
+    query_text: query,
+    query_embedding: JSON.stringify(embedding),
+    match_count: limit,
   })
-  const orderData = await orderRes.json()
-  return { orderId: orderData.order?.id, customerId }
+
+  if (error) {
+    console.error('Hybrid search error:', error.message)
+    // Fallback: simple text search
+    const { data: fallback } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .ilike('name', `%${query}%`)
+      .limit(limit)
+    return (fallback || []) as Product[]
+  }
+
+  return (data || []) as Product[]
 }
 
-async function addOrderLine(orderId: string, productId: string, quantity: number = 1) {
-  const res = await fetch(`${BOOQABLE_BASE}/order_lines?api_key=${BOOQABLE_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      order_line: {
-        order_id: orderId,
-        item_id: productId,
-        quantity,
-      },
-    }),
-  })
-  return res.json()
-}
+// ── System prompt ─────────────────────────────────────────────────────────────
 
-// ── System prompt ────────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `Tu es l'assistant IA de Filme, loueur de matériel audiovisuel à Montreuil (Paris / Île-de-France).
+Tu aides les visiteurs à obtenir un devis rapidement.
 
-const SYSTEM_PROMPT = `Tu es l'assistant IA de Filme, une société de location de matériel audiovisuel basée à Montreuil (livraison sur Paris et Île-de-France).
-Tu aides les visiteurs à obtenir un devis de location rapidement.
-
-TON RÔLE :
-1. Accueille chaleureusement le visiteur
-2. Collecte ces informations étape par étape (une question à la fois) :
+FLOW DE CONVERSATION :
+1. Accueille le visiteur
+2. Collecte ces infos UNE PAR UNE :
    - Prénom et nom
    - Email (pour envoyer le devis)
-   - Matériel souhaité (caméra, objectif, lumière, son, accessoires, etc.)
+   - Matériel souhaité + contexte du projet (interview, clip, fiction, événement…)
    - Dates de location (début et fin)
-3. Une fois que tu as toutes les infos, dis : "[SEARCH_PRODUCTS: {query}]" où query est le terme de recherche pour Booqable
-4. Quand tu reçois les résultats produits, propose-les avec les prix
-5. Quand le client confirme sa sélection, dis : "[CREATE_QUOTE]"
+3. Quand tu as le matériel et les dates, émets : [SEARCH: terme de recherche principal]
+   → Le terme doit être le nom du produit principal (ex: "Profoto B10X", "Sony FX6", "micro cravate")
+   → Un seul terme par recherche, le plus spécifique possible
+4. Quand les produits sont affichés et le client confirme, émets : [CREATE_QUOTE]
 
 RÈGLES :
 - Réponds toujours en français
-- Sois concis et professionnel mais chaleureux
-- Ne pose qu'une seule question à la fois
-- Si le client demande un produit spécifique, recherche-le directement
-- Les prix sont en euros HT par jour
-- Si tu n'as pas encore les infos client, collecte-les avant de créer un devis
+- Sois concis, professionnel et chaleureux
+- Une seule question à la fois
+- N'invente jamais de prix ou de produit
+- Si plusieurs produits sont demandés, recherche le principal d'abord
 
 INFOS FILME :
-- Site : filme.fr
-- Spécialité : matériel cinéma, photo, son, lumière, grip, accessoires
-- Zone : Paris et Île-de-France
-- Contact : bonjour@filme.fr`
+- Site : filme.fr | Email : bonjour@filme.fr
+- Spécialité : caméra, optique, lumière, son, grip, accessoires cinéma
+- Livraison Paris et Île-de-France`
 
 // ── API route ─────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { messages, sessionData } = body
+    const { messages, sessionData }: { messages: OpenAI.Chat.ChatCompletionMessageParam[], sessionData: SessionData } = body
 
-    // Build messages for OpenAI
     const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...messages,
@@ -133,87 +110,155 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
+        const send = (obj: object) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`))
+
         let fullResponse = ''
-        let productResults: { id: string; name: string; price_per_day: string; deposit: string; description: string; photo_url: string | null }[] = []
+        let botDisplayContent = ''
 
         try {
+          // ── Step 1: Stream GPT-4o response ─────────────────────────────────
           const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
             messages: openaiMessages,
             stream: true,
             temperature: 0.7,
-            max_tokens: 1000,
+            max_tokens: 800,
           })
 
           for await (const chunk of completion) {
             const delta = chunk.choices[0]?.delta?.content || ''
             fullResponse += delta
 
-            // Stream to client — filter out internal commands from display
-            const displayDelta = delta.replace(/\[(?:SEARCH_PRODUCTS|CREATE_QUOTE)[^\]]*\]/g, '')
-            if (displayDelta) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: displayDelta })}\n\n`))
+            // Filter internal commands from display
+            const display = delta.replace(/\[(?:SEARCH|CREATE_QUOTE)[^\]]*\]/g, '')
+            if (display) {
+              botDisplayContent += display
+              send({ type: 'delta', content: display })
             }
           }
 
-          // ── Handle SEARCH_PRODUCTS command ────────────────────────────────
-          const searchMatch = fullResponse.match(/\[SEARCH_PRODUCTS:\s*(.+?)\]/)
+          // ── Step 2: Hybrid search if AI requested it ────────────────────────
+          const searchMatch = fullResponse.match(/\[SEARCH:\s*(.+?)\]/)
           if (searchMatch) {
-            // Use only the first keyword for best Booqable search results
-            const rawQuery = searchMatch[1].trim()
-            const firstKeyword = rawQuery.split(/[,;]/)[0].trim()
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'searching', query: firstKeyword })}\n\n`))
+            const query = searchMatch[1].trim()
+            send({ type: 'searching', query })
 
-            productResults = await searchProducts(firstKeyword)
+            const products = await hybridSearch(query, 10)
 
-            if (productResults.length === 0) {
-              const noResults = "\n\nJe n'ai pas trouvé de produits correspondants dans notre catalogue. Pouvez-vous préciser votre demande ?"
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: noResults })}\n\n`))
+            if (products.length === 0) {
+              send({ type: 'delta', content: "\n\nJe n'ai pas trouvé ce produit dans notre catalogue. Pouvez-vous préciser ?" })
             } else {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'products', products: productResults })}\n\n`))
-              const productText = `\n\nVoici ce que nous avons :\n\n` + productResults.map((p, i) =>
-                `**${i + 1}. ${p.name}** — ${p.price_per_day}€/jour (caution ${p.deposit}€)`
-              ).join('\n') + `\n\nCes produits vous conviennent-ils ? Souhaitez-vous que je crée un devis ?`
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: productText })}\n\n`))
+              send({ type: 'products', products })
+
+              // ── Step 3: GPT-4o-mini selects the most relevant products ──────
+              const selectionPrompt = `Tu es un expert en location audiovisuelle chez Filme.
+Le client cherche : "${query}"
+Contexte de la conversation : ${messages.slice(-3).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : ''}`).join(' | ')}
+
+Voici les produits disponibles dans le catalogue :
+${products.map((p, i) => `${i + 1}. [${p.id}] ${p.name} — ${p.price_per_day}€/jour — ${p.description?.slice(0, 150) || 'Pas de description'}`).join('\n')}
+
+Sélectionne les 1 à 5 produits les plus pertinents pour la demande du client.
+Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response": "message en français pour le client présentant ces produits avec leurs prix" }`
+
+              const selectionRes = await openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [{ role: 'user', content: selectionPrompt }],
+                response_format: { type: 'json_object' },
+                temperature: 0.3,
+                max_tokens: 600,
+              })
+
+              type SelectionResult = {
+                selected?: { id: string; reason: string }[]
+                response?: string
+              }
+              let selection: SelectionResult = {}
+              try {
+                selection = JSON.parse(selectionRes.choices[0].message.content || '{}') as SelectionResult
+              } catch {
+                selection = {}
+              }
+
+              const selectedProducts = products.filter(p =>
+                selection.selected?.some((s: { id: string }) => s.id === p.id)
+              )
+              const finalProducts = selectedProducts.length > 0 ? selectedProducts : products.slice(0, 3)
+
+              send({ type: 'selected_products', products: finalProducts })
+
+              const responseText = selection.response ||
+                `\n\nVoici ce que nous avons :\n\n` +
+                finalProducts.map((p, i) =>
+                  `**${i + 1}. ${p.name}** — ${p.price_per_day}€/jour (caution ${p.deposit}€)`
+                ).join('\n') +
+                `\n\nCes produits vous conviennent-ils ? Souhaitez-vous que je crée un devis ?`
+
+              send({ type: 'delta', content: '\n\n' + responseText })
             }
           }
 
-          // ── Handle CREATE_QUOTE command ────────────────────────────────────
-          const createQuoteMatch = fullResponse.includes('[CREATE_QUOTE]')
-          if (createQuoteMatch && sessionData?.customerEmail) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'creating_quote' })}\n\n`))
+          // ── Step 4: Create Booqable quote if confirmed ──────────────────────
+          if (fullResponse.includes('[CREATE_QUOTE]') && sessionData?.customerEmail) {
+            send({ type: 'creating_quote' })
 
             try {
+              const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
+              const KEY = process.env.BOOQABLE_API_KEY
+              const name = sessionData.customerName || sessionData.customerEmail
               const startsAt = sessionData.startsAt || new Date().toISOString()
               const stopsAt = sessionData.stopsAt || new Date(Date.now() + 3 * 86400000).toISOString()
-              const customerName = sessionData.customerName || sessionData.customerEmail
 
-              const { orderId, customerId } = await createOrder(customerName, sessionData.customerEmail, startsAt, stopsAt)
+              // Create customer
+              const custRes = await fetch(`${BOOQABLE_BASE}/customers?api_key=${KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customer: { name, email: sessionData.customerEmail } }),
+              })
+              const custData = await custRes.json()
+              const customerId = custData.customer?.id
 
-              if (!orderId) throw new Error('No order ID returned from Booqable')
+              // Create order
+              const orderRes = await fetch(`${BOOQABLE_BASE}/orders?api_key=${KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  order: { customer_id: customerId, starts_at: startsAt, stops_at: stopsAt, status: 'concept' },
+                }),
+              })
+              const orderData = await orderRes.json()
+              const orderId = orderData.order?.id
 
+              if (!orderId) throw new Error(`Booqable order error: ${JSON.stringify(orderData)}`)
+
+              // Add products
               if (sessionData.selectedProductIds?.length) {
                 for (const productId of sessionData.selectedProductIds) {
-                  await addOrderLine(orderId, productId)
+                  await fetch(`${BOOQABLE_BASE}/order_lines?api_key=${KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ order_line: { order_id: orderId, item_id: productId, quantity: 1 } }),
+                  })
                 }
               }
 
               const quoteUrl = `https://filme.booqable.com/orders/${orderId}`
-              const quoteMsg = `\n\n✅ **Votre devis a été créé !**\n\nVous recevrez une confirmation à **${sessionData.customerEmail}**.\n[Voir le devis →](${quoteUrl})`
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'quote_created', orderId, customerId, quoteUrl })}\n\n`))
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: quoteMsg })}\n\n`))
+              send({ type: 'quote_created', orderId, customerId, quoteUrl })
+              send({ type: 'delta', content: `\n\n✅ **Devis créé !** Vous recevrez une confirmation à **${sessionData.customerEmail}**.\n[Voir le devis →](${quoteUrl})` })
+
             } catch (err) {
-              const errMsg = err instanceof Error ? err.message : String(err)
-              console.error('Quote creation error:', errMsg)
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error_detail', message: errMsg })}\n\n`))
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: `\n\nJe n'ai pas pu créer le devis automatiquement. Contactez-nous à bonjour@filme.fr en mentionnant votre demande.` })}\n\n`))
+              const msg = err instanceof Error ? err.message : String(err)
+              console.error('Quote error:', msg)
+              send({ type: 'delta', content: `\n\nJe n'ai pas pu créer le devis automatiquement (${msg}). Contactez-nous à bonjour@filme.fr.` })
             }
           }
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+          send({ type: 'done' })
+
         } catch (err) {
           console.error('Stream error:', err)
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: 'Une erreur est survenue.' })}\n\n`))
+          send({ type: 'error', message: 'Une erreur est survenue.' })
         } finally {
           controller.close()
         }
