@@ -2,6 +2,16 @@ import OpenAI from 'openai'
 import { NextRequest, NextResponse } from 'next/server'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
+type BooqableProduct = {
+  id: string
+  name: string
+  archived: boolean
+  base_price_as_decimal: string
+  deposit_as_decimal: string
+  description?: string
+  photo_url?: string
+}
 const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
 const BOOQABLE_KEY = process.env.BOOQABLE_API_KEY
 
@@ -13,8 +23,8 @@ async function searchProducts(query: string) {
   if (!res.ok) return []
   const data = await res.json()
   return (data.products || [])
-    .filter((p: Record<string, unknown>) => !p.archived)
-    .map((p: Record<string, unknown>) => ({
+    .filter((p: BooqableProduct) => !p.archived)
+    .map((p: BooqableProduct) => ({
       id: p.id,
       name: p.name,
       price_per_day: p.base_price_as_decimal,
