@@ -159,58 +159,54 @@ export async function POST(req: NextRequest) {
           // ── Handle SEARCH_PRODUCTS command ────────────────────────────────
           const searchMatch = fullResponse.match(/\[SEARCH_PRODUCTS:\s*(.+?)\]/)
           if (searchMatch) {
-            const query = searchMatch[1].trim()
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'searching', query })}\n\n`))
+            // Use only the first keyword for best Booqable search results
+            const rawQuery = searchMatch[1].trim()
+            const firstKeyword = rawQuery.split(/[,;]/)[0].trim()
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'searching', query: firstKeyword })}\n\n`))
 
-            productResults = await searchProducts(query)
+            productResults = await searchProducts(firstKeyword)
 
             if (productResults.length === 0) {
               const noResults = "\n\nJe n'ai pas trouvé de produits correspondants dans notre catalogue. Pouvez-vous préciser votre demande ?"
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: noResults })}\n\n`))
             } else {
-              // Let GPT format the results
-              const resultsMsg = `Voici les produits disponibles chez Filme :\n\n` +
-                productResults.map((p, i) =>
-                  `**${i + 1}. ${p.name}**\n- Prix : ${p.price_per_day}€/jour\n- Caution : ${p.deposit}€\n${p.description ? `- ${p.description}` : ''}`
-                ).join('\n\n') +
-                `\n\nCes produits correspondent-ils à votre besoin ? Souhaitez-vous que je crée un devis ?`
-
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'products', products: productResults })}\n\n`))
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: '\n\n' + resultsMsg.split('\n\n').slice(1).join('\n\n') })}\n\n`))
-              // Send the product list text
               const productText = `\n\nVoici ce que nous avons :\n\n` + productResults.map((p, i) =>
                 `**${i + 1}. ${p.name}** — ${p.price_per_day}€/jour (caution ${p.deposit}€)`
-              ).join('\n') + `\n\nSouhaitez-vous que je crée un devis avec ces articles ?`
+              ).join('\n') + `\n\nCes produits vous conviennent-ils ? Souhaitez-vous que je crée un devis ?`
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: productText })}\n\n`))
             }
           }
 
           // ── Handle CREATE_QUOTE command ────────────────────────────────────
           const createQuoteMatch = fullResponse.includes('[CREATE_QUOTE]')
-          if (createQuoteMatch && sessionData?.customerName && sessionData?.customerEmail) {
+          if (createQuoteMatch && sessionData?.customerEmail) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'creating_quote' })}\n\n`))
 
             try {
-              const { orderId } = await createOrder(
-                sessionData.customerName,
-                sessionData.customerEmail,
-                sessionData.startsAt || new Date().toISOString(),
-                sessionData.stopsAt || new Date(Date.now() + 86400000).toISOString()
-              )
+              const startsAt = sessionData.startsAt || new Date().toISOString()
+              const stopsAt = sessionData.stopsAt || new Date(Date.now() + 3 * 86400000).toISOString()
+              const customerName = sessionData.customerName || sessionData.customerEmail
 
-              if (orderId && sessionData.selectedProductIds?.length) {
+              const { orderId, customerId } = await createOrder(customerName, sessionData.customerEmail, startsAt, stopsAt)
+
+              if (!orderId) throw new Error('No order ID returned from Booqable')
+
+              if (sessionData.selectedProductIds?.length) {
                 for (const productId of sessionData.selectedProductIds) {
                   await addOrderLine(orderId, productId)
                 }
               }
 
               const quoteUrl = `https://filme.booqable.com/orders/${orderId}`
-              const quoteMsg = `\n\n✅ **Votre devis a été créé !**\n\nVous recevrez une confirmation à **${sessionData.customerEmail}**.\nVous pouvez aussi consulter votre devis ici : ${quoteUrl}`
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'quote_created', orderId, quoteUrl })}\n\n`))
+              const quoteMsg = `\n\n✅ **Votre devis a été créé !**\n\nVous recevrez une confirmation à **${sessionData.customerEmail}**.\n[Voir le devis →](${quoteUrl})`
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'quote_created', orderId, customerId, quoteUrl })}\n\n`))
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: quoteMsg })}\n\n`))
             } catch (err) {
-              console.error('Quote creation error:', err)
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: '\n\nJe rencontre une difficulté pour créer le devis. Veuillez contacter bonjour@filme.fr' })}\n\n`))
+              const errMsg = err instanceof Error ? err.message : String(err)
+              console.error('Quote creation error:', errMsg)
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error_detail', message: errMsg })}\n\n`))
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: `\n\nJe n'ai pas pu créer le devis automatiquement. Contactez-nous à bonjour@filme.fr en mentionnant votre demande.` })}\n\n`))
             }
           }
 
