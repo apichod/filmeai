@@ -45,12 +45,14 @@ type RerankResult = {
 }
 
 const MIN_SIMILARITY = 0.16
-const MIN_RERANK_CONFIDENCE = 0.68
+const MIN_RERANK_CONFIDENCE = 0.5
+const MIN_DETERMINISTIC_ACCEPT = 1.25
 
 const STOPWORDS = new Set([
   'avec', 'pour', 'vers', 'plus', 'moins', 'sans', 'de', 'du', 'des', 'la', 'le', 'les',
   'en', 'et', 'ou', 'sur', 'un', 'une', 'au', 'aux', 'camera', 'caméra', 'objectif',
   'objectifs', 'moniteur', 'energie', 'énergie', 'data', 'machine', 'machinerie', 'type',
+  'with', 'all', 'and', 'the', 'kit', 'complet', 'complets',
 ])
 
 function normalizeText(value: string): string {
@@ -100,7 +102,7 @@ function importantModelTokens(item: ExtractedItem): string[] {
   const text = normalizeText(`${item.raw} ${item.query}`)
   const tokens = significantTokens(text)
   const important = tokens.filter(token =>
-    /^(fx3|fx6|fx9|fx30|b10x|b10|atem|ntg3|c1|r5|r6|rj45|bpu|bpu60|bpu90|vmount|vlock|v-lock|indie|shogun|sachtler|magliner|macbook)$/.test(token) ||
+    /^(fx3|fx6|fx9|fx30|b10x|b10|d2|prohead|profoto|atem|ntg3|c1|r5|r6|rj45|bpu|bpu60|bpu90|vmount|vlock|v-lock|indie|shogun|sachtler|magliner|macbook|aputure|600x|1200d)$/.test(token) ||
     /^\d{2,3}$/.test(token) ||
     /^\d{2,3}mm$/.test(token) ||
     /^\d{2,3}gb$/.test(token) ||
@@ -161,6 +163,37 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
   return score
 }
 
+function deterministicAutoSelect(set: CandidateSet): { product: Product; score: number } | null {
+  if (set.candidates.length === 0) return null
+
+  const ranked = set.candidates
+    .map(product => ({ product, score: deterministicScore(product, set.item) }))
+    .sort((a, b) => b.score - a.score)
+
+  const best = ranked[0]
+  const haystack = normalizeText(`${best.product.name} ${best.product.description || ''}`)
+  const raw = normalizeText(stripQuantityPrefix(set.item.raw))
+  const query = normalizeText(set.item.query)
+  const tokens = significantTokens(`${set.item.raw} ${set.item.query}`)
+  const important = importantModelTokens(set.item)
+  const matchedTokens = tokens.filter(token => haystack.includes(normalizeText(token))).length
+  const tokenRatio = tokens.length ? matchedTokens / tokens.length : 0
+  const importantOk = important.length === 0 || important.every(token => haystack.includes(normalizeText(token)))
+  const strongPhrase = Boolean(
+    (raw.length >= 3 && haystack.includes(raw)) ||
+    (query.length >= 3 && haystack.includes(query))
+  )
+  const enoughTokens = tokens.length <= 2 ? tokenRatio === 1 : tokenRatio >= 0.67
+
+  if (best.score >= MIN_DETERMINISTIC_ACCEPT && importantOk && (strongPhrase || enoughTokens)) {
+    return best
+  }
+
+  if (best.score >= 2.2 && importantOk) return best
+
+  return null
+}
+
 function dedupeProducts(products: Product[]): Product[] {
   const map = new Map<string, Product>()
   for (const product of products) {
@@ -200,6 +233,24 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
   ])).slice(0, 8)
 
   const found: Product[] = []
+  const phrases = Array.from(new Set([
+    stripQuantityPrefix(item.raw),
+    stripQuantityPrefix(item.query),
+  ].map(phrase => phrase.trim()).filter(phrase => phrase.length >= 3))).slice(0, 3)
+
+  for (const phrase of phrases) {
+    const safePhrase = phrase.replace(/[%,]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!safePhrase) continue
+    const { data } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .or(`name.ilike.%${safePhrase}%,description.ilike.%${safePhrase}%,enriched_text.ilike.%${safePhrase}%`)
+      .limit(limit)
+
+    if (data?.length) found.push(...data as Product[])
+  }
+
   for (const anchor of anchors) {
     const { data } = await supabase
       .from('products_cache')
@@ -252,6 +303,7 @@ RÈGLES ABSOLUES :
 6. Respecte strictement l'ordre d'apparition : ne trie pas, ne regroupe pas, ne déplace jamais.
 7. Quand une catégorie/titre est indiquée avec ":" (exemples : "Caméra :", "Objectifs :", "Moniteur :", "Data :", "Énergie :", "Machinerie :"), mets ce titre dans le champ "section" de tous les items qui suivent jusqu'à la prochaine catégorie.
 8. Pour "Objectifs : 3x 70-200 1x 24-70 1x 16-35", retourne trois items dans cet ordre, tous avec section="Objectifs".
+9. Les signes + séparent souvent des articles louables : "Prohead + Bol zoom" = deux lignes, "Octa 5 with all diff + Speedring" = au moins Octa 5 puis Speedring.
 
 GLOSSAIRE :
 - fx6 → Sony FX6 caméra cinéma
@@ -278,6 +330,26 @@ GLOSSAIRE :
 - pieds roulettes → pieds à roulettes / stand wheels
 - magliner → chariot Magliner
 - touret bnc 50m → touret câble BNC SDI 50m
+- air remote → télécommande Profoto Air Remote
+- pro 11 / pro11 → générateur flash Profoto Pro-11
+- prohead → tête flash Profoto ProHead
+- bol zoom → bol réflecteur Profoto Zoom Reflector
+- profoto d2 → flash Profoto D2
+- rallonges de tête → rallonge de tête Profoto
+- octa 5 → softbox Profoto Octa 5 pieds
+- speedring → bague Speedring Profoto
+- para l white → Broncolor Para L blanc
+- pied 126 → pied lumière Avenger 126
+- c-stand / cstands → C-stand complet
+- spigot 16-28mm → spigot 16-28 mm
+- poly 8x4 / porte poly → cadre poly 8x4 et porte poly
+- 16 amp extensions → rallonge électrique 16A
+- gueuses → gueuse / sandbag
+- multi 5gang → multiprise 5 gang
+- aputure 600x → Aputure LS 600X Pro
+- aputure 1200d → Aputure LS 1200D Pro
+- ballast aputure 1200d → ballast Aputure 1200D
+- cable torche aputure 1200 → câble tête Aputure 1200D
 
 Réponse JSON uniquement :
 { "items": [{ "section": "Caméra", "raw": "fx6", "query": "Sony FX6 caméra cinéma", "quantity": 5 }] }
@@ -342,7 +414,7 @@ Règles strictes :
 - Ne choisis jamais un produit qui partage seulement un mot vague.
 - Les références modèle sont sacrées : fx6 doit matcher FX6, 70-200 doit matcher 70-200, black promist 82mm doit matcher Black Pro-Mist 82mm.
 - "x5" ou "5x" est une quantité, jamais le produit Insta360 X5 sauf si le client a explicitement demandé Insta360 X5.
-- Donne confidence entre 0 et 1. Sous 0.68, utilise product_id:null.
+- Donne confidence entre 0 et 1. Sous 0.50, utilise product_id:null. Entre 0.50 et 0.67, tu peux proposer le meilleur candidat mais explique que la correspondance est à vérifier.
 
 JSON : { "selections": [{ "index": 0, "product_id": "..." | null, "confidence": 0.92, "reason": "..." }] }`,
       },
@@ -380,9 +452,16 @@ export async function POST(req: NextRequest) {
 
     const items = candidateSets.map((set, index) => {
       const selection = selectionByIndex.get(index)
-      const selected = selection && selection.confidence >= MIN_RERANK_CONFIDENCE
+      const aiSelected = selection && selection.confidence >= MIN_RERANK_CONFIDENCE
         ? set.candidates.find(candidate => candidate.id === selection.product_id) || null
         : null
+      const deterministic = deterministicAutoSelect(set)
+      const selected = aiSelected || deterministic?.product || null
+      const confidence = aiSelected
+        ? selection?.confidence || 0.85
+        : deterministic
+          ? Math.min(0.95, Math.max(0.72, deterministic.score / 2.6))
+          : selection?.confidence || 0
 
       return {
         requestedName: set.item.raw,
@@ -390,8 +469,10 @@ export async function POST(req: NextRequest) {
         section: set.item.section,
         quantity: set.item.quantity,
         matched: selected,
-        confidence: selection?.confidence || 0,
-        reason: selection?.reason || null,
+        confidence,
+        reason: selected
+          ? (aiSelected ? selection?.reason || null : 'Correspondance catalogue forte par nom/référence')
+          : selection?.reason || 'Aucune correspondance catalogue assez fiable',
         alternatives: set.candidates
           .filter(candidate => candidate.id !== selected?.id)
           .slice(0, 4),

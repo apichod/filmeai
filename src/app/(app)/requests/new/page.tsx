@@ -57,6 +57,20 @@ function tomorrowStr() {
 function daysBetween(a: string, b: string) {
   return Math.max(1, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000))
 }
+function matchPercent(confidence?: number | null) {
+  return Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)))
+}
+function matchColor(percent: number) {
+  // 0 = rouge, 50 = jaune, 100 = vert
+  return `hsl(${Math.round(percent * 1.2)} 78% 42%)`
+}
+function matchLabel(percent: number, type: QuoteItem['type']) {
+  if (type === 'custom_charge') return 'À vérifier'
+  if (percent >= 85) return 'Match fort'
+  if (percent >= 70) return 'Bon match'
+  if (percent >= 50) return 'Proposition à vérifier'
+  return 'Match faible'
+}
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -103,6 +117,25 @@ function Spinner({ size = 16, white = false }: { size?: number; white?: boolean 
       style={{ width: size, height: size }}
       className={`border-2 ${white ? 'border-white/30 border-t-white' : 'border-gray-200 border-t-gray-600'} rounded-full animate-spin flex-shrink-0`}
     />
+  )
+}
+function MatchGauge({ confidence, type }: { confidence?: number; type: QuoteItem['type'] }) {
+  if (type === 'section') return null
+  const percent = matchPercent(confidence)
+  const color = matchColor(percent)
+  return (
+    <div className="mt-1.5 flex items-center gap-2" title={`${matchLabel(percent, type)} — ${percent}%`}>
+      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-200">
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${percent}%`, backgroundColor: color }}
+        />
+      </div>
+      <span className="text-[11px] font-medium tabular-nums" style={{ color }}>
+        {percent}%
+      </span>
+      <span className="text-[11px] text-gray-400">{matchLabel(percent, type)}</span>
+    </div>
   )
 }
 
@@ -200,6 +233,8 @@ export default function NewRequestPage() {
   // ── Chat / parse
   const [message, setMessage] = useState('')
   const [parsing, setParsing] = useState(false)
+  const [parseProgress, setParseProgress] = useState(0)
+  const [parseStatus, setParseStatus] = useState('')
   const [chatHistory, setChatHistory] = useState<{ text: string; added: number; custom: number }[]>([])
 
   // ── Resizable assistant column
@@ -289,6 +324,26 @@ export default function NewRequestPage() {
     if (!text || parsing) return
     setMessage('')
     setParsing(true)
+    setParseProgress(8)
+    setParseStatus('Lecture de la demande…')
+
+    const progressSteps = [
+      { at: 24, label: 'Extraction des lignes et quantités…' },
+      { at: 42, label: 'Recherche dans le catalogue Filme…' },
+      { at: 64, label: 'Comparaison des correspondances…' },
+      { at: 82, label: 'Préparation du devis…' },
+    ]
+    let stepIndex = 0
+    const progressTimer = window.setInterval(() => {
+      setParseProgress(prev => {
+        const target = progressSteps[Math.min(stepIndex, progressSteps.length - 1)]
+        if (prev >= target.at && stepIndex < progressSteps.length - 1) stepIndex += 1
+        const current = progressSteps[Math.min(stepIndex, progressSteps.length - 1)]
+        setParseStatus(current.label)
+        return Math.min(92, prev + (prev < current.at ? 3 : 1))
+      })
+    }, 700)
+
     try {
       const res = await fetch('/api/parse-request', {
         method: 'POST',
@@ -299,6 +354,9 @@ export default function NewRequestPage() {
         items?: ParsedItem[]
         error?: string
       }
+
+      setParseProgress(96)
+      setParseStatus('Ajout des lignes au devis…')
 
       const parsedItems = data.items || []
       let added = 0
@@ -356,7 +414,14 @@ export default function NewRequestPage() {
     } catch {
       setChatHistory(prev => [...prev, { text, added: 0, custom: 0 }])
     } finally {
-      setParsing(false)
+      window.clearInterval(progressTimer)
+      setParseProgress(100)
+      setParseStatus('Terminé')
+      window.setTimeout(() => {
+        setParsing(false)
+        setParseProgress(0)
+        setParseStatus('')
+      }, 450)
     }
   }
 
@@ -675,9 +740,21 @@ export default function NewRequestPage() {
             ))}
             {parsing && (
               <div className="flex justify-start">
-                <div className="bg-gray-100 rounded-2xl rounded-bl-sm px-3 py-2 flex items-center gap-2">
-                  <Spinner size={14} />
-                  <span className="text-sm text-gray-500">Analyse en cours…</span>
+                <div className="w-[min(80%,360px)] bg-gray-100 rounded-2xl rounded-bl-sm px-3 py-2.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Spinner size={14} />
+                    <span className="text-sm text-gray-600">{parseStatus || 'Analyse en cours…'}</span>
+                    <span className="ml-auto text-xs font-medium text-gray-400 tabular-nums">{parseProgress}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-gray-900 transition-all duration-500"
+                      style={{ width: `${parseProgress}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[11px] text-gray-400">
+                    Je garde l’ordre de la liste et je vérifie le catalogue ligne par ligne.
+                  </p>
                 </div>
               </div>
             )}
@@ -839,6 +916,9 @@ export default function NewRequestPage() {
                                 ? (item.product?.price_per_day != null ? `${item.product.price_per_day}€/jour` : 'Prix sur demande')
                                 : 'Ligne custom Booqable — à vérifier'}
                             </p>
+                            {item.confidence != null && (
+                              <MatchGauge confidence={item.confidence} type={item.type} />
+                            )}
                             {item.type === 'custom_charge' && item.reason && (
                               <p className="text-[11px] text-amber-700 mt-0.5 line-clamp-2">{item.reason}</p>
                             )}
