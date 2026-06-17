@@ -38,21 +38,127 @@ const ICON_PATHS: Record<string, string> = {
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${value ? 'bg-black' : 'bg-gray-200'}`}
-    >
+    <button type="button" onClick={() => onChange(!value)}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${value ? 'bg-black' : 'bg-gray-200'}`}>
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${value ? 'translate-x-4' : 'translate-x-1'}`} />
     </button>
   )
 }
 
-function IconPreview({ icon, className = 'w-5 h-5' }: { icon: string; className?: string }) {
+function SvgIcon({ icon, className = 'w-5 h-5' }: { icon: string; className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d={ICON_PATHS[icon] ?? ICON_PATHS.bubble} />
     </svg>
+  )
+}
+
+// ── Live widget preview ──────────────────────────────────────────────────────
+function WidgetPreview({ s }: { s: Settings }) {
+  const chips = ['Faire un devis', 'Vérifier une dispo', 'Question technique', 'Question administrative']
+  return (
+    <div className="bg-gray-100 rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
+      {/* Browser chrome */}
+      <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-2">
+        <div className="flex gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
+        </div>
+        <div className="flex-1 bg-gray-100 rounded-md px-3 py-1 text-xs text-gray-400 text-center">votre-site.fr</div>
+      </div>
+
+      {/* Page area */}
+      <div className="relative bg-gray-50" style={{ height: 480 }}>
+        {/* Fake page content */}
+        <div className="p-6 space-y-3 opacity-30">
+          <div className="h-3 bg-gray-300 rounded w-3/4" />
+          <div className="h-3 bg-gray-300 rounded w-1/2" />
+          <div className="h-3 bg-gray-300 rounded w-2/3" />
+          <div className="h-3 bg-gray-300 rounded w-1/3" />
+        </div>
+
+        {/* Chat window — positioned bottom right or left */}
+        <div
+          className={`absolute bottom-4 flex flex-col ${s.position === 'right' ? 'right-4 items-end' : 'left-4 items-start'}`}
+          style={{ width: s.size === 'large' ? 320 : 280 }}
+        >
+          {/* Teaser bubble */}
+          {s.show_teaser && s.teaser_text && (
+            <div className={`mb-2 bg-white border border-gray-200 rounded-2xl px-3 py-2 text-xs text-gray-700 shadow-md max-w-full ${s.position === 'right' ? 'rounded-br-sm' : 'rounded-bl-sm'}`}>
+              {s.teaser_text}
+            </div>
+          )}
+
+          {/* Chat window */}
+          <div className="w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
+            {/* Header */}
+            <div className="px-4 py-3 flex items-center gap-3" style={{ backgroundColor: s.primary_color }}>
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white shrink-0">
+                <SvgIcon icon={s.bubble_icon} className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-xs font-semibold truncate">{s.assistant_name || 'FilmeAI'}</p>
+                <p className="text-white/70 text-xs">IA · En ligne</p>
+              </div>
+              <svg className="w-4 h-4 text-white/60 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+
+            {/* Body */}
+            <div className="px-3 py-4 space-y-3 bg-gray-50">
+              {/* Welcome */}
+              <div className="flex flex-col items-center text-center pt-1 pb-2">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: s.primary_color }}>
+                  <SvgIcon icon={s.bubble_icon} className="w-5 h-5 text-white" />
+                </div>
+                <p className="text-xs font-semibold text-gray-900">Comment puis-je vous aider ?</p>
+              </div>
+              {/* Quick chips */}
+              <div className="flex flex-wrap gap-1.5 justify-center">
+                {chips.map(chip => (
+                  <button key={chip}
+                    className="text-xs bg-white border border-gray-200 rounded-full px-2.5 py-1 text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Input */}
+            <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-center gap-2">
+              <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+              <span className="flex-1 text-xs text-gray-400">Écrivez votre message…</span>
+              <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: s.primary_color }}>
+                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Branding */}
+            {s.show_branding && (
+              <div className="px-3 py-1.5 text-center border-t border-gray-50">
+                <span className="text-xs text-gray-400">Propulsé par <span className="font-medium text-gray-600">FilmeAI</span></span>
+              </div>
+            )}
+          </div>
+
+          {/* Bubble button */}
+          <div className="mt-3 self-end">
+            <button
+              className={`flex items-center justify-center rounded-full shadow-lg text-white ${s.size === 'large' ? 'w-14 h-14' : 'w-12 h-12'}`}
+              style={{ backgroundColor: s.primary_color }}
+            >
+              <SvgIcon icon={s.bubble_icon} className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -97,173 +203,165 @@ export default function AssistantAppearancePage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="flex gap-6 items-start">
 
-      {/* Couleur primaire */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900">Couleur primaire</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Couleur principale du widget et du bouton de chat.</p>
+      {/* ── Left: settings ── */}
+      <div className="flex-1 min-w-0 space-y-5">
+
+        {/* Couleur primaire */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Couleur primaire</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Couleur principale du widget et du bouton de chat.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="cursor-pointer">
+              <input type="color" value={s.primary_color} onChange={e => set('primary_color', e.target.value)} className="sr-only" />
+              <div className="w-10 h-10 rounded-lg border border-gray-200 shadow-sm" style={{ backgroundColor: s.primary_color }} />
+            </label>
+            <input
+              value={s.primary_color}
+              onChange={e => set('primary_color', e.target.value)}
+              maxLength={7}
+              className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black"
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="relative cursor-pointer">
-            <input type="color" value={s.primary_color} onChange={e => set('primary_color', e.target.value)} className="sr-only" />
-            <div className="w-10 h-10 rounded-lg border border-gray-200 shadow-sm" style={{ backgroundColor: s.primary_color }} />
-          </label>
+
+        {/* Icône bulle */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Icône de la bulle</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Affichée sur la bulle flottante et dans l&apos;en-tête du chat.</p>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {ICONS.map(icon => (
+              <button key={icon.value} type="button" onClick={() => set('bubble_icon', icon.value)}
+                className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs transition-all ${
+                  s.bubble_icon === icon.value ? 'border-black bg-black text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                }`}>
+                <SvgIcon icon={icon.value} />
+                {icon.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Position + Taille */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900 mb-3">Position de la bulle</h2>
+            <div className="flex gap-2">
+              {[['right', 'En bas à droite'], ['left', 'En bas à gauche']] .map(([val, label]) => (
+                <button key={val} type="button" onClick={() => set('position', val)}
+                  className={`flex-1 py-2 text-sm rounded-lg border transition-all ${s.position === val ? 'border-black bg-black text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900 mb-1">Taille par défaut</h2>
+            <p className="text-xs text-gray-500 mb-3">Taille par défaut de la fenêtre de chat sur ordinateur (<span className="italic">Grande</span> occupe presque tout l&apos;écran). Le visiteur peut aussi l&apos;agrandir via le bouton de l&apos;en-tête.</p>
+            <div className="flex gap-2">
+              {[['standard', 'Standard'], ['large', 'Grande']].map(([val, label]) => (
+                <button key={val} type="button" onClick={() => set('size', val)}
+                  className={`flex-1 py-2 text-sm rounded-lg border transition-all ${s.size === val ? 'border-black bg-black text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Nom de l'assistant */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Nom de l&apos;assistant</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Affiché en haut du widget et dans les messages.</p>
+          </div>
           <input
-            value={s.primary_color}
-            onChange={e => set('primary_color', e.target.value)}
-            maxLength={7}
-            className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black"
+            value={s.assistant_name}
+            onChange={e => set('assistant_name', e.target.value)}
+            maxLength={40}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
           />
         </div>
-      </div>
 
-      {/* Icône bulle */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900">Icône bulle</h2>
-          <p className="text-xs text-gray-500 mt-0.5">L&apos;icône affichée dans le bouton flottant de votre widget.</p>
-        </div>
-        <div className="grid grid-cols-4 gap-2">
-          {ICONS.map(icon => (
-            <button
-              key={icon.value}
-              type="button"
-              onClick={() => set('bubble_icon', icon.value)}
-              className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs transition-all ${
-                s.bubble_icon === icon.value
-                  ? 'border-black bg-black text-white'
-                  : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <IconPreview icon={icon.value} />
-              {icon.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Position + Taille */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Position</h2>
-          <div className="flex gap-2">
-            {(['right', 'left'] as const).map(pos => (
-              <button key={pos} type="button" onClick={() => set('position', pos)}
-                className={`flex-1 py-2 text-sm rounded-lg border transition-all ${s.position === pos ? 'border-black bg-black text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                {pos === 'right' ? 'Droite' : 'Gauche'}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Taille</h2>
-          <div className="flex gap-2">
-            {([['standard', 'Standard'], ['large', 'Grande']] as [string, string][]).map(([val, label]) => (
-              <button key={val} type="button" onClick={() => set('size', val)}
-                className={`flex-1 py-2 text-sm rounded-lg border transition-all ${s.size === val ? 'border-black bg-black text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Nom de l'assistant */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900">Nom de l&apos;assistant</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Affiché en haut du widget et dans les messages.</p>
-        </div>
-        <input
-          value={s.assistant_name}
-          onChange={e => set('assistant_name', e.target.value)}
-          maxLength={40}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-        />
-      </div>
-
-      {/* Bulle d'accroche */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Bulle d&apos;accroche</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Un message qui apparaît au-dessus du bouton pour attirer l&apos;attention.</p>
-          </div>
-          <Toggle value={s.show_teaser} onChange={v => set('show_teaser', v)} />
-        </div>
-
-        {s.show_teaser && (
-          <div className="space-y-4 pt-1 border-t border-gray-100">
-            <div className="pt-3">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm font-medium text-gray-700">Texte</label>
-                <span className="text-xs text-gray-400">{s.teaser_text.length}/60</span>
-              </div>
-              <input
-                value={s.teaser_text}
-                onChange={e => set('teaser_text', e.target.value.slice(0, 60))}
-                placeholder="Besoin d'un devis ? Je suis là 👋"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-              />
-            </div>
+        {/* Bulle d'accroche */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+          <div className="flex items-center justify-between">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Délai d&apos;apparition</label>
-              <select
-                value={s.teaser_delay}
-                onChange={e => set('teaser_delay', Number(e.target.value))}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white"
-              >
-                {[2, 4, 8, 15].map(d => <option key={d} value={d}>{d} secondes</option>)}
-              </select>
+              <h2 className="text-sm font-semibold text-gray-900">Bulle d&apos;accroche</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Un message qui apparaît au-dessus du bouton pour attirer l&apos;attention.</p>
             </div>
-            <div className="flex items-center justify-between">
+            <Toggle value={s.show_teaser} onChange={v => set('show_teaser', v)} />
+          </div>
+          {s.show_teaser && (
+            <div className="space-y-4 pt-1 border-t border-gray-100">
+              <div className="pt-3">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm font-medium text-gray-700">Texte</label>
+                  <span className="text-xs text-gray-400">{s.teaser_text.length}/60</span>
+                </div>
+                <input
+                  value={s.teaser_text}
+                  onChange={e => set('teaser_text', e.target.value.slice(0, 60))}
+                  placeholder="Besoin d'un devis ? Je suis là 👋"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                />
+              </div>
               <div>
-                <p className="text-sm font-medium text-gray-700">Attirer l&apos;attention</p>
-                <p className="text-xs text-gray-500">Animation légère sur le bouton pour capter l&apos;œil.</p>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Délai d&apos;apparition</label>
+                <select
+                  value={s.teaser_delay}
+                  onChange={e => set('teaser_delay', Number(e.target.value))}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white"
+                >
+                  {[2, 4, 8, 15].map(d => <option key={d} value={d}>{d} secondes</option>)}
+                </select>
               </div>
-              <Toggle value={s.attract_attention} onChange={v => set('attract_attention', v)} />
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Attirer l&apos;attention</p>
+                  <p className="text-xs text-gray-500">Animation légère sur le bouton pour capter l&apos;œil.</p>
+                </div>
+                <Toggle value={s.attract_attention} onChange={v => set('attract_attention', v)} />
+              </div>
             </div>
+          )}
+        </div>
+
+        {/* Marque FilmeAI */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Marque FilmeAI</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Afficher « Propulsé par FilmeAI » dans le widget.</p>
+            </div>
+            <Toggle value={s.show_branding} onChange={v => set('show_branding', v)} />
           </div>
-        )}
+        </div>
+
+        <button onClick={save} disabled={saving}
+          className="bg-black text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50">
+          {saved ? 'Sauvegardé ✓' : saving ? 'Sauvegarde…' : 'Sauvegarder'}
+        </button>
       </div>
 
-      {/* Marque FilmeAI */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Marque FilmeAI</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Afficher « Propulsé par FilmeAI » dans le widget.</p>
+      {/* ── Right: live preview (sticky) ── */}
+      <div className="w-96 shrink-0 sticky top-0">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold text-gray-900">Aperçu</span>
+            <span className="text-xs text-gray-400">Mis à jour en temps réel</span>
           </div>
-          <Toggle value={s.show_branding} onChange={v => set('show_branding', v)} />
+          <div className="p-3">
+            <WidgetPreview s={s} />
+          </div>
         </div>
       </div>
 
-      {/* Aperçu */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-sm font-semibold text-gray-900 mb-4">Aperçu</h2>
-        <div className={`flex ${s.position === 'right' ? 'justify-end' : 'justify-start'}`}>
-          <div className="relative">
-            {s.show_teaser && s.teaser_text && (
-              <div className="absolute bottom-16 right-0 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 shadow-lg whitespace-nowrap">
-                {s.teaser_text}
-              </div>
-            )}
-            <button
-              className={`flex items-center justify-center rounded-full shadow-lg text-white ${s.size === 'large' ? 'w-16 h-16' : 'w-14 h-14'}`}
-              style={{ backgroundColor: s.primary_color }}
-            >
-              <IconPreview icon={s.bubble_icon} className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <button onClick={save} disabled={saving}
-        className="bg-black text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50">
-        {saved ? 'Sauvegardé ✓' : saving ? 'Sauvegarde…' : 'Sauvegarder'}
-      </button>
     </div>
   )
 }
