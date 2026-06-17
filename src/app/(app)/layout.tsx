@@ -1,4 +1,5 @@
 'use client'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
@@ -21,7 +22,7 @@ function IconLogout() {
   )
 }
 
-function Sidebar() {
+function Sidebar({ email }: { email: string }) {
   const pathname = usePathname()
 
   async function signOut() {
@@ -54,7 +55,7 @@ function Sidebar() {
         ))}
       </nav>
       <div className="p-4 border-t border-white/10 space-y-3">
-        <div className="text-white/40 text-xs truncate">aurelien@filme.fr</div>
+        <div className="text-white/40 text-xs truncate">{email}</div>
         <button
           onClick={signOut}
           className="flex items-center gap-2 text-white/50 hover:text-white text-xs transition-colors w-full"
@@ -68,16 +69,42 @@ function Sidebar() {
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const [email, setEmail] = useState('')
+
+  const supabase = useMemo(() => createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  ), [])
+
+  useEffect(() => {
+    let mounted = true
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (mounted) setEmail(data.user?.email || '')
+    })
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setEmail(session?.user?.email || '')
+    })
+
+    return () => {
+      mounted = false
+      listener.subscription.unsubscribe()
+    }
+  }, [supabase])
+
+  const displayEmail = email || 'Compte connecté'
+
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar />
+      <Sidebar email={displayEmail} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="h-14 bg-white border-b border-gray-100 flex items-center px-6 justify-between">
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-gray-900">Filme</span>
             <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-200">Connecté</span>
           </div>
-          <span className="text-sm text-gray-500">aurelien@filme.fr</span>
+          <span className="text-sm text-gray-500">{displayEmail}</span>
         </div>
         <main className="flex-1 overflow-auto p-6">
           {children}
