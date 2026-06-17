@@ -15,14 +15,6 @@ const defaults: Settings = {
   forbidden_topics: [],
 }
 
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button type="button" onClick={() => onChange(!value)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${value ? 'bg-black' : 'bg-gray-200'}`}>
-      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${value ? 'translate-x-4' : 'translate-x-1'}`} />
-    </button>
-  )
-}
 
 export default function AssistantBehaviorPage() {
   const [s, setS] = useState<Settings>(defaults)
