@@ -428,8 +428,31 @@ export async function POST(req: NextRequest) {
             send({ type: 'delta', content: intro })
             send({ type: 'progress', step: 'parse_request', message: 'Analyse de la liste matériel…' })
 
-            const items = await parseQuoteList(req, lastUserText)
-            send({ type: 'quote_matches', items })
+            const progressMessages = [
+              'Extraction des lignes matériel…',
+              'Recherche dans le catalogue Filme…',
+              'Comparaison des correspondances…',
+              'Préparation des choix produit par produit…',
+            ]
+            let progressIndex = 0
+            const progressTimer = setInterval(() => {
+              const message = progressMessages[Math.min(progressIndex, progressMessages.length - 1)]
+              progressIndex++
+              send({ type: 'progress', step: 'parse_request', message })
+            }, 1800)
+
+            let items: QuoteParseItem[] = []
+            try {
+              items = await parseQuoteList(req, lastUserText)
+            } finally {
+              clearInterval(progressTimer)
+            }
+
+            send({ type: 'progress', step: 'render_matches', message: `${items.length} ligne${items.length > 1 ? 's' : ''} détectée${items.length > 1 ? 's' : ''}. Affichage des correspondances…` })
+            items.forEach((item, index) => {
+              send({ type: 'quote_match_item', item, index, total: items.length })
+            })
+            send({ type: 'quote_matches_done', total: items.length })
 
             const responseText = buildQuoteWorkflowResponse(items, Boolean(sessionData.startsAt && sessionData.stopsAt))
             fullResponse += `\n\n${responseText}`

@@ -366,54 +366,62 @@ export default function NewRequestPage() {
       const parsedItems = data.items || []
       let added = 0
       let custom = 0
+      let currentSection = [...items].reverse().find(item => item.type === 'section')?.title || null
 
-      setItems(prev => {
-        const next = [...prev]
-        let currentSection = [...next].reverse().find(item => item.type === 'section')?.title || null
+      for (let index = 0; index < parsedItems.length; index += 1) {
+        const parsed = parsedItems[index]
+        const section = parsed.section?.trim() || null
+        setParseProgress(Math.min(99, 86 + Math.round(((index + 1) / Math.max(1, parsedItems.length)) * 13)))
+        setParseStatus(`Ajout ${index + 1}/${parsedItems.length} au devis…`)
 
-        for (const parsed of parsedItems) {
-          const section = parsed.section?.trim() || null
-          if (section && section !== currentSection) {
-            next.push({
-              uid: crypto.randomUUID(),
-              type: 'section',
-              title: section,
-              quantity: 1,
-              requestedName: section,
-              section,
-            })
-            currentSection = section
-          }
+        const rowsToAdd: QuoteItem[] = []
+        if (section && section !== currentSection) {
+          rowsToAdd.push({
+            uid: crypto.randomUUID(),
+            type: 'section',
+            title: section,
+            quantity: 1,
+            requestedName: section,
+            section,
+          })
+          currentSection = section
+        }
 
-          if (parsed.matched) {
-            next.push({
-              uid: crypto.randomUUID(),
-              type: 'product',
-              product: parsed.matched,
-              quantity: Math.max(1, parsed.quantity || 1),
-              requestedName: parsed.requestedName,
-              section,
-              confidence: parsed.confidence,
-              reason: parsed.reason,
-            })
-          } else {
-            custom += 1
-            next.push({
-              uid: crypto.randomUUID(),
-              type: 'custom_charge',
-              title: parsed.requestedName || parsed.searchQuery || 'Produit à vérifier',
-              quantity: Math.max(1, parsed.quantity || 1),
-              requestedName: parsed.requestedName || parsed.searchQuery || 'Produit à vérifier',
-              section,
-              confidence: parsed.confidence || 0,
-              reason: parsed.reason || 'Correspondance catalogue incertaine',
-            })
-          }
+        if (parsed.matched) {
+          rowsToAdd.push({
+            uid: crypto.randomUUID(),
+            type: 'product',
+            product: parsed.matched,
+            quantity: Math.max(1, parsed.quantity || 1),
+            requestedName: parsed.requestedName,
+            section,
+            confidence: parsed.confidence,
+            reason: parsed.reason,
+          })
+        } else {
+          rowsToAdd.push({
+            uid: crypto.randomUUID(),
+            type: 'custom_charge',
+            title: parsed.requestedName || parsed.searchQuery || 'Produit à vérifier',
+            quantity: Math.max(1, parsed.quantity || 1),
+            requestedName: parsed.requestedName || parsed.searchQuery || 'Produit à vérifier',
+            section,
+            confidence: parsed.confidence || 0,
+            reason: parsed.reason || 'Correspondance catalogue incertaine',
+          })
+        }
+
+        setItems(prev => [...prev, ...rowsToAdd])
+
+        if (parsed.matched) {
+          added += 1
+        } else {
+          custom += 1
           added += 1
         }
 
-        return next
-      })
+        await new Promise(resolve => window.setTimeout(resolve, parsedItems.length > 15 ? 45 : 80))
+      }
 
       setChatHistory(prev => [...prev, { text, added, custom }])
     } catch {

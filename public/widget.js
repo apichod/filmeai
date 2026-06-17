@@ -156,6 +156,7 @@
     quoteMatches: savedSession.quoteMatches || []
   };
   var typingEl = null;
+  var matchListEl = null;
 
   var panel = document.getElementById('filmeai-panel');
   var bubble = document.getElementById('filmeai-bubble');
@@ -335,10 +336,12 @@
 
   function renderQuoteMatches() {
     var items = sessionData.quoteMatches || [];
+    if (matchListEl && matchListEl.parentNode) matchListEl.remove();
     if (!items.length) return;
 
     var wrap = document.createElement('div');
     wrap.className = 'filmeai-match-list';
+    matchListEl = wrap;
 
     items.forEach(function(item, index) {
       var strong = item.selectedProductId && item.confidence >= 0.8;
@@ -429,6 +432,7 @@
   function streamResponse() {
     var botEl = null;
     var botContent = '';
+    var receivedQuoteMatchItems = false;
 
     fetch(API_URL, {
       method: 'POST',
@@ -498,6 +502,24 @@
       } else if (evt.type === 'quote_matches') {
         initQuoteMatches(evt.items || []);
         renderQuoteMatches();
+      } else if (evt.type === 'quote_match_item') {
+        if (!receivedQuoteMatchItems) {
+          receivedQuoteMatchItems = true;
+          sessionData.quoteMatches = [];
+          if (matchListEl && matchListEl.parentNode) matchListEl.remove();
+          matchListEl = null;
+        }
+        if (evt.item) {
+          var item = evt.item;
+          item.clientIndex = typeof evt.index === 'number' ? evt.index : sessionData.quoteMatches.length;
+          item.selectedProductId = item.matched && item.confidence >= 0.8 ? item.matched.id : null;
+          item.leaveToFilme = false;
+          sessionData.quoteMatches.push(item);
+          updateSelectedProductIds();
+          renderQuoteMatches();
+        }
+      } else if (evt.type === 'quote_matches_done') {
+        persistSession();
       } else if (evt.type === 'creating_quote') {
         if (botEl) botContent += '\n\n⏳ Création du devis en cours…';
         if (botEl) botEl.innerHTML = formatMarkdown(botContent);

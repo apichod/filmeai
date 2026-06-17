@@ -187,6 +187,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [loading, setLoading] = useState(false)
   const [streamText, setStreamText] = useState('')
   const [pendingProducts, setPendingProducts] = useState<Product[]>([])
+  const [streamQuoteMatches, setStreamQuoteMatches] = useState<QuoteMatch[]>([])
   const [sessionData, setSessionData] = useState<{ selectedProductIds: string[]; conversationId: string | null }>({ selectedProductIds: [], conversationId: null })
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -205,6 +206,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setInput('')
     setStreamText('')
     setPendingProducts([])
+    setStreamQuoteMatches([])
     setLoading(false)
     setSessionData({ selectedProductIds: [], conversationId: null })
   }
@@ -219,6 +221,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setLoading(true)
     setStreamText('')
     setPendingProducts([])
+    setStreamQuoteMatches([])
     scrollBottom()
 
     const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
@@ -250,22 +253,44 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           try {
-            const evt = JSON.parse(line.slice(6)) as { type: string; content?: string; products?: Product[]; items?: QuoteMatch[]; conversationId?: string }
+            const evt = JSON.parse(line.slice(6)) as {
+              type: string
+              content?: string
+              message?: string
+              products?: Product[]
+              items?: QuoteMatch[]
+              item?: QuoteMatch
+              index?: number
+              total?: number
+              conversationId?: string
+            }
 
             if (evt.type === 'delta' && evt.content) {
               accumulated += evt.content
               setStreamText(accumulated)
               scrollBottom()
+            } else if (evt.type === 'progress' && evt.message && !accumulated) {
+              setStreamText(evt.message)
+              scrollBottom()
             } else if (evt.type === 'selected_products' && evt.products) {
               localProducts = evt.products
               setPendingProducts(evt.products)
               setSessionData(prev => ({ ...prev, selectedProductIds: evt.products?.map(p => p.id) || prev.selectedProductIds }))
+            } else if (evt.type === 'quote_match_item' && evt.item) {
+              localQuoteMatches = [...localQuoteMatches, evt.item]
+              setStreamQuoteMatches(localQuoteMatches)
+              const selectedIds = localQuoteMatches
+                .filter(item => item.matched && item.confidence >= 0.8)
+                .map(item => item.matched!.id)
+              setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds }))
+              scrollBottom()
             } else if (evt.type === 'quote_matches' && evt.items) {
               localQuoteMatches = evt.items as QuoteMatch[]
               const selectedIds = localQuoteMatches
                 .filter(item => item.matched && item.confidence >= 0.8)
                 .map(item => item.matched!.id)
               setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds }))
+              setStreamQuoteMatches(localQuoteMatches)
             } else if (evt.type === 'conversation_saved' && evt.conversationId) {
               setSessionData(prev => ({ ...prev, conversationId: evt.conversationId as string }))
             } else if (evt.type === 'done') {
@@ -279,6 +304,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               setMessages(prev => [...prev, assistantMsg])
               setStreamText('')
               setPendingProducts([])
+              setStreamQuoteMatches([])
               localProducts = []
               localQuoteMatches = []
               scrollBottom()
@@ -294,6 +320,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     } finally {
       setLoading(false)
       setStreamText('')
+      setStreamQuoteMatches([])
       inputRef.current?.focus()
     }
   }, [loading, messages, sessionData])
@@ -467,6 +494,58 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               )}
               {pendingProducts.length > 0 && (
                 <p className="text-xs text-gray-400 mt-1 pl-1">Recherche en cours…</p>
+              )}
+              {streamQuoteMatches.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {streamQuoteMatches.map((item, idx) => {
+                    const strong = Boolean(item.matched && item.confidence >= 0.8)
+                    const choices = [item.matched, ...(item.alternatives || [])].filter(Boolean) as Product[]
+                    const uniqueChoices = choices
+                      .filter((p, i, arr) => arr.findIndex(x => x.id === p.id || x.name.trim().toLowerCase() === p.name.trim().toLowerCase()) === i)
+                      .slice(0, 3)
+                    const pct = matchPercent(item.confidence)
+                    const bar = matchColor(item.confidence)
+                    return (
+                      <div key={`stream-${item.requestedName}-${idx}`} className={`rounded-xl border p-2.5 text-xs shadow-sm ${strong ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-gray-500">{item.section ? `${item.section} · ` : ''}{item.quantity}× demandé : {item.requestedName}</p>
+                            {item.matched && strong ? (
+                              <>
+                                <p className="font-semibold text-gray-900">
+                                  {item.matched.name}
+                                  {(item.matched.is_bundle || item.matched.bundle_items?.length) && <span className="ml-1 rounded-full bg-black px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                                </p>
+                                {item.matched.bundle_items && item.matched.bundle_items.length > 0 && (
+                                  <p className="mt-0.5 text-[11px] text-gray-500">Contenu : {item.matched.bundle_items.slice(0, 4).join(', ')}{item.matched.bundle_items.length > 4 ? '…' : ''}</p>
+                                )}
+                              </>
+                            ) : (
+                              <p className="font-semibold text-gray-900">Correspondance à choisir</p>
+                            )}
+                          </div>
+                          {item.matched && strong && sessionData.selectedProductIds.includes(item.matched.id) && (
+                            <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
+                          )}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ backgroundColor: bar }} title={`Match ${pct}%`} />
+                        </div>
+                        {!strong && (
+                          <div className="mt-2 space-y-1">
+                            {uniqueChoices.map(choice => (
+                              <button key={choice.id} onClick={() => choosePreviewProduct(choice.id)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${sessionData.selectedProductIds.includes(choice.id) ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-800'}`}>
+                                {choice.name}
+                                {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                              </button>
+                            ))}
+                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-600">Laisser Filme le trouver pour moi</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
           </div>
