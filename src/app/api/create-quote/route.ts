@@ -359,7 +359,6 @@ async function createCustomLine({
   const attributes: JsonObject = {
     line_type: lineType,
     title,
-    name: title,
     quantity: lineType === 'section' ? 1 : quantityOf(item),
     ...(lineType === 'charge' ? {
       price_each_in_cents: 0,
@@ -368,18 +367,6 @@ async function createCustomLine({
   }
 
   const attempts = [
-    {
-      label: `Custom ${lineType} line relationships`,
-      body: {
-        data: {
-          type: 'lines',
-          attributes,
-          relationships: {
-            owner: { data: { type: 'orders', id: orderId } },
-          },
-        },
-      },
-    },
     {
       label: `Custom ${lineType} line owner_type orders`,
       body: {
