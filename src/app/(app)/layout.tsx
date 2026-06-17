@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { createClient } from '@supabase/supabase-js'
 
 const nav = [
   { label: 'Tableau de bord', href: '/dashboard' },
@@ -12,8 +13,27 @@ const nav = [
   { label: 'Réglages', href: '/settings/general' },
 ]
 
+function IconLogout() {
+  return (
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+    </svg>
+  )
+}
+
 function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+
+  async function signOut() {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
   return (
     <div className="w-56 bg-black flex flex-col h-full shrink-0">
       <div className="p-5 border-b border-white/10">
@@ -34,8 +54,15 @@ function Sidebar() {
           </Link>
         ))}
       </nav>
-      <div className="p-4 border-t border-white/10">
-        <div className="text-white/40 text-xs">aurelien@filme.fr</div>
+      <div className="p-4 border-t border-white/10 space-y-3">
+        <div className="text-white/40 text-xs truncate">aurelien@filme.fr</div>
+        <button
+          onClick={signOut}
+          className="flex items-center gap-2 text-white/50 hover:text-white text-xs transition-colors w-full"
+        >
+          <IconLogout />
+          Se déconnecter
+        </button>
       </div>
     </div>
   )
