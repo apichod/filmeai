@@ -123,7 +123,18 @@
   var isOpen = false;
   var isLoading = false;
   var messages = []; // {role, content}
-  var sessionData = { customerName: null, customerEmail: null, startsAt: null, stopsAt: null, selectedProductIds: [], conversationId: null };
+  var storageKey = 'filmeai_session_' + (ORG_ID || 'default');
+  var savedSession = {};
+  try { savedSession = JSON.parse(window.localStorage.getItem(storageKey) || '{}') || {}; } catch (e) { savedSession = {}; }
+  var sessionData = {
+    customerName: savedSession.customerName || null,
+    customerEmail: savedSession.customerEmail || null,
+    customerPhone: savedSession.customerPhone || null,
+    startsAt: savedSession.startsAt || null,
+    stopsAt: savedSession.stopsAt || null,
+    selectedProductIds: savedSession.selectedProductIds || [],
+    conversationId: savedSession.conversationId || null
+  };
   var typingEl = null;
 
   var panel = document.getElementById('filmeai-panel');
@@ -213,6 +224,10 @@
     var emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
     if (emailMatch) sessionData.customerEmail = emailMatch[0];
 
+    // Phone detection
+    var phoneMatch = text.match(/(?:\+33|0)\s*[1-9](?:[\s.-]*\d{2}){4}/);
+    if (phoneMatch) sessionData.customerPhone = phoneMatch[0];
+
     // Date detection (DD/MM/YYYY or similar)
     var dateMatches = text.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g);
     if (dateMatches && dateMatches.length >= 1) {
@@ -224,6 +239,14 @@
     if (!sessionData.customerName && messages.length <= 3 && text.length < 50 && !emailMatch) {
       sessionData.customerName = text;
     }
+
+    persistSession();
+  }
+
+  function persistSession() {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(sessionData));
+    } catch (e) {}
   }
 
   function parseDate(str) {
@@ -296,15 +319,31 @@
         messagesEl.scrollTop = messagesEl.scrollHeight;
       } else if (evt.type === 'searching') {
         if (!botEl) { hideTyping(); botEl = addMessage('bot', '🔍 Recherche dans notre catalogue…'); }
+      } else if (evt.type === 'progress') {
+        if (!botEl) { hideTyping(); botEl = addMessage('bot', ''); }
+        if (evt.message && botContent.indexOf(evt.message) === -1) {
+          botContent += '\n\n' + evt.message;
+          botEl.innerHTML = formatMarkdown(botContent);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
       } else if (evt.type === 'products') {
         sessionData.selectedProductIds = (evt.products || []).map(function(p) { return p.id; });
+        persistSession();
+      } else if (evt.type === 'quote_matches') {
+        var matched = (evt.items || []).filter(function(item) { return item.matched && item.confidence >= 0.5; });
+        sessionData.selectedProductIds = matched.map(function(item) { return item.matched.id; });
+        persistSession();
       } else if (evt.type === 'creating_quote') {
         if (botEl) botContent += '\n\n⏳ Création du devis en cours…';
         if (botEl) botEl.innerHTML = formatMarkdown(botContent);
       } else if (evt.type === 'quote_created') {
         sessionData.orderId = evt.orderId;
+        persistSession();
       } else if (evt.type === 'conversation_saved') {
         if (evt.conversationId) sessionData.conversationId = evt.conversationId;
+        persistSession();
+      } else if (evt.type === 'conversation_save_error') {
+        console.warn('FilmeAI conversation save error:', evt.message);
       } else if (evt.type === 'done') {
         hideTyping();
         isLoading = false;
