@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FilmeAI — latest patch bundle
 
-## Getting Started
+Ce dossier regroupe les derniers fichiers patchés pour FilmeAI, avec la même arborescence que le projet Next.js.
 
-First, run the development server:
+## Ce que ça contient
+
+- Recherche/parsing IA strict : `src/app/api/parse-request/route.ts`
+- Création devis Booqable + sauvegarde structurée : `src/app/api/create-quote/route.ts`
+- API conversations/devis :
+  - `src/app/api/conversations/route.ts`
+  - `src/app/api/conversations/[id]/route.ts`
+- Sync catalogue Booqable product_groups + bundles : `src/app/api/sync-catalog/route.ts`
+- Pages back-office :
+  - `src/app/(app)/requests/page.tsx`
+  - `src/app/(app)/requests/[id]/page.tsx`
+  - `src/app/(app)/requests/new/page.tsx`
+- Migration Supabase : `supabase/migrations/005_quote_details.sql`
+
+## Installation dans le vrai repo
+
+Depuis le terminal :
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd ~/Library/"Application Support"/Claude/local-agent-mode-sessions/2ac46ffc-200a-4ed8-a58a-133f5ed438a5/f7188d5b-99bf-4100-a49e-c57bd72db035/local_4cfb652f-e662-4ea2-840e-b40fe22f55ac/outputs/renkko
+
+rsync -av "/Users/aurelien/Documents/Codex/2026-06-17/renkko-website-code/outputs/filmeai-latest-patch/" ./
+
+git add src/app/api/parse-request/route.ts \
+  src/app/api/create-quote/route.ts \
+  src/app/api/conversations/route.ts \
+  "src/app/api/conversations/[id]/route.ts" \
+  src/app/api/sync-catalog/route.ts \
+  "src/app/(app)/requests/page.tsx" \
+  "src/app/(app)/requests/[id]/page.tsx" \
+  "src/app/(app)/requests/new/page.tsx" \
+  supabase/migrations/005_quote_details.sql
+
+git commit -m "feat: structured quote requests and Booqable catalog flow"
+
+git push origin main
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Supabase
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Avant ou après le push, ouvrir `supabase/migrations/005_quote_details.sql`, copier le SQL dans Supabase SQL Editor, puis Run.
