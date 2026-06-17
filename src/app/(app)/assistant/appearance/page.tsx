@@ -506,6 +506,7 @@ export default function AssistantAppearancePage() {
   const [s, setS] = useState<Settings>(defaults)
   const [initialSettings, setInitialSettings] = useState<Settings>(defaults)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [previewMode, setPreviewMode] = useState<PreviewMode>('visual')
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop')
   const [teaserPreviewNonce, setTeaserPreviewNonce] = useState(0)
@@ -523,18 +524,24 @@ export default function AssistantAppearancePage() {
   const previewSettings = { ...s, primary_color: color }
 
   useEffect(() => {
-    fetch('/api/assistant-settings')
-      .then(r => r.json())
-      .then((d: { settings?: Partial<Settings> }) => {
+    fetch('/api/assistant-settings', { cache: 'no-store' })
+      .then(async r => {
+        const d = await r.json() as { settings?: Partial<Settings>; error?: string }
+        if (!r.ok || d.error) throw new Error(d.error || 'Impossible de charger les réglages')
+        return d
+      })
+      .then(d => {
         if (d.settings) {
           const next = { ...defaults, ...d.settings }
           setS(next)
           setInitialSettings(next)
         }
       })
+      .catch(err => setSaveError(err instanceof Error ? err.message : 'Impossible de charger les réglages'))
   }, [])
 
   function set<K extends keyof Settings>(key: K, val: Settings[K]) {
+    setSaveError(null)
     setS(prev => ({ ...prev, [key]: val }))
   }
 
@@ -569,16 +576,26 @@ export default function AssistantAppearancePage() {
   async function save() {
     if (!colorValid) return
     setSaving(true)
-    const res = await fetch('/api/assistant-settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(s),
-    })
-    const data = await res.json().catch(() => null) as { settings?: Partial<Settings> } | null
-    const savedSettings = data?.settings ? { ...defaults, ...data.settings } : s
-    setInitialSettings(savedSettings)
-    setS(savedSettings)
-    setSaving(false)
+    setSaveError(null)
+    try {
+      const res = await fetch('/api/assistant-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify(s),
+      })
+      const data = await res.json().catch(() => null) as { settings?: Partial<Settings>; error?: string } | null
+      if (!res.ok || data?.error) throw new Error(data?.error || `Erreur sauvegarde HTTP ${res.status}`)
+      if (!data?.settings) throw new Error('Sauvegarde non confirmée par le serveur')
+
+      const savedSettings = { ...defaults, ...data.settings }
+      setInitialSettings(savedSettings)
+      setS(savedSettings)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -587,11 +604,18 @@ export default function AssistantAppearancePage() {
       {/* ── Left: settings ── */}
       <div className="flex-1 min-w-[520px] space-y-5 pr-5 pb-24">
 
+        {saveError && !dirty && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {saveError}
+          </div>
+        )}
+
         {dirty && (
           <div className="sticky top-0 z-20 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/95 px-4 py-3 shadow-sm backdrop-blur">
             <div>
               <p className="text-sm font-semibold text-amber-900">Modifications non sauvegardées</p>
               <p className="text-xs text-amber-700">Pensez à sauvegarder avant de quitter cette page.</p>
+              {saveError && <p className="mt-1 text-xs text-red-600">Erreur : {saveError}</p>}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={resetChanges} className="rounded-lg px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-100">Annuler</button>
