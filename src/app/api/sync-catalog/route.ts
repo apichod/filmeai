@@ -21,6 +21,7 @@ type BooqableRawProduct = {
   deposit_as_decimal?: string
   photo_url?: string
   archived?: boolean
+  _type?: 'product' | 'bundle'
 }
 
 // Fetch all Booqable products (paginated)
@@ -33,11 +34,40 @@ async function fetchAllBooqableProducts(): Promise<BooqableRawProduct[]> {
     const res = await fetch(
       `${BOOQABLE_BASE}/products?api_key=${BOOQABLE_KEY}&per=200&page=${page}`
     )
-    if (!res.ok) throw new Error(`Booqable fetch error: ${res.status}`)
+    if (!res.ok) throw new Error(`Booqable products fetch error: ${res.status}`)
     const data = await res.json()
-    const products: BooqableRawProduct[] = data.products || []
+    const products: BooqableRawProduct[] = (data.products || []).map(
+      (p: BooqableRawProduct) => ({ ...p, _type: 'product' as const })
+    )
     all.push(...products)
     hasMore = products.length === 200
+    page++
+  }
+
+  return all
+}
+
+// Fetch all Booqable bundles (paginated)
+async function fetchAllBooqableBundles(): Promise<BooqableRawProduct[]> {
+  const all: BooqableRawProduct[] = []
+  let page = 1
+  let hasMore = true
+
+  while (hasMore) {
+    const res = await fetch(
+      `${BOOQABLE_BASE}/bundles?api_key=${BOOQABLE_KEY}&per=200&page=${page}`
+    )
+    if (!res.ok) {
+      // Bundles endpoint might not exist on all plans — fail gracefully
+      console.warn(`Bundles fetch skipped: ${res.status}`)
+      break
+    }
+    const data = await res.json()
+    const bundles: BooqableRawProduct[] = (data.bundles || []).map(
+      (b: BooqableRawProduct) => ({ ...b, _type: 'bundle' as const })
+    )
+    all.push(...bundles)
+    hasMore = bundles.length === 200
     page++
   }
 
@@ -78,10 +108,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    console.log('Fetching Booqable products...')
-    const rawProducts = await fetchAllBooqableProducts()
-    const active = rawProducts.filter(p => !p.archived)
-    console.log(`Found ${active.length} active products`)
+    console.log('Fetching Booqable products + bundles...')
+    const [rawProducts, rawBundles] = await Promise.all([
+      fetchAllBooqableProducts(),
+      fetchAllBooqableBundles(),
+    ])
+    const allRaw = [...rawProducts, ...rawBundles]
+    const active = allRaw.filter(p => !p.archived)
+    console.log(`Found ${rawProducts.length} products + ${rawBundles.length} bundles = ${active.length} active items`)
 
     // Build enriched texts
     const enrichedTexts = active.map(buildEnrichedText)
@@ -128,7 +162,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      total: rawProducts.length,
+      products: rawProducts.length,
+      bundles: rawBundles.length,
+      total: allRaw.length,
       active: active.length,
       upserted,
     })

@@ -16,6 +16,8 @@ type QuoteItem = {
 type Customer = {
   name: string
   email?: string
+  phone?: string
+  booqableId?: string // existing Booqable customer ID
 }
 
 export async function POST(req: NextRequest) {
@@ -30,20 +32,28 @@ export async function POST(req: NextRequest) {
     const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
     const KEY = process.env.BOOQABLE_API_KEY
 
-    // 1. Create / find customer
-    const custRes = await fetch(`${BOOQABLE_BASE}/customers?api_key=${KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customer: {
-          name: customer.name,
-          ...(customer.email ? { email: customer.email } : {}),
-        },
-      }),
-    })
-    const custData = await custRes.json() as { customer?: { id: string } }
-    const customerId = custData.customer?.id
-    if (!customerId) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
+    // 1. Use existing customer or create new one
+    let customerId: string
+
+    if (customer.booqableId) {
+      // Use existing Booqable customer directly
+      customerId = customer.booqableId
+    } else {
+      const custRes = await fetch(`${BOOQABLE_BASE}/customers?api_key=${KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: {
+            name: customer.name,
+            ...(customer.email ? { email: customer.email } : {}),
+            ...(customer.phone ? { phone: customer.phone } : {}),
+          },
+        }),
+      })
+      const custData = await custRes.json() as { customer?: { id: string } }
+      customerId = custData.customer?.id ?? ''
+      if (!customerId) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
+    }
 
     // 2. Create order
     const orderRes = await fetch(`${BOOQABLE_BASE}/orders?api_key=${KEY}`, {

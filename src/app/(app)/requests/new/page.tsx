@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type BooqableCustomer = {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+}
+
 type Product = {
   id: string
   name: string
@@ -165,6 +172,14 @@ export default function NewRequestPage() {
   // ── Client
   const [clientName, setClientName] = useState('')
   const [clientEmail, setClientEmail] = useState('')
+  const [clientPhone, setClientPhone] = useState('')
+  const [clientBooqableId, setClientBooqableId] = useState<string | null>(null)
+
+  // ── Customer search
+  const [customerQuery, setCustomerQuery] = useState('')
+  const [customerResults, setCustomerResults] = useState<BooqableCustomer[]>([])
+  const [customerSearching, setCustomerSearching] = useState(false)
+  const customerTimeout = useRef<NodeJS.Timeout | null>(null)
 
   // ── Chat / parse
   const [message, setMessage] = useState('')
@@ -188,6 +203,31 @@ export default function NewRequestPage() {
   const [submitting, setSubmitting] = useState(false)
   const [quoteResult, setQuoteResult] = useState<{ orderId: string; orderUrl: string } | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // ── Customer search
+  function handleCustomerSearch(q: string) {
+    setCustomerQuery(q)
+    if (customerTimeout.current) clearTimeout(customerTimeout.current)
+    if (q.trim().length < 2) { setCustomerResults([]); return }
+    customerTimeout.current = setTimeout(async () => {
+      setCustomerSearching(true)
+      try {
+        const res = await fetch(`/api/customer-search?q=${encodeURIComponent(q.trim())}`)
+        setCustomerResults(await res.json())
+      } finally {
+        setCustomerSearching(false)
+      }
+    }, 280)
+  }
+
+  function selectExistingCustomer(c: BooqableCustomer) {
+    setClientName(c.name)
+    setClientEmail(c.email || '')
+    setClientPhone(c.phone || '')
+    setClientBooqableId(c.id)
+    setCustomerQuery('')
+    setCustomerResults([])
+  }
 
   // ── Step 1 submit
   function handleClientSubmit(e: React.FormEvent) {
@@ -281,7 +321,12 @@ export default function NewRequestPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer: { name: clientName, email: clientEmail || undefined },
+          customer: {
+            name: clientName,
+            email: clientEmail || undefined,
+            phone: clientPhone || undefined,
+            booqableId: clientBooqableId || undefined,
+          },
           items: items.map(i => ({ productId: i.product.id, quantity: i.quantity })),
           startsAt: new Date(startsAt + 'T09:00:00').toISOString(),
           stopsAt: new Date(stopsAt + 'T18:00:00').toISOString(),
@@ -323,22 +368,83 @@ export default function NewRequestPage() {
         </div>
 
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
             <span>👤</span> Client
           </h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Renseignez les coordonnées du client pour créer le devis Booqable.
+          <p className="text-xs text-gray-500 mb-5">
+            Choisissez un client existant (vos contacts Booqable) ou renseignez un nouveau client.
           </p>
-          <form onSubmit={handleClientSubmit} className="space-y-4">
+
+          {/* Existing customer search */}
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Client existant</label>
+            <div className="relative">
+              <div className="relative flex items-center">
+                <span className="absolute left-2.5 text-gray-400 pointer-events-none"><IconSearch /></span>
+                <input
+                  type="text"
+                  value={customerQuery}
+                  onChange={e => handleCustomerSearch(e.target.value)}
+                  placeholder="Rechercher par nom, email, téléphone…"
+                  autoFocus
+                  className="w-full border border-gray-200 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+                />
+                {customerSearching && <span className="absolute right-2.5"><Spinner size={14} /></span>}
+              </div>
+              {customerResults.length > 0 && (
+                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto">
+                  {customerResults.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={() => selectExistingCustomer(c)}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
+                    >
+                      <p className="text-sm font-medium text-gray-900">{c.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {[c.email, c.phone].filter(Boolean).join(' · ')}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                ou nouveau client
+              </span>
+            </div>
+          </div>
+
+          {/* New client form */}
+          <form onSubmit={handleClientSubmit} className="space-y-3">
+            {clientBooqableId && (
+              <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-xs text-gray-600">
+                <span>✓ Client Booqable sélectionné : <strong>{clientName}</strong></span>
+                <button
+                  type="button"
+                  onClick={() => { setClientBooqableId(null); setClientName(''); setClientEmail(''); setClientPhone('') }}
+                  className="text-gray-400 hover:text-gray-700"
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Nom *</label>
               <input
                 type="text"
                 placeholder="Nom du client"
                 value={clientName}
-                onChange={e => setClientName(e.target.value)}
+                onChange={e => { setClientName(e.target.value); setClientBooqableId(null) }}
                 required
-                autoFocus
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
               />
             </div>
@@ -352,9 +458,19 @@ export default function NewRequestPage() {
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
               />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Téléphone</label>
+              <input
+                type="tel"
+                placeholder="06 12 34 56 78"
+                value={clientPhone}
+                onChange={e => setClientPhone(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+              />
+            </div>
             <button
               type="submit"
-              className="w-full bg-gray-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors"
+              className="w-full bg-gray-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors mt-1"
             >
               Démarrer le devis →
             </button>
