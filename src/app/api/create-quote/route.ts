@@ -51,6 +51,26 @@ function quantityOf(item: QuoteItem) {
   return Math.max(1, Math.round(Number(item.quantity) || 1))
 }
 
+async function readJsonOrThrow<T>(res: Response, context: string): Promise<T> {
+  const text = await res.text()
+  let parsed: unknown = null
+
+  if (text.trim()) {
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      const preview = text.replace(/\s+/g, ' ').slice(0, 500)
+      throw new Error(`${context} returned non-JSON (${res.status}): ${preview}`)
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(`${context} failed (${res.status}): ${JSON.stringify(parsed)}`)
+  }
+
+  return parsed as T
+}
+
 async function createV4CustomLine({
   orderId,
   item,
@@ -99,8 +119,8 @@ async function createV4CustomLine({
     }),
   })
 
-  const data = await res.json() as BooqableLineResponse
-  if (!res.ok || data.error || data.errors) {
+  const data = await readJsonOrThrow<BooqableLineResponse>(res, `Custom ${lineType} line`)
+  if (data.error || data.errors) {
     throw new Error(`Custom ${lineType} line failed: ${JSON.stringify(data)}`)
   }
 
@@ -136,8 +156,11 @@ async function createV1ProductLine({
     }),
   })
 
-  const data = await res.json() as { order_line?: { id: string }; error?: unknown; errors?: unknown }
-  if (!res.ok || data.error || data.errors) {
+  const data = await readJsonOrThrow<{ order_line?: { id: string }; error?: unknown; errors?: unknown }>(
+    res,
+    `Product line (${item.requestedName || item.productId})`
+  )
+  if (data.error || data.errors) {
     throw new Error(`Product line failed (${item.requestedName || item.productId}): ${JSON.stringify(data)}`)
   }
 
@@ -176,7 +199,7 @@ export async function POST(req: NextRequest) {
           },
         }),
       })
-      const custData = await custRes.json() as BooqableCustomerResponse
+      const custData = await readJsonOrThrow<BooqableCustomerResponse>(custRes, 'Customer creation')
       customerId = custData.customer?.id ?? ''
       if (!customerId) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
     }
@@ -194,7 +217,7 @@ export async function POST(req: NextRequest) {
         },
       }),
     })
-    const orderData = await orderRes.json() as BooqableOrderResponse
+    const orderData = await readJsonOrThrow<BooqableOrderResponse>(orderRes, 'Order creation')
     const orderId = orderData.order?.id
     if (!orderId) throw new Error(`Order creation failed: ${JSON.stringify(orderData)}`)
 

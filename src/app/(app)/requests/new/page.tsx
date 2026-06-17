@@ -446,8 +446,15 @@ export default function NewRequestPage() {
           stopsAt: new Date(stopsAt + 'T18:00:00').toISOString(),
         }),
       })
-      const data = await res.json() as { orderId?: string; orderUrl?: string; error?: string }
-      if (data.error) throw new Error(data.error)
+      const raw = await res.text()
+      let data: { orderId?: string; orderUrl?: string; error?: string }
+      try {
+        data = JSON.parse(raw) as { orderId?: string; orderUrl?: string; error?: string }
+      } catch {
+        const preview = raw.replace(/\s+/g, ' ').slice(0, 500)
+        throw new Error(`Réponse non JSON de /api/create-quote (${res.status}) : ${preview}`)
+      }
+      if (!res.ok || data.error) throw new Error(data.error || `Erreur HTTP ${res.status}`)
       if (data.orderUrl) setQuoteResult({ orderId: data.orderId!, orderUrl: data.orderUrl })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Erreur lors de la création du devis')
