@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // Fetch products to enrich
-    let query = supabase
+    const query = supabase
       .from('products_cache')
       .select('id, name, description, enriched_text')
       .eq('archived', false)
