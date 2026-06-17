@@ -187,8 +187,8 @@ export default function SettingsGeneralPage() {
   const [savingOrg, setSavingOrg] = useState(false)
   const [savedOrg, setSavedOrg] = useState(false)
 
-  // Auth user
-  const [userEmail, setUserEmail] = useState('')
+  // Auth user email (affiché en lecture seule)
+  const [userEmail, setUserEmail] = useState('') // eslint-disable-line @typescript-eslint/no-unused-vars
 
   // Profil
   const [sector, setSector] = useState('audiovisuel')
