@@ -26,6 +26,8 @@ type Customer = {
   booqableId?: string
 }
 
+type JsonObject = Record<string, unknown>
+
 type BooqableCustomerResponse = {
   customer?: { id: string }
   error?: unknown
@@ -33,23 +35,27 @@ type BooqableCustomerResponse = {
 }
 
 type BooqableOrderResponse = {
+  data?: { id: string }
   order?: { id: string }
   error?: unknown
   errors?: unknown
 }
 
-type BooqableJsonResponse = {
-  data?: { id: string }
-  line?: { id: string }
-  order_line?: { id: string }
-  error?: unknown
-  errors?: unknown
+type ResolvedBooqableItem =
+  | { kind: 'product'; id: string }
+  | { kind: 'bundle'; id: string }
+  | { kind: 'none'; reason: string }
+
+function asObject(value: unknown): JsonObject | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : null
 }
 
-type AttemptResult = {
-  ok: boolean
-  id: string | null
-  error?: string
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
 }
 
 function cleanTitle(value: string | undefined | null, fallback: string) {
@@ -61,7 +67,17 @@ function quantityOf(item: QuoteItem) {
   return Math.max(1, Math.round(Number(item.quantity) || 1))
 }
 
-async function parseResponse(res: Response, context: string): Promise<BooqableJsonResponse> {
+function lineNotes(item: QuoteItem, extra?: string) {
+  return [
+    extra,
+    item.requestedName ? `Produit demandé : ${item.requestedName}` : null,
+    item.name ? `Produit suggéré : ${item.name}` : null,
+    item.productId ? `ID catalogue FilmeAI : ${item.productId}` : null,
+    item.section ? `Section : ${item.section}` : null,
+  ].filter(Boolean).join('\n')
+}
+
+async function readJson(res: Response, context: string): Promise<unknown> {
   const text = await res.text()
   let parsed: unknown = null
 
@@ -78,232 +94,371 @@ async function parseResponse(res: Response, context: string): Promise<BooqableJs
     throw new Error(`${context} failed (${res.status}): ${JSON.stringify(parsed)}`)
   }
 
-  return parsed as BooqableJsonResponse
+  return parsed
 }
 
-async function postJson(url: string, body: unknown, headers: Record<string, string>, context: string): Promise<BooqableJsonResponse> {
+async function fetchJsonOrNull(url: string, headers: Record<string, string>): Promise<unknown | null> {
+  try {
+    const res = await fetch(url, { headers })
+    if (!res.ok) return null
+    const text = await res.text()
+    return text.trim() ? JSON.parse(text) as unknown : null
+  } catch {
+    return null
+  }
+}
+
+async function postJson<T>(url: string, body: unknown, headers: Record<string, string>, context: string): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
   })
 
-  return parseResponse(res, context)
+  return await readJson(res, context) as T
 }
 
-async function tryPostJson(url: string, body: unknown, headers: Record<string, string>, context: string): Promise<AttemptResult> {
-  try {
-    const json = await postJson(url, body, headers, context)
-    if (json.error || json.errors) {
-      return { ok: false, id: null, error: `${context}: ${JSON.stringify(json)}` }
-    }
-    return {
-      ok: true,
-      id: json.data?.id || json.line?.id || json.order_line?.id || null,
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      id: null,
-      error: error instanceof Error ? error.message : String(error),
-    }
+function resourceId(resource: unknown): string | null {
+  const obj = asObject(resource)
+  return obj ? asString(obj.id) : null
+}
+
+function resourceType(resource: unknown): string | null {
+  const obj = asObject(resource)
+  return obj ? asString(obj.type) : null
+}
+
+function relationshipData(resource: unknown, name: string): unknown[] {
+  const obj = asObject(resource)
+  const relationships = obj ? asObject(obj.relationships) : null
+  const relation = relationships ? asObject(relationships[name]) : null
+  const data = relation ? relation.data : null
+  return Array.isArray(data) ? data : data ? [data] : []
+}
+
+function productIdFromPayload(payload: unknown, productGroupId?: string): string | null {
+  const root = asObject(payload)
+  if (!root) return null
+
+  // v1 single product: { product: { id, product_group_id } }
+  const product = asObject(root.product)
+  if (product) return asString(product.id)
+
+  // v1 products list: { products: [...] }
+  const products = asArray(root.products)
+  if (products.length) {
+    const exact = products.find(candidate => {
+      const obj = asObject(candidate)
+      return productGroupId && obj && asString(obj.product_group_id) === productGroupId
+    })
+    return resourceId(exact || products[0])
   }
+
+  // JSON:API direct data
+  const data = root.data
+  const dataArray = Array.isArray(data) ? data : data ? [data] : []
+
+  const directProduct = dataArray.find(resource => {
+    const type = resourceType(resource)
+    return type === 'products' || type === 'product'
+  })
+  if (directProduct) return resourceId(directProduct)
+
+  // JSON:API product group relationships: data.relationships.products.data[0].id
+  for (const resource of dataArray) {
+    const relProducts = relationshipData(resource, 'products')
+    if (relProducts.length) return resourceId(relProducts[0])
+  }
+
+  // JSON:API included products
+  const included = asArray(root.included)
+  const includedProduct = included.find(resource => {
+    const type = resourceType(resource)
+    return type === 'products' || type === 'product'
+  })
+
+  return resourceId(includedProduct)
 }
 
-function lineNotes(item: QuoteItem, extra?: string) {
-  return [
-    extra,
-    item.requestedName ? `Produit demandé : ${item.requestedName}` : null,
-    item.name ? `Produit suggéré : ${item.name}` : null,
-    item.productId ? `ID catalogue FilmeAI : ${item.productId}` : null,
-    item.section ? `Section : ${item.section}` : null,
-  ].filter(Boolean).join('\n')
+function bundleExistsInPayload(payload: unknown): boolean {
+  const root = asObject(payload)
+  if (!root) return false
+  const data = root.data
+  const dataArray = Array.isArray(data) ? data : data ? [data] : []
+  return dataArray.some(resource => {
+    const type = resourceType(resource)
+    return type === 'bundles' || type === 'bundle'
+  })
 }
 
-async function createV4LineWithFallbacks({
+async function resolveBooqableItem(item: QuoteItem): Promise<ResolvedBooqableItem> {
+  const id = item.productId
+  if (!id) return { kind: 'none', reason: 'Pas d’ID catalogue' }
+
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v1 = `https://${subdomain}.booqable.com/api/1`
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+  const v4Headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+
+  // Already a plannable product id?
+  const directV4Product = await fetchJsonOrNull(`${v4}/products/${id}`, v4Headers)
+  const directProductId = productIdFromPayload(directV4Product)
+  if (directProductId) return { kind: 'product', id: directProductId }
+
+  const directV1Product = await fetchJsonOrNull(`${v1}/products/${id}?api_key=${key}`, { 'Content-Type': 'application/json' })
+  const directV1ProductId = productIdFromPayload(directV1Product)
+  if (directV1ProductId) return { kind: 'product', id: directV1ProductId }
+
+  // Product group id → first concrete product id. Product groups are good for search,
+  // but Booqable order fulfillment books products.
+  const productGroupV4 = await fetchJsonOrNull(`${v4}/product_groups/${id}?include=products`, v4Headers)
+  const productFromGroup = productIdFromPayload(productGroupV4, id)
+  if (productFromGroup) return { kind: 'product', id: productFromGroup }
+
+  const productsByGroupV4 = await fetchJsonOrNull(`${v4}/products?filter[product_group_id]=${id}&page[size]=25`, v4Headers)
+  const productFromFilterV4 = productIdFromPayload(productsByGroupV4, id)
+  if (productFromFilterV4) return { kind: 'product', id: productFromFilterV4 }
+
+  const productGroupV1 = await fetchJsonOrNull(`${v1}/product_groups/${id}?api_key=${key}`, { 'Content-Type': 'application/json' })
+  const productFromGroupV1 = productIdFromPayload(productGroupV1, id)
+  if (productFromGroupV1) return { kind: 'product', id: productFromGroupV1 }
+
+  const productsByGroupV1 = await fetchJsonOrNull(`${v1}/products?api_key=${key}&product_group_id=${id}&per=25`, { 'Content-Type': 'application/json' })
+  const productFromFilterV1 = productIdFromPayload(productsByGroupV1, id)
+  if (productFromFilterV1) return { kind: 'product', id: productFromFilterV1 }
+
+  const productsByGroupV1Alt = await fetchJsonOrNull(`${v1}/products?api_key=${key}&filter[product_group_id]=${id}&per=25`, { 'Content-Type': 'application/json' })
+  const productFromFilterV1Alt = productIdFromPayload(productsByGroupV1Alt, id)
+  if (productFromFilterV1Alt) return { kind: 'product', id: productFromFilterV1Alt }
+
+  // Bundle id → book_bundle action.
+  const bundleV4 = await fetchJsonOrNull(`${v4}/bundles/${id}`, v4Headers)
+  if (bundleExistsInPayload(bundleV4)) return { kind: 'bundle', id }
+
+  return { kind: 'none', reason: `Impossible de résoudre l’ID Booqable ${id} en product ou bundle` }
+}
+
+async function createBooqableOrder(customerId: string, startsAt: string, stopsAt: string): Promise<string> {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+
+  // Prefer v4 because order_fulfillments is v4 too.
+  try {
+    const orderData = await postJson<BooqableOrderResponse>(
+      `${v4}/orders`,
+      {
+        data: {
+          type: 'orders',
+          attributes: {
+            customer_id: customerId,
+            starts_at: startsAt,
+            stops_at: stopsAt,
+            status: 'draft',
+          },
+        },
+      },
+      { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      'Order creation v4'
+    )
+
+    const orderId = orderData.data?.id || orderData.order?.id
+    if (orderId) return orderId
+  } catch (error) {
+    console.warn('Order creation v4 failed, falling back to v1:', error instanceof Error ? error.message : String(error))
+  }
+
+  const v1 = `https://${subdomain}.booqable.com/api/1`
+  const orderData = await postJson<BooqableOrderResponse>(
+    `${v1}/orders?api_key=${key}`,
+    {
+      order: {
+        customer_id: customerId,
+        starts_at: startsAt,
+        stops_at: stopsAt,
+        status: 'concept',
+      },
+    },
+    { 'Content-Type': 'application/json' },
+    'Order creation v1'
+  )
+
+  const orderId = orderData.order?.id || orderData.data?.id
+  if (!orderId) throw new Error(`Order creation failed: ${JSON.stringify(orderData)}`)
+  return orderId
+}
+
+async function createCustomLine({
   orderId,
   item,
-  position,
-  lineKind,
+  lineType,
 }: {
   orderId: string
   item: QuoteItem
-  position: number
-  lineKind: 'section' | 'charge' | 'product'
+  lineType: 'charge' | 'section'
 }) {
-  const BOOQABLE_V4_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/4`
-  const KEY = process.env.BOOQABLE_API_KEY
-  const title = cleanTitle(
-    item.title || item.name || item.requestedName,
-    lineKind === 'section' ? 'Section' : 'Produit à vérifier'
-  )
-  const quantity = quantityOf(item)
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${KEY}`,
-  }
-
-  const commonAttributes: Record<string, string | number | boolean | null> = {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+  const title = cleanTitle(item.title || item.name || item.requestedName, lineType === 'section' ? 'Section' : 'Produit à vérifier')
+  const attributes: JsonObject = {
+    line_type: lineType,
     title,
     name: title,
-    quantity,
-    position,
-  }
-
-  if (lineKind === 'section') {
-    commonAttributes.line_type = 'section'
-    commonAttributes.quantity = 1
-  } else if (lineKind === 'charge') {
-    commonAttributes.line_type = 'charge'
-    commonAttributes.price_each_in_cents = 0
-    commonAttributes.extra_information = lineNotes(item, 'Ligne custom créée par FilmeAI car la correspondance catalogue est incertaine. À vérifier et chiffrer dans Booqable.')
-  } else {
-    commonAttributes.line_type = 'product'
-    commonAttributes.item_id = item.productId || null
-    commonAttributes.item_type = 'product_groups'
-    commonAttributes.product_group_id = item.productId || null
-    commonAttributes.extra_information = lineNotes(item)
-  }
-
-  const attempts: Array<{ context: string; body: unknown }> = []
-
-  // Shape 1: JSON:API with owner/item relationships.
-  attempts.push({
-    context: `Booqable v4 ${lineKind} line relationships`,
-    body: {
-      data: {
-        type: 'lines',
-        attributes: commonAttributes,
-        relationships: {
-          owner: { data: { type: 'orders', id: orderId } },
-          ...(lineKind === 'product' && item.productId
-            ? { item: { data: { type: 'product_groups', id: item.productId } } }
-            : {}),
-        },
-      },
-    },
-  })
-
-  // Shape 2: flat owner_id / owner_type attributes.
-  attempts.push({
-    context: `Booqable v4 ${lineKind} line flat plural`,
-    body: {
-      data: {
-        type: 'lines',
-        attributes: {
-          ...commonAttributes,
-          owner_id: orderId,
-          owner_type: 'orders',
-        },
-      },
-    },
-  })
-
-  // Shape 3: flat Rails-style casing sometimes used by Booqable internals.
-  attempts.push({
-    context: `Booqable v4 ${lineKind} line flat singular`,
-    body: {
-      data: {
-        type: 'lines',
-        attributes: {
-          ...commonAttributes,
-          owner_id: orderId,
-          owner_type: 'Order',
-          ...(lineKind === 'product' && item.productId
-            ? { item_type: 'ProductGroup', product_group_id: item.productId }
-            : {}),
-        },
-      },
-    },
-  })
-
-  const errors: string[] = []
-  for (const attempt of attempts) {
-    const result = await tryPostJson(`${BOOQABLE_V4_BASE}/lines`, attempt.body, headers, attempt.context)
-    if (result.ok) return result.id
-    if (result.error) errors.push(result.error)
-  }
-
-  throw new Error(errors.join(' | '))
-}
-
-async function createV1ProductLineFallbacks({
-  orderId,
-  item,
-  position,
-}: {
-  orderId: string
-  item: QuoteItem
-  position: number
-}) {
-  const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
-  const KEY = process.env.BOOQABLE_API_KEY
-  const headers = { 'Content-Type': 'application/json' }
-  const body = {
-    line: {
-      order_id: orderId,
-      item_id: item.productId,
-      product_group_id: item.productId,
-      quantity: quantityOf(item),
-      position,
-    },
-  }
-  const orderLineBody = {
-    order_line: {
-      order_id: orderId,
-      item_id: item.productId,
-      product_group_id: item.productId,
-      quantity: quantityOf(item),
-      position,
-    },
+    quantity: lineType === 'section' ? 1 : quantityOf(item),
+    ...(lineType === 'charge' ? {
+      price_each_in_cents: 0,
+      extra_information: lineNotes(item, 'Ligne custom créée par FilmeAI car la correspondance catalogue est incertaine. À vérifier et chiffrer dans Booqable.'),
+    } : {}),
   }
 
   const attempts = [
-    { url: `${BOOQABLE_BASE}/lines?api_key=${KEY}`, body, context: 'Booqable v1 /lines' },
-    { url: `${BOOQABLE_BASE}/orders/${orderId}/lines?api_key=${KEY}`, body, context: 'Booqable v1 /orders/:id/lines' },
-    { url: `${BOOQABLE_BASE}/order_lines?api_key=${KEY}`, body: orderLineBody, context: 'Booqable v1 /order_lines' },
+    {
+      label: `Custom ${lineType} line relationships`,
+      body: {
+        data: {
+          type: 'lines',
+          attributes,
+          relationships: {
+            owner: { data: { type: 'orders', id: orderId } },
+          },
+        },
+      },
+    },
+    {
+      label: `Custom ${lineType} line owner_type orders`,
+      body: {
+        data: {
+          type: 'lines',
+          attributes: {
+            ...attributes,
+            owner_id: orderId,
+            owner_type: 'orders',
+          },
+        },
+      },
+    },
+    {
+      label: `Custom ${lineType} line owner_type Order`,
+      body: {
+        data: {
+          type: 'lines',
+          attributes: {
+            ...attributes,
+            owner_id: orderId,
+            owner_type: 'Order',
+          },
+        },
+      },
+    },
   ]
 
   const errors: string[] = []
   for (const attempt of attempts) {
-    const result = await tryPostJson(attempt.url, attempt.body, headers, attempt.context)
-    if (result.ok) return result.id
-    if (result.error) errors.push(result.error)
+    try {
+      await postJson(
+        `${v4}/lines`,
+        attempt.body,
+        { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        attempt.label
+      )
+      return
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error))
+    }
   }
+
   throw new Error(errors.join(' | '))
+}
+
+async function bookResolvedItem({
+  orderId,
+  item,
+  resolved,
+}: {
+  orderId: string
+  item: QuoteItem
+  resolved: ResolvedBooqableItem
+}) {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+
+  if (resolved.kind === 'product') {
+    await postJson(
+      `${v4}/order_fulfillments`,
+      {
+        data: {
+          type: 'order_fulfillments',
+          attributes: {
+            order_id: orderId,
+            confirm_shortage: true,
+            actions: [
+              {
+                action: 'book_product',
+                mode: 'create_new',
+                product_id: resolved.id,
+                quantity: quantityOf(item),
+              },
+            ],
+          },
+        },
+      },
+      { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      `Book product ${item.name || item.requestedName || item.productId}`
+    )
+    return
+  }
+
+  if (resolved.kind === 'bundle') {
+    await postJson(
+      `${v4}/order_fulfillments`,
+      {
+        data: {
+          type: 'order_fulfillments',
+          attributes: {
+            order_id: orderId,
+            confirm_shortage: true,
+            actions: [
+              {
+                action: 'book_bundle',
+                mode: 'create_new',
+                bundle_id: resolved.id,
+                quantity: quantityOf(item),
+                product_variations: [],
+              },
+            ],
+          },
+        },
+      },
+      { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      `Book bundle ${item.name || item.requestedName || item.productId}`
+    )
+  }
 }
 
 async function createProductLineOrCustomFallback({
   orderId,
   item,
-  position,
 }: {
   orderId: string
   item: QuoteItem
-  position: number
 }) {
-  const errors: string[] = []
+  const resolved = await resolveBooqableItem(item)
 
-  // First try the modern v4 lines endpoint with product_group relationship.
-  try {
-    return await createV4LineWithFallbacks({ orderId, item, position, lineKind: 'product' })
-  } catch (error) {
-    errors.push(error instanceof Error ? error.message : String(error))
+  if (resolved.kind !== 'none') {
+    try {
+      await bookResolvedItem({ orderId, item, resolved })
+      return
+    } catch (error) {
+      console.warn('Booqable book item failed, creating custom charge:', error instanceof Error ? error.message : String(error))
+    }
   }
 
-  // Then try a few v1 line endpoints. Some Booqable accounts still expose these.
-  try {
-    return await createV1ProductLineFallbacks({ orderId, item, position })
-  } catch (error) {
-    errors.push(error instanceof Error ? error.message : String(error))
-  }
-
-  // Final safety: do not block the quote. Create a custom charge line with the product name.
-  // This preserves the quote order and lets you correct/chiffrer inside Booqable.
-  return createV4LineWithFallbacks({
+  await createCustomLine({
     orderId,
-    position,
-    lineKind: 'charge',
+    lineType: 'charge',
     item: {
       ...item,
       title: cleanTitle(item.name || item.requestedName, 'Produit à vérifier'),
@@ -312,9 +467,6 @@ async function createProductLineOrCustomFallback({
       type: 'custom_charge',
       section: item.section,
     },
-  }).catch(error => {
-    const customError = error instanceof Error ? error.message : String(error)
-    throw new Error(`Impossible de créer une ligne produit ni une ligne custom. Product attempts: ${errors.join(' || ')}. Custom fallback: ${customError}`)
   })
 }
 
@@ -327,20 +479,21 @@ export async function POST(req: NextRequest) {
       stopsAt: string
     }
 
-    const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
-    const KEY = process.env.BOOQABLE_API_KEY
+    const subdomain = process.env.BOOQABLE_SUBDOMAIN
+    const key = process.env.BOOQABLE_API_KEY
+    const v1 = `https://${subdomain}.booqable.com/api/1`
 
-    if (!KEY) throw new Error('BOOQABLE_API_KEY is missing')
+    if (!key) throw new Error('BOOQABLE_API_KEY is missing')
     if (!customer?.name?.trim()) throw new Error('Customer name is required')
 
-    // 1. Use existing customer or create new one
+    // 1. Use existing customer or create new one.
     let customerId: string
 
     if (customer.booqableId) {
       customerId = customer.booqableId
     } else {
-      const custData = await postJson(
-        `${BOOQABLE_BASE}/customers?api_key=${KEY}`,
+      const custData = await postJson<BooqableCustomerResponse>(
+        `${v1}/customers?api_key=${key}`,
         {
           customer: {
             name: customer.name,
@@ -350,49 +503,33 @@ export async function POST(req: NextRequest) {
         },
         { 'Content-Type': 'application/json' },
         'Customer creation'
-      ) as BooqableCustomerResponse
+      )
 
       customerId = custData.customer?.id ?? ''
       if (!customerId) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
     }
 
-    // 2. Create order
-    const orderData = await postJson(
-      `${BOOQABLE_BASE}/orders?api_key=${KEY}`,
-      {
-        order: {
-          customer_id: customerId,
-          starts_at: startsAt,
-          stops_at: stopsAt,
-          status: 'concept',
-        },
-      },
-      { 'Content-Type': 'application/json' },
-      'Order creation'
-    ) as BooqableOrderResponse
-
-    const orderId = orderData.order?.id
-    if (!orderId) throw new Error(`Order creation failed: ${JSON.stringify(orderData)}`)
+    // 2. Create order.
+    const orderId = await createBooqableOrder(customerId, startsAt, stopsAt)
 
     // 3. Add lines in the exact order from the quote builder.
-    let position = 1
+    // Real products are created via /api/4/order_fulfillments.
+    // Custom charges/sections are only used when we cannot resolve or book the item.
     for (const item of items || []) {
       const type = item.type || (item.productId ? 'product' : 'custom_charge')
 
       if (type === 'section') {
-        await createV4LineWithFallbacks({ orderId, item, position, lineKind: 'section' })
+        await createCustomLine({ orderId, item, lineType: 'section' })
       } else if (type === 'product' && item.productId) {
-        await createProductLineOrCustomFallback({ orderId, item, position })
+        await createProductLineOrCustomFallback({ orderId, item })
       } else {
-        await createV4LineWithFallbacks({ orderId, item, position, lineKind: 'charge' })
+        await createCustomLine({ orderId, item, lineType: 'charge' })
       }
-
-      position += 1
     }
 
     const orderUrl = `https://filme.booqable.com/orders/${orderId}`
 
-    // 4. Save conversation/request to Supabase
+    // 4. Save conversation/request to Supabase.
     const supabase = getSupabaseAdmin()
     const { data: conv } = await supabase
       .from('conversations')
