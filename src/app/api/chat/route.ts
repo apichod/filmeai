@@ -342,61 +342,24 @@ async function parseQuoteList(req: NextRequest, message: string): Promise<QuoteP
   return data.items || []
 }
 
-function productLabel(product: Product): string {
-  return product.is_bundle ? `${product.name} [PACK]` : product.name
-}
-
 function buildQuoteWorkflowResponse(items: QuoteParseItem[]): string {
   if (items.length === 0) {
     return "Je n’ai pas réussi à extraire clairement les lignes matériel. Pouvez-vous me renvoyer la liste avec une ligne par article et les quantités ?"
   }
 
-  const autoMatched = items.filter(item => item.matched && item.confidence >= 0.8)
-  const toValidate = items.filter(item => !item.matched || item.confidence < 0.8)
-  const lines: string[] = []
+  const strongCount = items.filter(item => item.matched && item.confidence >= 0.8).length
+  const uncertainCount = items.length - strongCount
+  const parts = [
+    `J’ai vérifié ${items.length} ligne${items.length > 1 ? 's' : ''} dans le catalogue, en gardant exactement l’ordre de votre demande.`,
+    `${strongCount} correspondance${strongCount > 1 ? 's' : ''} forte${strongCount > 1 ? 's' : ''} ajoutée${strongCount > 1 ? 's' : ''} au brouillon.`,
+  ]
 
-  lines.push("Voici la première vérification catalogue. J’ai gardé l’ordre de votre liste.")
-
-  if (autoMatched.length > 0) {
-    lines.push('', '**Correspondances fortes — ajoutées au brouillon**')
-    let currentSection: string | null = null
-    for (const item of autoMatched) {
-      if (item.section && item.section !== currentSection) {
-        currentSection = item.section
-        lines.push('', `**${item.section.toUpperCase()}**`)
-      }
-      const product = item.matched!
-      const confidence = Math.round((item.confidence || 0) * 100)
-      lines.push(`✓ ${item.quantity}× ${productLabel(product)} — ${formatPrice(product.price_per_day)} (${confidence}% match)`)
-      if (product.is_bundle && product.bundle_items?.length) {
-        lines.push(`  Contenu pack : ${product.bundle_items.slice(0, 6).join(', ')}${product.bundle_items.length > 6 ? '…' : ''}`)
-      }
-    }
+  if (uncertainCount > 0) {
+    parts.push(`${uncertainCount} ligne${uncertainCount > 1 ? 's' : ''} à choisir ou à laisser à Filme.`)
   }
 
-  if (toValidate.length > 0) {
-    lines.push('', '**À choisir ou à laisser à Filme**')
-    for (const item of toValidate.slice(0, 8)) {
-      const confidence = Math.round((item.confidence || 0) * 100)
-      lines.push(`! ${item.quantity}× « ${item.requestedName} » — match ${confidence}%`)
-      const choices = [
-        ...(item.matched ? [item.matched] : []),
-        ...(item.alternatives || []),
-      ].filter((product, index, arr) => arr.findIndex(p => p.id === product.id) === index).slice(0, 3)
-
-      for (const choice of choices) {
-        lines.push(`  • ${productLabel(choice)} — ${formatPrice(choice.price_per_day)}`)
-      }
-      lines.push('  • Laisser Filme le trouver pour moi')
-    }
-
-    if (toValidate.length > 8) {
-      lines.push(`  • ${toValidate.length - 8} autre(s) ligne(s) à vérifier.`)
-    }
-  }
-
-  lines.push('', 'Vous pouvez supprimer les correspondances fortes ou choisir une option pour les lignes incertaines avant de confirmer le devis.')
-  return lines.join('\n')
+  parts.push('Vous pouvez supprimer chaque bloc avec ×, ou choisir une option quand le match est incertain.')
+  return parts.join('\n')
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────

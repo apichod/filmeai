@@ -99,9 +99,7 @@
     .filmeai-selected-name { font-size:13px; font-weight:700; color:#111827; line-height:1.35; }
     .filmeai-pack-label { display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px; background:#111827; color:#fff; font-size:9px; font-weight:700; letter-spacing:.08em; vertical-align:middle; }
     .filmeai-bundle-items { margin-top:4px; color:#6b7280; font-size:11px; line-height:1.35; }
-    .filmeai-match-meter { margin-top:8px; height:6px; background:#e5e7eb; border-radius:999px; overflow:hidden; }
-    .filmeai-match-fill { height:100%; border-radius:999px; }
-    .filmeai-match-percent { margin-top:4px; font-size:11px; font-weight:700; }
+    .filmeai-match-dot { width:10px; height:10px; border-radius:999px; margin-top:7px; box-shadow:0 0 0 3px rgba(0,0,0,.04); flex-shrink:0; }
     .filmeai-remove-line { width:24px; height:24px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; color:#9ca3af; cursor:pointer; flex-shrink:0; }
     .filmeai-remove-line:hover { color:#111; border-color:#111; }
     .filmeai-options { display:flex; flex-direction:column; gap:6px; margin-top:9px; }
@@ -311,8 +309,11 @@
     (item.alternatives || []).forEach(function(product) { choices.push(product); });
     var seen = {};
     return choices.filter(function(product) {
-      if (!product || seen[product.id]) return false;
-      seen[product.id] = true;
+      var key = product && (product.id || (product.name || '').toLowerCase());
+      var nameKey = product && (product.name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!product || seen[key] || seen['name:' + nameKey]) return false;
+      seen[key] = true;
+      seen['name:' + nameKey] = true;
       return true;
     }).slice(0, 3);
   }
@@ -367,9 +368,7 @@
         html += '<div class="filmeai-selected-name">Correspondance à choisir</div>';
       }
 
-      html += '<div class="filmeai-match-meter"><div class="filmeai-match-fill" style="width:' + percent + '%;background:' + color + '"></div></div>';
-      html += '<div class="filmeai-match-percent" style="color:' + color + '">' + percent + '% match</div>';
-      html += '</div><button class="filmeai-remove-line" data-action="remove" data-index="' + index + '" title="Supprimer">×</button></div>';
+      html += '</div><div class="filmeai-match-dot" style="background:' + color + '" title="Match ' + percent + '%"></div><button class="filmeai-remove-line" data-action="remove" data-index="' + index + '" title="Supprimer">×</button></div>';
 
       if (!strong) {
         html += '<div class="filmeai-options">';

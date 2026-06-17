@@ -400,7 +400,9 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                   {msg.quoteMatches.map((item, idx) => {
                     const strong = Boolean(item.matched && item.confidence >= 0.8)
                     const choices = [item.matched, ...(item.alternatives || [])].filter(Boolean) as Product[]
-                    const uniqueChoices = choices.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i).slice(0, 3)
+                    const uniqueChoices = choices
+                      .filter((p, i, arr) => arr.findIndex(x => x.id === p.id || x.name.trim().toLowerCase() === p.name.trim().toLowerCase()) === i)
+                      .slice(0, 3)
                     const pct = matchPercent(item.confidence)
                     const bar = matchColor(item.confidence)
                     return (
@@ -424,10 +426,9 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                             <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
                           )}
                         </div>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200">
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: bar }} />
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ backgroundColor: bar }} title={`Match ${pct}%`} />
                         </div>
-                        <p className="mt-1 text-[11px] font-semibold" style={{ color: bar }}>{pct}% match</p>
                         {!strong && (
                           <div className="mt-2 space-y-1">
                             {uniqueChoices.map(choice => (

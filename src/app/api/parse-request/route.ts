@@ -561,11 +561,22 @@ export async function POST(req: NextRequest) {
     const hydrated = await hydrateProductMetadata(productsToHydrate)
     const hydratedById = new Map(hydrated.map(product => [product.id, product]))
 
-    const items = rawItems.map(item => ({
-      ...item,
-      matched: item.matched ? hydratedById.get(item.matched.id) || item.matched : null,
-      alternatives: item.alternatives.map(product => hydratedById.get(product.id) || product),
-    }))
+    const items = rawItems.map(item => {
+      const alternatives = item.alternatives
+        .map(product => hydratedById.get(product.id) || product)
+        .filter((product, index, arr) =>
+          arr.findIndex(candidate =>
+            candidate.id === product.id ||
+            candidate.name.trim().toLowerCase() === product.name.trim().toLowerCase()
+          ) === index
+        )
+
+      return {
+        ...item,
+        matched: item.matched ? hydratedById.get(item.matched.id) || item.matched : null,
+        alternatives,
+      }
+    })
 
     return NextResponse.json({ items })
   } catch (err) {
