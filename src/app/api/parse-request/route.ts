@@ -25,6 +25,7 @@ type ExtractedItem = {
   raw: string
   query: string
   quantity: number
+  section: string | null
 }
 
 type CandidateSet = {
@@ -248,6 +249,9 @@ RÈGLES ABSOLUES :
 3. Chaque modèle/référence différente = un item séparé.
 4. Ignore les dates et infos administratives (Essai, Rendu, →, etc.).
 5. Si un texte contient un accessoire entre parenthèses, extrais aussi l'accessoire s'il est louable séparément.
+6. Respecte strictement l'ordre d'apparition : ne trie pas, ne regroupe pas, ne déplace jamais.
+7. Quand une catégorie/titre est indiquée avec ":" (exemples : "Caméra :", "Objectifs :", "Moniteur :", "Data :", "Énergie :", "Machinerie :"), mets ce titre dans le champ "section" de tous les items qui suivent jusqu'à la prochaine catégorie.
+8. Pour "Objectifs : 3x 70-200 1x 24-70 1x 16-35", retourne trois items dans cet ordre, tous avec section="Objectifs".
 
 GLOSSAIRE :
 - fx6 → Sony FX6 caméra cinéma
@@ -276,7 +280,7 @@ GLOSSAIRE :
 - touret bnc 50m → touret câble BNC SDI 50m
 
 Réponse JSON uniquement :
-{ "items": [{ "raw": "fx6", "query": "Sony FX6 caméra cinéma", "quantity": 5 }] }
+{ "items": [{ "section": "Caméra", "raw": "fx6", "query": "Sony FX6 caméra cinéma", "quantity": 5 }] }
 Si aucun produit : { "items": [] }`
 
 async function extractItems(message: string): Promise<ExtractedItem[]> {
@@ -304,6 +308,9 @@ async function extractItems(message: string): Promise<ExtractedItem[]> {
       raw: stripQuantityPrefix(String(item.raw || item.query || '')).trim(),
       query: stripQuantityPrefix(String(item.query || item.raw || '')).trim(),
       quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
+      section: typeof item.section === 'string' && item.section.trim()
+        ? item.section.trim()
+        : null,
     }))
     .filter(item => item.raw.length > 0 && item.query.length > 0)
 }
@@ -380,6 +387,7 @@ export async function POST(req: NextRequest) {
       return {
         requestedName: set.item.raw,
         searchQuery: set.item.query,
+        section: set.item.section,
         quantity: set.item.quantity,
         matched: selected,
         confidence: selection?.confidence || 0,

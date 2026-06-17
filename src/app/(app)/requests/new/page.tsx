@@ -21,9 +21,24 @@ type Product = {
 
 type QuoteItem = {
   uid: string
-  product: Product
+  type: 'product' | 'custom_charge' | 'section'
+  product?: Product
   quantity: number
   requestedName: string
+  title?: string
+  section?: string | null
+  confidence?: number
+  reason?: string | null
+}
+
+type ParsedItem = {
+  requestedName: string
+  searchQuery?: string
+  section?: string | null
+  matched: Product | null
+  quantity?: number
+  confidence?: number
+  reason?: string | null
 }
 
 type Step = 'client' | 'quote'
@@ -184,7 +199,7 @@ export default function NewRequestPage() {
   // ── Chat / parse
   const [message, setMessage] = useState('')
   const [parsing, setParsing] = useState(false)
-  const [chatHistory, setChatHistory] = useState<{ text: string; found: number }[]>([])
+  const [chatHistory, setChatHistory] = useState<{ text: string; added: number; custom: number }[]>([])
 
   // ── Resizable assistant column
   const [assistantWidth, setAssistantWidth] = useState(() => {
@@ -280,22 +295,65 @@ export default function NewRequestPage() {
         body: JSON.stringify({ message: text }),
       })
       const data = await res.json() as {
-        items?: { requestedName: string; matched: Product | null; quantity?: number }[]
+        items?: ParsedItem[]
         error?: string
       }
 
-      const found = (data.items || []).filter(i => i.matched)
-      const newItems: QuoteItem[] = found.map(i => ({
-        uid: crypto.randomUUID(),
-        product: i.matched!,
-        quantity: Math.max(1, i.quantity || 1),
-        requestedName: i.requestedName,
-      }))
+      const parsedItems = data.items || []
+      let added = 0
+      let custom = 0
 
-      setItems(prev => [...prev, ...newItems])
-      setChatHistory(prev => [...prev, { text, found: found.length }])
+      setItems(prev => {
+        const next = [...prev]
+        let currentSection = [...next].reverse().find(item => item.type === 'section')?.title || null
+
+        for (const parsed of parsedItems) {
+          const section = parsed.section?.trim() || null
+          if (section && section !== currentSection) {
+            next.push({
+              uid: crypto.randomUUID(),
+              type: 'section',
+              title: section,
+              quantity: 1,
+              requestedName: section,
+              section,
+            })
+            currentSection = section
+          }
+
+          if (parsed.matched) {
+            next.push({
+              uid: crypto.randomUUID(),
+              type: 'product',
+              product: parsed.matched,
+              quantity: Math.max(1, parsed.quantity || 1),
+              requestedName: parsed.requestedName,
+              section,
+              confidence: parsed.confidence,
+              reason: parsed.reason,
+            })
+          } else {
+            custom += 1
+            next.push({
+              uid: crypto.randomUUID(),
+              type: 'custom_charge',
+              title: parsed.requestedName || parsed.searchQuery || 'Produit à vérifier',
+              quantity: Math.max(1, parsed.quantity || 1),
+              requestedName: parsed.requestedName || parsed.searchQuery || 'Produit à vérifier',
+              section,
+              confidence: parsed.confidence || 0,
+              reason: parsed.reason || 'Correspondance catalogue incertaine',
+            })
+          }
+          added += 1
+        }
+
+        return next
+      })
+
+      setChatHistory(prev => [...prev, { text, added, custom }])
     } catch {
-      setChatHistory(prev => [...prev, { text, found: 0 }])
+      setChatHistory(prev => [...prev, { text, added: 0, custom: 0 }])
     } finally {
       setParsing(false)
     }
@@ -312,12 +370,26 @@ export default function NewRequestPage() {
     if (editingUid === uid) setEditingUid(null)
   }
   function replaceProduct(uid: string, product: Product) {
-    setItems(prev => prev.map(item => item.uid === uid ? { ...item, product } : item))
+    setItems(prev => prev.map(item => item.uid === uid ? {
+      ...item,
+      type: 'product',
+      product,
+      title: undefined,
+      requestedName: item.requestedName || product.name,
+    } : item))
     setEditingUid(null)
+  }
+  function renameCustomLine(uid: string, title: string) {
+    setItems(prev => prev.map(item => item.uid === uid ? {
+      ...item,
+      title,
+      requestedName: title,
+    } : item))
   }
   function addProduct(product: Product) {
     setItems(prev => [...prev, {
       uid: crypto.randomUUID(),
+      type: 'product',
       product,
       quantity: 1,
       requestedName: product.name,
@@ -344,7 +416,9 @@ export default function NewRequestPage() {
 
   // ── Submit quote
   async function handleSubmit() {
-    if (items.length === 0 || submitting) return
+    const quoteLines = items.filter(item => item.type !== 'section' || item.title?.trim())
+    const billableLines = quoteLines.filter(item => item.type !== 'section')
+    if (billableLines.length === 0 || submitting) return
     setSubmitting(true)
     setSubmitError(null)
     try {
@@ -358,7 +432,16 @@ export default function NewRequestPage() {
             phone: clientPhone || undefined,
             booqableId: clientBooqableId || undefined,
           },
-          items: items.map(i => ({ productId: i.product.id, quantity: i.quantity })),
+          items: quoteLines.map((i, index) => ({
+            type: i.type,
+            productId: i.type === 'product' ? i.product?.id : undefined,
+            quantity: i.type === 'section' ? 1 : i.quantity,
+            name: i.type === 'custom_charge' ? i.title || i.requestedName : undefined,
+            title: i.type === 'section' ? i.title : undefined,
+            requestedName: i.requestedName,
+            section: i.section || null,
+            position: index + 1,
+          })),
           startsAt: new Date(startsAt + 'T09:00:00').toISOString(),
           stopsAt: new Date(stopsAt + 'T18:00:00').toISOString(),
         }),
@@ -375,8 +458,9 @@ export default function NewRequestPage() {
 
   // ── Total
   const totalPerDay = items.reduce((acc, item) =>
-    acc + (item.product.price_per_day || 0) * item.quantity, 0
+    acc + (item.type === 'product' ? (item.product?.price_per_day || 0) * item.quantity : 0), 0
   )
+  const billableItemCount = items.filter(item => item.type !== 'section').length
   const days = daysBetween(startsAt, stopsAt)
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -562,9 +646,18 @@ export default function NewRequestPage() {
                 {/* Bot response */}
                 <div className="flex justify-start">
                   <div className="max-w-[80%] bg-gray-100 text-gray-800 rounded-2xl rounded-bl-sm px-3 py-2 text-sm">
-                    {entry.found === 0
+                    {entry.added === 0
                       ? "Aucun produit trouvé dans le catalogue. Précisez le nom du matériel."
-                      : `✓ ${entry.found} produit${entry.found > 1 ? 's' : ''} ajouté${entry.found > 1 ? 's' : ''} au devis.`
+                      : (
+                        <>
+                          ✓ {entry.added} ligne{entry.added > 1 ? 's' : ''} ajoutée{entry.added > 1 ? 's' : ''} au devis.
+                          {entry.custom > 0 && (
+                            <span className="block text-amber-700 mt-1">
+                              {entry.custom} ligne{entry.custom > 1 ? 's' : ''} à vérifier créée{entry.custom > 1 ? 's' : ''} en charge custom.
+                            </span>
+                          )}
+                        </>
+                      )
                     }
                   </div>
                 </div>
@@ -671,48 +764,87 @@ export default function NewRequestPage() {
                       onDragEnd={onDragEnd}
                       onDragOver={e => e.preventDefault()}
                     >
-                      {editingUid === item.uid ? (
+                      {item.type === 'section' ? (
+                        <div className="flex items-center gap-2 py-2 group cursor-grab active:cursor-grabbing">
+                          <span className="text-gray-300 group-hover:text-gray-400 transition-colors select-none flex-shrink-0">
+                            <IconDrag />
+                          </span>
+                          <div className="flex-1 border-t border-gray-200" />
+                          <span className="text-[11px] uppercase tracking-[0.18em] font-semibold text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-3 py-1">
+                            {item.title}
+                          </span>
+                          <div className="flex-1 border-t border-gray-200" />
+                          <button
+                            onClick={() => removeItem(item.uid)}
+                            className="text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
+                            title="Supprimer la section"
+                          >
+                            <IconTrash />
+                          </button>
+                        </div>
+                      ) : editingUid === item.uid ? (
                         /* ── Edit mode ── */
-                        <div className="border border-gray-300 rounded-xl p-3 bg-gray-50">
-                          <p className="text-xs text-gray-500 mb-2">Remplacer par :</p>
-                          <ProductSearchDropdown
-                            placeholder="Rechercher un produit…"
-                            onSelect={p => replaceProduct(item.uid, p)}
-                            autoFocus
-                          />
+                        <div className="border border-gray-300 rounded-xl p-3 bg-gray-50 space-y-3">
+                          {item.type === 'custom_charge' && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Nom de la ligne custom :</p>
+                              <input
+                                value={item.title || item.requestedName}
+                                onChange={e => renameCustomLine(item.uid, e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-xs text-gray-500 mb-2">
+                              {item.type === 'custom_charge' ? 'Ou remplacer par un produit catalogue :' : 'Remplacer par :'}
+                            </p>
+                            <ProductSearchDropdown
+                              placeholder="Rechercher un produit…"
+                              onSelect={p => replaceProduct(item.uid, p)}
+                              autoFocus
+                            />
+                          </div>
                           <button
                             onClick={() => setEditingUid(null)}
-                            className="text-xs text-gray-400 hover:text-gray-600 mt-2"
+                            className="text-xs text-gray-400 hover:text-gray-600"
                           >
-                            Annuler
+                            Fermer
                           </button>
                         </div>
                       ) : (
                         /* ── Normal mode ── */
-                        <div className="flex items-center gap-2 border border-gray-100 rounded-xl px-3 py-2.5 hover:border-gray-200 group transition-colors cursor-grab active:cursor-grabbing active:shadow-md active:border-gray-300">
+                        <div className={`flex items-center gap-2 border rounded-xl px-3 py-2.5 group transition-colors cursor-grab active:cursor-grabbing active:shadow-md ${item.type === 'custom_charge' ? 'border-amber-200 bg-amber-50/60 hover:border-amber-300' : 'border-gray-100 hover:border-gray-200 active:border-gray-300'}`}>
                           {/* Drag handle */}
                           <span className="text-gray-300 group-hover:text-gray-400 transition-colors select-none flex-shrink-0">
                             <IconDrag />
                           </span>
                           {/* Product info */}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 leading-snug">{item.product.name}</p>
-                            <p className="text-xs text-gray-400">
-                              {item.product.price_per_day != null ? `${item.product.price_per_day}€/jour` : 'Prix sur demande'}
+                            <p className="text-sm font-medium text-gray-900 leading-snug">
+                              {item.type === 'product' ? item.product?.name : item.title || item.requestedName}
                             </p>
+                            <p className="text-xs text-gray-400">
+                              {item.type === 'product'
+                                ? (item.product?.price_per_day != null ? `${item.product.price_per_day}€/jour` : 'Prix sur demande')
+                                : 'Ligne custom Booqable — à vérifier'}
+                            </p>
+                            {item.type === 'custom_charge' && item.reason && (
+                              <p className="text-[11px] text-amber-700 mt-0.5 line-clamp-2">{item.reason}</p>
+                            )}
                           </div>
                           {/* Quantity */}
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button
                               onClick={() => setQuantity(item.uid, -1)}
-                              className="w-5 h-5 flex items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-medium transition-colors"
+                              className="w-5 h-5 flex items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-medium transition-colors bg-white"
                             >
                               −
                             </button>
                             <span className="text-sm font-medium w-4 text-center tabular-nums">{item.quantity}</span>
                             <button
                               onClick={() => setQuantity(item.uid, +1)}
-                              className="w-5 h-5 flex items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-medium transition-colors"
+                              className="w-5 h-5 flex items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-medium transition-colors bg-white"
                             >
                               +
                             </button>
@@ -721,7 +853,7 @@ export default function NewRequestPage() {
                           <button
                             onClick={() => setEditingUid(item.uid)}
                             className="text-gray-300 hover:text-gray-600 transition-colors flex-shrink-0"
-                            title="Modifier le produit"
+                            title="Modifier la ligne"
                           >
                             <IconEdit />
                           </button>
@@ -742,7 +874,7 @@ export default function NewRequestPage() {
             </div>
 
             {/* Total */}
-            {items.length > 0 && (
+            {billableItemCount > 0 && (
               <div className="border-t border-gray-100 pt-3 space-y-1">
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>{days} jour{days > 1 ? 's' : ''} × {totalPerDay}€/jour</span>
@@ -783,7 +915,7 @@ export default function NewRequestPage() {
                 )}
                 <button
                   onClick={handleSubmit}
-                  disabled={items.length === 0 || submitting}
+                  disabled={billableItemCount === 0 || submitting}
                   className="w-full bg-gray-900 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
                 >
                   {submitting ? (

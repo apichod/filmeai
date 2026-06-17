@@ -9,15 +9,139 @@ function getSupabaseAdmin() {
 }
 
 type QuoteItem = {
-  productId: string
-  quantity: number
+  type?: 'product' | 'custom_charge' | 'section'
+  productId?: string
+  quantity?: number
+  name?: string
+  title?: string
+  requestedName?: string
+  section?: string | null
+  position?: number
 }
 
 type Customer = {
   name: string
   email?: string
   phone?: string
-  booqableId?: string // existing Booqable customer ID
+  booqableId?: string
+}
+
+type BooqableCustomerResponse = {
+  customer?: { id: string }
+  error?: unknown
+}
+
+type BooqableOrderResponse = {
+  order?: { id: string }
+  error?: unknown
+}
+
+type BooqableLineResponse = {
+  data?: { id: string }
+  error?: unknown
+  errors?: unknown
+}
+
+function cleanTitle(value: string | undefined | null, fallback: string) {
+  const title = String(value || '').trim()
+  return title.length > 0 ? title : fallback
+}
+
+function quantityOf(item: QuoteItem) {
+  return Math.max(1, Math.round(Number(item.quantity) || 1))
+}
+
+async function createV4CustomLine({
+  orderId,
+  item,
+  position,
+  lineType,
+}: {
+  orderId: string
+  item: QuoteItem
+  position: number
+  lineType: 'charge' | 'section'
+}) {
+  const BOOQABLE_V4_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/4`
+  const KEY = process.env.BOOQABLE_API_KEY
+  const title = cleanTitle(item.title || item.name || item.requestedName, lineType === 'section' ? 'Section' : 'Produit à vérifier')
+
+  const attributes: Record<string, string | number | boolean | null> = {
+    owner_id: orderId,
+    owner_type: 'orders',
+    line_type: lineType,
+    title,
+    position,
+  }
+
+  if (lineType === 'charge') {
+    attributes.quantity = quantityOf(item)
+    attributes.price_each_in_cents = 0
+    attributes.extra_information = [
+      'Ligne custom créée par FilmeAI car la correspondance catalogue est incertaine.',
+      item.requestedName ? `Produit demandé : ${item.requestedName}` : null,
+      item.section ? `Section : ${item.section}` : null,
+      'À vérifier et chiffrer dans Booqable.',
+    ].filter(Boolean).join('\n')
+  }
+
+  const res = await fetch(`${BOOQABLE_V4_BASE}/lines`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${KEY}`,
+    },
+    body: JSON.stringify({
+      data: {
+        type: 'lines',
+        attributes,
+      },
+    }),
+  })
+
+  const data = await res.json() as BooqableLineResponse
+  if (!res.ok || data.error || data.errors) {
+    throw new Error(`Custom ${lineType} line failed: ${JSON.stringify(data)}`)
+  }
+
+  return data.data?.id || null
+}
+
+async function createV1ProductLine({
+  orderId,
+  item,
+  position,
+}: {
+  orderId: string
+  item: QuoteItem
+  position: number
+}) {
+  const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
+  const KEY = process.env.BOOQABLE_API_KEY
+
+  if (!item.productId) {
+    throw new Error(`Missing productId for product line: ${JSON.stringify(item)}`)
+  }
+
+  const res = await fetch(`${BOOQABLE_BASE}/order_lines?api_key=${KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      order_line: {
+        order_id: orderId,
+        item_id: item.productId,
+        quantity: quantityOf(item),
+        position,
+      },
+    }),
+  })
+
+  const data = await res.json() as { order_line?: { id: string }; error?: unknown; errors?: unknown }
+  if (!res.ok || data.error || data.errors) {
+    throw new Error(`Product line failed (${item.requestedName || item.productId}): ${JSON.stringify(data)}`)
+  }
+
+  return data.order_line?.id || null
 }
 
 export async function POST(req: NextRequest) {
@@ -32,11 +156,13 @@ export async function POST(req: NextRequest) {
     const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
     const KEY = process.env.BOOQABLE_API_KEY
 
+    if (!KEY) throw new Error('BOOQABLE_API_KEY is missing')
+    if (!customer?.name?.trim()) throw new Error('Customer name is required')
+
     // 1. Use existing customer or create new one
     let customerId: string
 
     if (customer.booqableId) {
-      // Use existing Booqable customer directly
       customerId = customer.booqableId
     } else {
       const custRes = await fetch(`${BOOQABLE_BASE}/customers?api_key=${KEY}`, {
@@ -50,7 +176,7 @@ export async function POST(req: NextRequest) {
           },
         }),
       })
-      const custData = await custRes.json() as { customer?: { id: string } }
+      const custData = await custRes.json() as BooqableCustomerResponse
       customerId = custData.customer?.id ?? ''
       if (!customerId) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
     }
@@ -68,28 +194,31 @@ export async function POST(req: NextRequest) {
         },
       }),
     })
-    const orderData = await orderRes.json() as { order?: { id: string } }
+    const orderData = await orderRes.json() as BooqableOrderResponse
     const orderId = orderData.order?.id
     if (!orderId) throw new Error(`Order creation failed: ${JSON.stringify(orderData)}`)
 
-    // 3. Add products
-    for (const item of items) {
-      await fetch(`${BOOQABLE_BASE}/order_lines?api_key=${KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          order_line: {
-            order_id: orderId,
-            item_id: item.productId,
-            quantity: item.quantity,
-          },
-        }),
-      })
+    // 3. Add lines in the exact order from the quote builder.
+    // Product lines still use the stable v1 order_lines endpoint already used by the app.
+    // Sections + doubtful products use Booqable v4 custom lines (line_type section/charge).
+    let position = 1
+    for (const item of items || []) {
+      const type = item.type || (item.productId ? 'product' : 'custom_charge')
+
+      if (type === 'section') {
+        await createV4CustomLine({ orderId, item, position, lineType: 'section' })
+      } else if (type === 'product' && item.productId) {
+        await createV1ProductLine({ orderId, item, position })
+      } else {
+        await createV4CustomLine({ orderId, item, position, lineType: 'charge' })
+      }
+
+      position += 1
     }
 
     const orderUrl = `https://filme.booqable.com/orders/${orderId}`
 
-    // 4. Save conversation to Supabase
+    // 4. Save conversation/request to Supabase
     const supabase = getSupabaseAdmin()
     const { data: conv } = await supabase
       .from('conversations')
