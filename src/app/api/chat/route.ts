@@ -180,11 +180,6 @@ function isExplicitQuoteConfirmation(text: string): boolean {
   return /\b(je confirme|confirme|confirmation|valider|valide|creer le devis|cree le devis|créer le devis|crée le devis|generer le devis|générer le devis|pousser dans booqable|envoyer le devis)\b/.test(normalized)
 }
 
-function formatPrice(value: number | null): string {
-  if (typeof value !== 'number') return 'prix à confirmer'
-  return `${value.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}€/j`
-}
-
 function compactDescription(value: string | null): string {
   if (!value) return ''
   return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 180)
@@ -342,7 +337,7 @@ async function parseQuoteList(req: NextRequest, message: string): Promise<QuoteP
   return data.items || []
 }
 
-function buildQuoteWorkflowResponse(items: QuoteParseItem[]): string {
+function buildQuoteWorkflowResponse(items: QuoteParseItem[], hasDates: boolean): string {
   if (items.length === 0) {
     return "Je n’ai pas réussi à extraire clairement les lignes matériel. Pouvez-vous me renvoyer la liste avec une ligne par article et les quantités ?"
   }
@@ -359,6 +354,10 @@ function buildQuoteWorkflowResponse(items: QuoteParseItem[]): string {
   }
 
   parts.push('Vous pouvez supprimer chaque bloc avec ×, ou choisir une option quand le match est incertain.')
+  parts.push(hasDates
+    ? 'Une fois la liste validée, je vérifierai les disponibilités et les prix sur vos dates.'
+    : 'Prochaine étape : indiquez vos dates de location pour vérifier disponibilité et prix.'
+  )
   return parts.join('\n')
 }
 
@@ -369,8 +368,8 @@ Tu aides les visiteurs à obtenir un devis rapidement.
 
 FLOW STANDARD :
 1. Accueille le visiteur.
-2. Collecte ces infos UNE PAR UNE : prénom/nom, email, matériel souhaité, dates de location.
-3. Si le client veut faire un devis sur liste, demande-lui de coller la liste avec quantités et dates.
+2. Collecte ces infos UNE PAR UNE : prénom/nom, email, matériel souhaité.
+3. Si le client veut faire un devis sur liste, demande-lui de coller la liste avec quantités. Les dates peuvent venir après la validation catalogue.
 4. Quand tu as une demande produit simple, émets : [SEARCH: terme de recherche principal]
 5. Quand les produits sont affichés et le client confirme explicitement la liste validée, émets : [CREATE_QUOTE]
 
@@ -380,6 +379,7 @@ STYLE POUR UNE DEMANDE DEVIS SUR LISTE :
 - Ne réécris pas toute la liste client en prose.
 - Explique ensuite les lignes trouvées et les lignes à préciser.
 - N'invente jamais de prix ou de produit.
+- Ne donne pas de prix pendant la première étape de matching catalogue. Les prix et disponibilités se vérifient après validation de la liste et des dates.
 
 RÈGLES :
 - Réponds toujours en français.
@@ -431,7 +431,7 @@ export async function POST(req: NextRequest) {
             const items = await parseQuoteList(req, lastUserText)
             send({ type: 'quote_matches', items })
 
-            const responseText = buildQuoteWorkflowResponse(items)
+            const responseText = buildQuoteWorkflowResponse(items, Boolean(sessionData.startsAt && sessionData.stopsAt))
             fullResponse += `\n\n${responseText}`
             send({ type: 'delta', content: `\n\n${responseText}` })
           } else {
@@ -472,10 +472,10 @@ Le client cherche : "${query}"
 Contexte de la conversation : ${incomingMessages.slice(-3).map(m => `${m.role}: ${textFromMessage(m)}`).join(' | ')}
 
 Voici les produits disponibles dans le catalogue :
-${products.map((p, i) => `${i + 1}. [${p.id}] ${p.name} — ${p.price_per_day}€/jour — ${compactDescription(p.description) || 'Pas de description'}`).join('\n')}
+${products.map((p, i) => `${i + 1}. [${p.id}] ${p.name} — ${compactDescription(p.description) || 'Pas de description'}`).join('\n')}
 
 Sélectionne les 1 à 5 produits les plus pertinents pour la demande du client.
-Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response": "message en français pour le client présentant ces produits avec leurs prix" }`
+Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response": "message en français pour le client présentant ces produits sans prix, puis demande les dates si elles manquent" }`
 
                 const selectionRes = await openai.chat.completions.create({
                   model: 'gpt-4o-mini',
@@ -500,11 +500,11 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
                 send({ type: 'selected_products', products: finalProducts })
 
                 const responseText = selection.response ||
-                  `\n\nVoici ce que nous avons :\n\n` +
+                  `\n\nVoici les correspondances catalogue possibles :\n\n` +
                   finalProducts.map((p, i) =>
-                    `**${i + 1}. ${p.name}** — ${formatPrice(p.price_per_day)} (caution ${p.deposit ?? 'à confirmer'}€)`
+                    `**${i + 1}. ${p.name}**`
                   ).join('\n') +
-                  `\n\nCes produits vous conviennent-ils ? Souhaitez-vous que je crée un devis ?`
+                  `\n\nCes produits vous conviennent-ils ? Indiquez vos dates pour vérifier disponibilité et prix.`
 
                 fullResponse += `\n\n${responseText}`
                 send({ type: 'delta', content: `\n\n${responseText}` })

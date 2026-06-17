@@ -279,11 +279,6 @@
     return Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)));
   }
 
-  function formatPrice(value) {
-    if (typeof value !== 'number') return 'prix à confirmer';
-    return value.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + '€/j';
-  }
-
   function isBundle(product) {
     return !!(product && (product.is_bundle || /\bpack\b/i.test(product.name || '') || (product.bundle_items || []).length));
   }
@@ -360,7 +355,7 @@
 
       if (selectedProduct) {
         html += '<div class="filmeai-selected-name">' + renderProductName(selectedProduct) + '</div>';
-        html += '<div class="filmeai-option-price">' + formatPrice(selectedProduct.price_per_day) + '</div>';
+        html += '<div class="filmeai-option-price">Produit catalogue — prix après dates</div>';
         if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
       } else if (item.leaveToFilme) {
         html += '<div class="filmeai-selected-name">L’équipe Filme le trouvera pour moi</div>';
@@ -376,7 +371,7 @@
           var selected = item.selectedProductId === product.id;
           html += '<button class="filmeai-option-btn ' + (selected ? 'selected' : '') + '" data-action="choose" data-index="' + index + '" data-product-id="' + product.id + '">';
           html += renderProductName(product);
-          html += '<div class="filmeai-option-price">' + formatPrice(product.price_per_day) + '</div>';
+          html += '<div class="filmeai-option-price">Produit catalogue</div>';
           if (isBundle(product) && bundleText(product)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(product)) + '</div>';
           html += '</button>';
         });

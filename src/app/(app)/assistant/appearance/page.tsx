@@ -388,9 +388,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                   {msg.products.slice(0, 3).map(p => (
                     <div key={p.id} className="bg-white border border-gray-100 rounded-xl p-2.5 shadow-sm">
                       <p className="text-xs font-medium text-gray-900 leading-tight">{p.name}</p>
-                      {p.price_per_day && (
-                        <p className="text-xs text-gray-500 mt-0.5">{p.price_per_day} €/jour</p>
-                      )}
+                      <p className="text-xs text-gray-500 mt-0.5">Produit catalogue — prix après dates</p>
                     </div>
                   ))}
                 </div>
