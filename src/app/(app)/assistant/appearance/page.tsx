@@ -36,10 +36,83 @@ const ICON_PATHS: Record<string, string> = {
   question: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
 }
 
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+const COLOR_PRESETS = [
+  { label: 'Filme', value: '#000000' },
+  { label: 'Anthracite', value: '#111827' },
+  { label: 'Ardoise', value: '#334155' },
+  { label: 'Bleu', value: '#2563eb' },
+  { label: 'Vert', value: '#16a34a' },
+  { label: 'Orange', value: '#ea580c' },
+]
+
+const TEASER_SUGGESTIONS = [
+  'Besoin d’un devis ? Je suis là 👋',
+  'Collez votre liste matériel ici',
+  'Je peux vous aider à choisir le bon kit',
+]
+
+const defaults: Settings = {
+  primary_color: '#000000',
+  bubble_icon: 'bubble',
+  position: 'right',
+  size: 'standard',
+  assistant_name: 'FilmeAI',
+  show_teaser: false,
+  teaser_text: '',
+  teaser_delay: 2,
+  attract_attention: false,
+  show_branding: true,
+}
+
+type PreviewMode = 'visual' | 'live'
+type PreviewState = 'closed' | 'teaser' | 'open'
+type PreviewDevice = 'desktop' | 'mobile'
+
+function isHexColor(value: string) {
+  return /^#[0-9a-fA-F]{6}$/.test(value)
+}
+
+function safeColor(value: string) {
+  return isHexColor(value) ? value : defaults.primary_color
+}
+
+function hexToRgb(hex: string) {
+  const clean = hex.replace('#', '')
+  return {
+    r: parseInt(clean.slice(0, 2), 16),
+    g: parseInt(clean.slice(2, 4), 16),
+    b: parseInt(clean.slice(4, 6), 16),
+  }
+}
+
+function relativeLuminance(hex: string) {
+  const { r, g, b } = hexToRgb(hex)
+  const channel = (v: number) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+function contrastWithWhite(hex: string) {
+  const lum = relativeLuminance(hex)
+  return (1.05 / (lum + 0.05))
+}
+
+function clampWidth(value: number) {
+  return Math.min(620, Math.max(340, value))
+}
+
+function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <button type="button" onClick={() => onChange(!value)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${value ? 'bg-black' : 'bg-gray-200'}`}>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
+      aria-label={label}
+      onClick={() => onChange(!value)}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${value ? 'bg-black' : 'bg-gray-200'}`}
+    >
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${value ? 'translate-x-4' : 'translate-x-1'}`} />
     </button>
   )
@@ -50,6 +123,33 @@ function SvgIcon({ icon, className = 'w-5 h-5' }: { icon: string; className?: st
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d={ICON_PATHS[icon] ?? ICON_PATHS.bubble} />
     </svg>
+  )
+}
+
+function SegmentedButton<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="inline-flex rounded-lg bg-gray-100 p-1">
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            value === option.value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -79,6 +179,7 @@ function ChatWidget({ s }: { s: Settings }) {
   const [pendingProducts, setPendingProducts] = useState<Product[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const color = safeColor(s.primary_color)
 
   const chips = ['Faire un devis', 'Disponibilité ?', 'Question technique']
 
@@ -162,7 +263,7 @@ function ChatWidget({ s }: { s: Settings }) {
       }
     } catch (err) {
       console.error(err)
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: "Désolé, une erreur est survenue. Vérifiez votre connexion." }])
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: 'Désolé, une erreur est survenue. Vérifiez votre connexion.' }])
     } finally {
       setLoading(false)
       setStreamText('')
@@ -171,7 +272,6 @@ function ChatWidget({ s }: { s: Settings }) {
   }, [loading, messages])
 
   function renderContent(content: string) {
-    // Bold markdown
     return content.split(/(\*\*[^*]+\*\*)/).map((part, i) => {
       if (part.startsWith('**') && part.endsWith('**')) {
         return <strong key={i}>{part.slice(2, -2)}</strong>
@@ -182,8 +282,7 @@ function ChatWidget({ s }: { s: Settings }) {
 
   return (
     <div className="flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100" style={{ height: 480 }}>
-      {/* Header */}
-      <div className="px-4 py-3 flex items-center gap-3 shrink-0" style={{ backgroundColor: s.primary_color }}>
+      <div className="px-4 py-3 flex items-center gap-3 shrink-0" style={{ backgroundColor: color }}>
         <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white shrink-0">
           <SvgIcon icon={s.bubble_icon} className="w-4 h-4" />
         </div>
@@ -198,19 +297,16 @@ function ChatWidget({ s }: { s: Settings }) {
         </button>
       </div>
 
-      {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50">
-
-        {/* Empty state with chips */}
         {messages.length === 0 && !loading && (
           <div className="flex flex-col items-center text-center pt-4 pb-2 space-y-3">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: s.primary_color }}>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: color }}>
               <SvgIcon icon={s.bubble_icon} className="w-6 h-6 text-white" />
             </div>
             <p className="text-xs font-semibold text-gray-900">Comment puis-je vous aider ?</p>
             <div className="flex flex-wrap gap-1.5 justify-center">
               {chips.map(chip => (
-                <button key={chip} onClick={() => send(chip)}
+                <button key={chip} onClick={() => void send(chip)}
                   className="text-xs bg-white border border-gray-200 rounded-full px-2.5 py-1 text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
                   {chip}
                 </button>
@@ -219,18 +315,16 @@ function ChatWidget({ s }: { s: Settings }) {
           </div>
         )}
 
-        {/* Message history */}
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] space-y-2`}>
+            <div className="max-w-[85%] space-y-2">
               <div className={`px-3 py-2 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
                 msg.role === 'user'
                   ? 'text-white rounded-br-sm'
                   : 'bg-white text-gray-800 border border-gray-100 shadow-sm rounded-bl-sm'
-              }`} style={msg.role === 'user' ? { backgroundColor: s.primary_color } : {}}>
+              }`} style={msg.role === 'user' ? { backgroundColor: color } : {}}>
                 {renderContent(msg.content)}
               </div>
-              {/* Product cards */}
               {msg.products && msg.products.length > 0 && (
                 <div className="space-y-1.5">
                   {msg.products.slice(0, 3).map(p => (
@@ -247,7 +341,6 @@ function ChatWidget({ s }: { s: Settings }) {
           </div>
         ))}
 
-        {/* Streaming / loading */}
         {loading && (
           <div className="flex justify-start">
             <div className="max-w-[85%]">
@@ -271,7 +364,6 @@ function ChatWidget({ s }: { s: Settings }) {
         )}
       </div>
 
-      {/* Input */}
       <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-center gap-2 shrink-0">
         <input
           ref={inputRef}
@@ -286,7 +378,7 @@ function ChatWidget({ s }: { s: Settings }) {
           onClick={() => void send(input)}
           disabled={loading || !input.trim()}
           className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-opacity disabled:opacity-40"
-          style={{ backgroundColor: s.primary_color }}
+          style={{ backgroundColor: color }}
         >
           <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -294,7 +386,6 @@ function ChatWidget({ s }: { s: Settings }) {
         </button>
       </div>
 
-      {/* Branding */}
       {s.show_branding && (
         <div className="px-3 py-1.5 text-center border-t border-gray-50 bg-white shrink-0">
           <span className="text-xs text-gray-400">Propulsé par <span className="font-medium text-gray-600">FilmeAI</span></span>
@@ -304,53 +395,197 @@ function ChatWidget({ s }: { s: Settings }) {
   )
 }
 
-// ── Defaults + page ───────────────────────────────────────────────────────────
+function BubbleButton({ s }: { s: Settings }) {
+  const color = safeColor(s.primary_color)
+  const isLarge = s.size === 'large'
+  return (
+    <div
+      className={`rounded-full shadow-2xl text-white flex items-center justify-center ${s.attract_attention ? 'animate-pulse' : ''}`}
+      style={{ width: isLarge ? 64 : 56, height: isLarge ? 64 : 56, backgroundColor: color }}
+    >
+      <SvgIcon icon={s.bubble_icon} className={isLarge ? 'w-7 h-7' : 'w-6 h-6'} />
+    </div>
+  )
+}
 
-const defaults: Settings = {
-  primary_color: '#000000',
-  bubble_icon: 'bubble',
-  position: 'right',
-  size: 'standard',
-  assistant_name: 'FilmeAI',
-  show_teaser: false,
-  teaser_text: '',
-  teaser_delay: 2,
-  attract_attention: false,
-  show_branding: true,
+function VisualWidgetPreview({ s, state, device }: { s: Settings; state: PreviewState; device: PreviewDevice }) {
+  const color = safeColor(s.primary_color)
+  const isMobile = device === 'mobile'
+  const teaser = s.teaser_text || 'Besoin d’un devis ? Je suis là 👋'
+  const sideClass = s.position === 'left' ? 'left-5 items-start' : 'right-5 items-end'
+  const chatWidth = isMobile ? 'calc(100% - 32px)' : s.size === 'large' ? 380 : 340
+  const chatHeight = isMobile ? 430 : s.size === 'large' ? 500 : 455
+
+  return (
+    <div className={`relative overflow-hidden rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 ${isMobile ? 'mx-auto h-[560px] max-w-[330px]' : 'h-[560px]'}`}>
+      <div className="absolute inset-x-0 top-0 border-b border-gray-200 bg-white/90 px-5 py-4">
+        <div className="h-3 w-24 rounded-full bg-gray-900" />
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="h-2 rounded-full bg-gray-200" />
+          <div className="h-2 rounded-full bg-gray-200" />
+          <div className="h-2 rounded-full bg-gray-200" />
+        </div>
+      </div>
+      <div className="absolute left-6 right-6 top-28 space-y-3">
+        <div className="h-20 rounded-2xl bg-white shadow-sm" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="h-28 rounded-2xl bg-white shadow-sm" />
+          <div className="h-28 rounded-2xl bg-white shadow-sm" />
+        </div>
+        <div className="h-24 rounded-2xl bg-white shadow-sm" />
+      </div>
+
+      <div className={`absolute bottom-5 flex flex-col gap-3 ${sideClass}`}>
+        {(state === 'teaser' || (s.show_teaser && state === 'closed')) && (
+          <div className="max-w-[240px] rounded-2xl bg-white px-4 py-3 text-sm font-medium text-gray-800 shadow-xl border border-gray-100">
+            {teaser}
+          </div>
+        )}
+        {state === 'open' && (
+          <div
+            className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-2xl"
+            style={{ width: chatWidth, height: chatHeight }}
+          >
+            <div className="flex items-center gap-3 px-4 py-3" style={{ backgroundColor: color }}>
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white">
+                <SvgIcon icon={s.bubble_icon} className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-white">{s.assistant_name || 'FilmeAI'}</p>
+                <p className="text-xs text-white/70">IA · En ligne</p>
+              </div>
+            </div>
+            <div className="space-y-3 bg-gray-50 p-3" style={{ height: Number(chatHeight) - (s.show_branding ? 104 : 78) }}>
+              <div className="max-w-[84%] rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm">
+                Bonjour 👋 Collez votre liste matériel, je vous prépare un devis.
+              </div>
+              <div className="ml-auto max-w-[82%] rounded-2xl rounded-br-sm px-3 py-2 text-xs text-white" style={{ backgroundColor: color }}>
+                Je cherche une caméra pour une interview.
+              </div>
+              <div className="max-w-[84%] rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm">
+                Je peux vous proposer une FX6, un 24-70, un micro HF et une lumière douce.
+              </div>
+            </div>
+            <div className="flex items-center gap-2 border-t border-gray-100 px-3 py-2">
+              <div className="flex-1 text-xs text-gray-400">Écrivez votre message…</div>
+              <div className="h-7 w-7 rounded-full" style={{ backgroundColor: color }} />
+            </div>
+            {s.show_branding && (
+              <div className="border-t border-gray-50 py-1.5 text-center text-xs text-gray-400">Propulsé par <span className="font-medium text-gray-600">FilmeAI</span></div>
+            )}
+          </div>
+        )}
+        {state !== 'open' && <BubbleButton s={s} />}
+      </div>
+    </div>
+  )
 }
 
 export default function AssistantAppearancePage() {
   const [s, setS] = useState<Settings>(defaults)
+  const [initialSettings, setInitialSettings] = useState<Settings>(defaults)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('visual')
+  const [previewState, setPreviewState] = useState<PreviewState>('open')
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop')
+  const [previewWidth, setPreviewWidth] = useState(() => {
+    if (typeof window === 'undefined') return 430
+    const savedWidth = Number(window.localStorage.getItem('filmeai-appearance-preview-width'))
+    return Number.isFinite(savedWidth) ? clampWidth(savedWidth) : 430
+  })
+
+  const colorValid = isHexColor(s.primary_color)
+  const color = safeColor(s.primary_color)
+  const contrast = colorValid ? contrastWithWhite(color) : 0
+  const contrastIsWeak = colorValid && contrast < 4.5
+  const dirty = JSON.stringify(s) !== JSON.stringify(initialSettings)
+  const previewSettings = { ...s, primary_color: color }
 
   useEffect(() => {
     fetch('/api/assistant-settings')
       .then(r => r.json())
-      .then((d: { settings?: Settings }) => { if (d.settings) setS(prev => ({ ...prev, ...d.settings })) })
+      .then((d: { settings?: Partial<Settings> }) => {
+        if (d.settings) {
+          const next = { ...defaults, ...d.settings }
+          setS(next)
+          setInitialSettings(next)
+        }
+      })
   }, [])
 
   function set<K extends keyof Settings>(key: K, val: Settings[K]) {
     setS(prev => ({ ...prev, [key]: val }))
+    setSaved(false)
+  }
+
+  function resetChanges() {
+    setS(initialSettings)
+    setSaved(false)
+  }
+
+  function startPreviewResize(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = previewWidth
+
+    function onMove(ev: MouseEvent) {
+      const next = clampWidth(startWidth - (ev.clientX - startX))
+      setPreviewWidth(next)
+      window.localStorage.setItem('filmeai-appearance-preview-width', String(Math.round(next)))
+    }
+
+    function onUp() {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
   }
 
   async function save() {
+    if (!colorValid) return
     setSaving(true)
-    await fetch('/api/assistant-settings', {
+    const res = await fetch('/api/assistant-settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(s),
     })
+    const data = await res.json().catch(() => null) as { settings?: Partial<Settings> } | null
+    const savedSettings = data?.settings ? { ...defaults, ...data.settings } : s
+    setInitialSettings(savedSettings)
+    setS(savedSettings)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
   return (
-    <div className="flex gap-6 items-start">
+    <div className="relative flex min-h-[calc(100vh-180px)] gap-0 items-start">
 
       {/* ── Left: settings ── */}
-      <div className="flex-1 min-w-0 space-y-5">
+      <div className="flex-1 min-w-[520px] space-y-5 pr-5 pb-24">
+
+        {dirty && (
+          <div className="sticky top-0 z-20 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/95 px-4 py-3 shadow-sm backdrop-blur">
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Modifications non sauvegardées</p>
+              <p className="text-xs text-amber-700">Pensez à sauvegarder avant de quitter cette page.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={resetChanges} className="rounded-lg px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-100">Annuler</button>
+              <button onClick={save} disabled={saving || !colorValid}
+                className="rounded-lg bg-black px-4 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-40">
+                {saving ? 'Sauvegarde…' : 'Sauvegarder'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Couleur primaire */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
@@ -358,14 +593,29 @@ export default function AssistantAppearancePage() {
             <h2 className="text-sm font-semibold text-gray-900">Couleur primaire</h2>
             <p className="text-xs text-gray-500 mt-0.5">Couleur principale du widget et du bouton de chat.</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <label className="cursor-pointer">
-              <input type="color" value={s.primary_color} onChange={e => set('primary_color', e.target.value)} className="sr-only" />
-              <div className="w-10 h-10 rounded-lg border border-gray-200 shadow-sm" style={{ backgroundColor: s.primary_color }} />
+              <input type="color" value={color} onChange={e => set('primary_color', e.target.value)} className="sr-only" />
+              <div className="w-10 h-10 rounded-lg border border-gray-200 shadow-sm" style={{ backgroundColor: color }} />
             </label>
             <input value={s.primary_color} onChange={e => set('primary_color', e.target.value)} maxLength={7}
-              className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black" />
+              className={`w-28 border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black ${colorValid ? 'border-gray-200' : 'border-red-300 bg-red-50 text-red-700'}`} />
+            <div className="flex flex-wrap gap-1.5">
+              {COLOR_PRESETS.map(preset => (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => set('primary_color', preset.value)}
+                  className={`h-8 rounded-full border px-2.5 text-xs font-medium transition-colors ${s.primary_color.toLowerCase() === preset.value ? 'border-black bg-gray-50 text-gray-900' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}
+                >
+                  <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: preset.value }} />
+                  {preset.label}
+                </button>
+              ))}
+            </div>
           </div>
+          {!colorValid && <p className="text-xs text-red-600">La couleur doit être au format hexadécimal, par exemple #000000.</p>}
+          {contrastIsWeak && <p className="text-xs text-amber-700">Contraste faible avec le texte blanc. Le widget restera lisible, mais une couleur plus foncée serait plus confortable.</p>}
         </div>
 
         {/* Icône bulle */}
@@ -425,12 +675,12 @@ export default function AssistantAppearancePage() {
 
         {/* Bulle d'accroche */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold text-gray-900">Bulle d&apos;accroche</h2>
               <p className="text-xs text-gray-500 mt-0.5">Un message qui apparaît au-dessus du bouton pour attirer l&apos;attention.</p>
             </div>
-            <Toggle value={s.show_teaser} onChange={v => set('show_teaser', v)} />
+            <Toggle value={s.show_teaser} onChange={v => set('show_teaser', v)} label="Afficher la bulle d’accroche" />
           </div>
           {s.show_teaser && (
             <div className="space-y-4 pt-1 border-t border-gray-100">
@@ -442,6 +692,13 @@ export default function AssistantAppearancePage() {
                 <input value={s.teaser_text} onChange={e => set('teaser_text', e.target.value.slice(0, 60))}
                   placeholder="Besoin d'un devis ? Je suis là 👋"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {TEASER_SUGGESTIONS.map(text => (
+                    <button key={text} type="button" onClick={() => set('teaser_text', text)} className="rounded-full border border-gray-200 px-2.5 py-1 text-xs text-gray-500 hover:border-gray-300 hover:text-gray-900">
+                      {text}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Délai d&apos;apparition</label>
@@ -449,13 +706,16 @@ export default function AssistantAppearancePage() {
                   className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white">
                   {[2, 4, 8, 15].map(d => <option key={d} value={d}>{d} secondes</option>)}
                 </select>
+                <button type="button" onClick={() => { setPreviewMode('visual'); setPreviewState('teaser') }} className="ml-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:border-gray-300 hover:text-gray-900">
+                  Tester l’apparition
+                </button>
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-700">Attirer l&apos;attention</p>
                   <p className="text-xs text-gray-500">Animation légère sur le bouton.</p>
                 </div>
-                <Toggle value={s.attract_attention} onChange={v => set('attract_attention', v)} />
+                <Toggle value={s.attract_attention} onChange={v => set('attract_attention', v)} label="Activer l’animation d’attention" />
               </div>
             </div>
           )}
@@ -463,30 +723,82 @@ export default function AssistantAppearancePage() {
 
         {/* Marque */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold text-gray-900">Marque FilmeAI</h2>
               <p className="text-xs text-gray-500 mt-0.5">Afficher « Propulsé par FilmeAI » dans le widget.</p>
             </div>
-            <Toggle value={s.show_branding} onChange={v => set('show_branding', v)} />
+            <Toggle value={s.show_branding} onChange={v => set('show_branding', v)} label="Afficher la marque FilmeAI" />
           </div>
         </div>
 
-        <button onClick={save} disabled={saving}
-          className="bg-black text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50">
-          {saved ? 'Sauvegardé ✓' : saving ? 'Sauvegarde…' : 'Sauvegarder'}
-        </button>
+        <div className="sticky bottom-4 z-30 rounded-2xl border border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">
+                {dirty ? 'Modifications en attente' : saved ? 'Sauvegardé ✓' : 'Apparence synchronisée'}
+              </p>
+              <p className="text-xs text-gray-500">
+                {dirty ? 'Sauvegardez pour appliquer ces réglages au widget.' : 'Les réglages affichés correspondent à la version enregistrée.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {dirty && <button onClick={resetChanges} className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100">Annuler</button>}
+              <button onClick={save} disabled={saving || !dirty || !colorValid}
+                className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-40">
+                {saving ? 'Sauvegarde…' : saved ? 'Sauvegardé ✓' : 'Sauvegarder'}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* ── Right: live interactive preview ── */}
-      <div className="w-96 shrink-0 sticky top-0">
+      {/* Resize handle */}
+      <div
+        onMouseDown={startPreviewResize}
+        className="sticky top-16 h-[calc(100vh-120px)] w-4 shrink-0 cursor-col-resize flex items-center justify-center group select-none"
+        title="Redimensionner l’aperçu"
+      >
+        <div className="h-20 w-1 rounded-full bg-gray-200 transition-colors group-hover:bg-gray-400" />
+      </div>
+
+      {/* ── Right: preview ── */}
+      <div className="shrink-0 sticky top-0" style={{ width: previewWidth }}>
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <span className="text-sm font-semibold text-gray-900">Aperçu</span>
-            <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">Chat actif</span>
+          <div className="space-y-3 border-b border-gray-100 px-4 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-gray-900">Aperçu</span>
+              <span className={`text-xs border px-2 py-0.5 rounded-full ${previewMode === 'live' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                {previewMode === 'live' ? 'Chat actif' : 'Aperçu visuel'}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <SegmentedButton<PreviewMode>
+                value={previewMode}
+                onChange={v => setPreviewMode(v)}
+                options={[{ value: 'visual', label: 'Visuel' }, { value: 'live', label: 'Tester IA' }]}
+              />
+              {previewMode === 'visual' && (
+                <>
+                  <SegmentedButton<PreviewState>
+                    value={previewState}
+                    onChange={v => setPreviewState(v)}
+                    options={[{ value: 'closed', label: 'Fermé' }, { value: 'teaser', label: 'Accroche' }, { value: 'open', label: 'Ouvert' }]}
+                  />
+                  <SegmentedButton<PreviewDevice>
+                    value={previewDevice}
+                    onChange={v => setPreviewDevice(v)}
+                    options={[{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }]}
+                  />
+                </>
+              )}
+            </div>
           </div>
           <div className="p-3">
-            <ChatWidget s={s} />
+            {previewMode === 'live'
+              ? <ChatWidget s={previewSettings} />
+              : <VisualWidgetPreview s={previewSettings} state={previewState} device={previewDevice} />
+            }
           </div>
         </div>
       </div>
