@@ -16,6 +16,7 @@ type Product = {
   id: string
   name: string
   price_per_day: number | null
+  deposit?: number | null
   description?: string | null
 }
 
@@ -440,6 +441,8 @@ export default function NewRequestPage() {
             title: i.type === 'section' ? i.title : undefined,
             requestedName: i.requestedName,
             section: i.section || null,
+            unitPrice: i.type === 'product' ? i.product?.price_per_day || 0 : 0,
+            deposit: i.type === 'product' ? i.product?.deposit || 0 : 0,
             position: index + 1,
           })),
           startsAt: new Date(startsAt + 'T09:00:00').toISOString(),

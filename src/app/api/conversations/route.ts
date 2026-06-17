@@ -22,10 +22,30 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin()
 
-    // Get all conversations ordered by updated_at DESC
     const { data: conversations, error } = await supabase
       .from('conversations')
-      .select('id, contact_name, contact_email, status, booqable_order_id, booqable_order_url, created_at, updated_at')
+      .select(`
+        id,
+        contact_name,
+        contact_email,
+        contact_phone,
+        status,
+        quote_status,
+        source,
+        starts_at,
+        stops_at,
+        expires_at,
+        request_context,
+        quote_items,
+        quote_total,
+        quote_deposit,
+        quote_days,
+        booqable_order_id,
+        booqable_order_url,
+        closed_at,
+        created_at,
+        updated_at
+      `)
       .order('updated_at', { ascending: false })
 
     if (error) {
@@ -37,7 +57,6 @@ export async function GET() {
       return NextResponse.json([], { headers: CORS_HEADERS })
     }
 
-    // Get last message for each conversation
     const conversationIds = conversations.map(c => c.id)
     const { data: lastMessages } = await supabase
       .from('messages')
@@ -45,7 +64,6 @@ export async function GET() {
       .in('conversation_id', conversationIds)
       .order('created_at', { ascending: false })
 
-    // Build a map of conversation_id -> last message
     const lastMessageMap = new Map<string, { content: string; role: string; created_at: string }>()
     for (const msg of lastMessages || []) {
       if (!lastMessageMap.has(msg.conversation_id)) {

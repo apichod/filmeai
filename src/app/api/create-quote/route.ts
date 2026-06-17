@@ -17,6 +17,8 @@ type QuoteItem = {
   requestedName?: string
   section?: string | null
   position?: number
+  unitPrice?: number | null
+  deposit?: number | null
 }
 
 type Customer = {
@@ -75,6 +77,58 @@ function lineNotes(item: QuoteItem, extra?: string) {
     item.productId ? `ID catalogue FilmeAI : ${item.productId}` : null,
     item.section ? `Section : ${item.section}` : null,
   ].filter(Boolean).join('\n')
+}
+
+function rentalDays(startsAt: string, stopsAt: string) {
+  const start = new Date(startsAt).getTime()
+  const stop = new Date(stopsAt).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(stop)) return 1
+  return Math.max(1, Math.round((stop - start) / 86400000))
+}
+
+function quoteLineTitle(item: QuoteItem) {
+  return cleanTitle(item.title || item.name || item.requestedName, item.type === 'section' ? 'Section' : 'Produit à vérifier')
+}
+
+function buildStoredQuoteItems(items: QuoteItem[], days: number) {
+  return (items || []).map((item, index) => {
+    const type = item.type || (item.productId ? 'product' : 'custom_charge')
+    const quantity = type === 'section' ? 1 : quantityOf(item)
+    const unitPrice = Number(item.unitPrice || 0)
+    const deposit = Number(item.deposit || 0)
+    const lineTotal = type === 'product' ? unitPrice * quantity * days : 0
+    const lineDeposit = type === 'product' ? deposit * quantity : 0
+
+    return {
+      uid: `${Date.now()}-${index}`,
+      position: index + 1,
+      type,
+      section: item.section || null,
+      productId: item.productId || null,
+      title: quoteLineTitle(item),
+      requestedName: item.requestedName || quoteLineTitle(item),
+      name: item.name || quoteLineTitle(item),
+      quantity,
+      unitPrice,
+      deposit,
+      lineTotal,
+      lineDeposit,
+    }
+  })
+}
+
+function summarizeContext(customer: Customer, items: QuoteItem[], startsAt: string, stopsAt: string) {
+  const lines = items
+    .filter(item => item.type !== 'section')
+    .slice(0, 12)
+    .map(item => `${quantityOf(item)}× ${item.name || item.requestedName || item.title || 'Produit'}`)
+    .join(', ')
+
+  return [
+    `Devis généré depuis le back-office FilmeAI pour ${customer.name}.`,
+    `Location du ${new Date(startsAt).toLocaleDateString('fr-FR')} au ${new Date(stopsAt).toLocaleDateString('fr-FR')}.`,
+    lines ? `Articles : ${lines}.` : null,
+  ].filter(Boolean).join(' ')
 }
 
 async function readJson(res: Response, context: string): Promise<unknown> {
@@ -529,19 +583,40 @@ export async function POST(req: NextRequest) {
 
     const orderUrl = `https://filme.booqable.com/orders/${orderId}`
 
-    // 4. Save conversation/request to Supabase.
+    // 4. Save structured quote/request to Supabase.
+    const days = rentalDays(startsAt, stopsAt)
+    const storedQuoteItems = buildStoredQuoteItems(items || [], days)
+    const quoteTotal = storedQuoteItems.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0)
+    const quoteDeposit = storedQuoteItems.reduce((sum, item) => sum + Number(item.lineDeposit || 0), 0)
+    const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString()
+
     const supabase = getSupabaseAdmin()
-    const { data: conv } = await supabase
+    const { data: conv, error: convError } = await supabase
       .from('conversations')
       .insert({
         contact_name: customer.name || null,
         contact_email: customer.email || null,
+        contact_phone: customer.phone || null,
         status: 'open',
+        quote_status: 'pending_validation',
+        source: 'backoffice',
+        starts_at: startsAt,
+        stops_at: stopsAt,
+        expires_at: expiresAt,
+        request_context: summarizeContext(customer, items || [], startsAt, stopsAt),
+        quote_items: storedQuoteItems,
+        quote_total: quoteTotal,
+        quote_deposit: quoteDeposit,
+        quote_days: days,
         booqable_order_id: orderId,
         booqable_order_url: orderUrl,
       })
       .select('id')
       .single()
+
+    if (convError) {
+      throw new Error(`Supabase quote save failed: ${convError.message}`)
+    }
 
     return NextResponse.json({
       success: true,
