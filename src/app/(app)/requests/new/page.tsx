@@ -186,6 +186,37 @@ export default function NewRequestPage() {
   const [parsing, setParsing] = useState(false)
   const [chatHistory, setChatHistory] = useState<{ text: string; found: number }[]>([])
 
+  // ── Resizable assistant column
+  const [assistantWidth, setAssistantWidth] = useState(() => {
+    if (typeof window === 'undefined') return 560
+    const saved = Number(window.localStorage.getItem('filmeai-request-assistant-width'))
+    return Number.isFinite(saved) && saved >= 360 && saved <= 900 ? saved : 560
+  })
+
+  function startAssistantResize(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = assistantWidth
+
+    function onMove(ev: MouseEvent) {
+      const next = Math.min(900, Math.max(360, startWidth + ev.clientX - startX))
+      setAssistantWidth(next)
+      window.localStorage.setItem('filmeai-request-assistant-width', String(Math.round(next)))
+    }
+
+    function onUp() {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   // ── Quote items
   const [items, setItems] = useState<QuoteItem[]>([])
 
@@ -500,10 +531,13 @@ export default function NewRequestPage() {
       </div>
 
       {/* Split view */}
-      <div className="flex gap-4 flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* ── LEFT: Assistant ─────────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-0">
+        <div
+          className="min-w-[360px] max-w-[900px] flex-shrink-0 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-0"
+          style={{ width: assistantWidth }}
+        >
           <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
             <p className="text-sm font-semibold text-gray-900">Assistant</p>
             <p className="text-xs text-gray-400">Devis pour {clientName}</p>
@@ -575,8 +609,17 @@ export default function NewRequestPage() {
           </div>
         </div>
 
+        {/* Resize handle */}
+        <div
+          onMouseDown={startAssistantResize}
+          className="w-4 flex-shrink-0 cursor-col-resize flex items-center justify-center group select-none"
+          title="Redimensionner la colonne assistant"
+        >
+          <div className="h-16 w-1 rounded-full bg-gray-200 group-hover:bg-gray-400 transition-colors" />
+        </div>
+
         {/* ── RIGHT: Quote panel ──────────────────────────────────────────── */}
-        <div className="w-[520px] flex-shrink-0 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-0">
+        <div className="flex-1 min-w-[520px] bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-0">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
             <span>📋</span>
             <p className="text-sm font-semibold text-gray-900">Devis</p>
