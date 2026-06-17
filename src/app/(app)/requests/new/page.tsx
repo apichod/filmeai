@@ -334,12 +334,17 @@ export default function NewRequestPage() {
       { at: 82, label: 'Préparation du devis…' },
     ]
     let stepIndex = 0
+    let ticks = 0
     const progressTimer = window.setInterval(() => {
+      ticks += 1
       setParseProgress(prev => {
         const target = progressSteps[Math.min(stepIndex, progressSteps.length - 1)]
         if (prev >= target.at && stepIndex < progressSteps.length - 1) stepIndex += 1
         const current = progressSteps[Math.min(stepIndex, progressSteps.length - 1)]
-        setParseStatus(current.label)
+        setParseStatus(ticks > 18
+          ? 'Grosse liste : je termine les derniers matchs…'
+          : current.label
+        )
         return Math.min(92, prev + (prev < current.at ? 3 : 1))
       })
     }, 700)

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 const tabs = [
   { label: 'Apparence', href: '/assistant/appearance' },
   { label: 'Comportement', href: '/assistant/behavior' },
-  { label: 'Base de connaissances', href: '/assistant/knowledge' },
+  { label: 'Connaissances', href: '/assistant/knowledge' },
   { label: 'Conditions', href: '/assistant/conditions' },
   { label: 'Devis', href: '/assistant/quotes' },
   { label: 'Intégration', href: '/assistant/integration' },

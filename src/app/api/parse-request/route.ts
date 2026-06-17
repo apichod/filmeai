@@ -44,6 +44,8 @@ type RerankResult = {
   selections?: RerankSelection[]
 }
 
+type EmbeddingMap = Map<string, number[]>
+
 const MIN_SIMILARITY = 0.16
 const MIN_RERANK_CONFIDENCE = 0.5
 const MIN_DETERMINISTIC_ACCEPT = 1.25
@@ -202,18 +204,43 @@ function dedupeProducts(products: Product[]): Product[] {
   return Array.from(map.values())
 }
 
-async function rpcSearch(query: string, limit = 20): Promise<Product[]> {
-  if (!query.trim()) return []
+async function createEmbeddingMap(queries: string[]): Promise<EmbeddingMap> {
+  const uniqueQueries = Array.from(new Set(
+    queries.map(query => query.trim()).filter(Boolean)
+  ))
 
-  const supabase = getSupabaseAdmin()
+  if (uniqueQueries.length === 0) return new Map()
+
   const embRes = await openai.embeddings.create({
     model: 'text-embedding-3-small',
-    input: query,
+    input: uniqueQueries,
   })
-  const embedding = embRes.data[0].embedding
+
+  const map: EmbeddingMap = new Map()
+  for (const row of embRes.data) {
+    const query = uniqueQueries[row.index]
+    if (query) map.set(query, row.embedding)
+  }
+  return map
+}
+
+async function rpcSearch(query: string, limit = 20, embeddingOverride?: number[]): Promise<Product[]> {
+  const cleanedQuery = query.trim()
+  if (!cleanedQuery) return []
+
+  const supabase = getSupabaseAdmin()
+  let embedding = embeddingOverride
+
+  if (!embedding) {
+    const embRes = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: cleanedQuery,
+    })
+    embedding = embRes.data[0].embedding
+  }
 
   const { data, error } = await supabase.rpc('search_products', {
-    query_text: query,
+    query_text: cleanedQuery,
     query_embedding: JSON.stringify(embedding),
     match_count: limit,
   })
@@ -265,11 +292,14 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
   return dedupeProducts(found)
 }
 
-async function candidateSearch(item: ExtractedItem): Promise<Product[]> {
-  const cleanedRaw = stripQuantityPrefix(item.raw)
+async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap): Promise<Product[]> {
+  const cleanedRaw = stripQuantityPrefix(item.raw).trim()
+  const expandedEmbedding = embeddingMap?.get(item.query.trim())
+  const rawEmbedding = embeddingMap?.get(cleanedRaw)
+
   const [expandedResults, rawResults, directResults] = await Promise.all([
-    rpcSearch(item.query, 24),
-    rpcSearch(cleanedRaw, 12),
+    rpcSearch(item.query, 24, expandedEmbedding),
+    rpcSearch(cleanedRaw, 12, rawEmbedding),
     directNameSearch(item, 20),
   ])
 
@@ -284,7 +314,7 @@ async function candidateSearch(item: ExtractedItem): Promise<Product[]> {
       return score >= 0.12
     })
     .sort((a, b) => b.score - a.score)
-    .slice(0, 14)
+    .slice(0, 10)
     .map(({ product }) => product)
 
   return candidates
@@ -397,7 +427,7 @@ async function rerankAll(candidateSets: CandidateSet[]): Promise<RerankSelection
       id: candidate.id,
       name: candidate.name,
       price_per_day: candidate.price_per_day,
-      description: (candidate.description || '').slice(0, 260),
+      description: (candidate.description || '').slice(0, 160),
       similarity: candidate.similarity || null,
     })),
   }))
@@ -422,7 +452,7 @@ JSON : { "selections": [{ "index": 0, "product_id": "..." | null, "confidence": 
     ],
     response_format: { type: 'json_object' },
     temperature: 0,
-    max_tokens: 3000,
+    max_tokens: 2200,
   })
 
   try {
@@ -440,10 +470,14 @@ export async function POST(req: NextRequest) {
     const extractedItems = await extractItems(message)
     if (extractedItems.length === 0) return NextResponse.json({ items: [] })
 
+    const embeddingMap = await createEmbeddingMap(
+      extractedItems.flatMap(item => [item.query, stripQuantityPrefix(item.raw)])
+    )
+
     const candidateSets: CandidateSet[] = await Promise.all(
       extractedItems.map(async item => ({
         item,
-        candidates: await candidateSearch(item),
+        candidates: await candidateSearch(item, embeddingMap),
       }))
     )
 
