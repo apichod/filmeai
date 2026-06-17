@@ -64,7 +64,6 @@ const defaults: Settings = {
   show_branding: true,
 }
 
-type PreviewMode = 'visual' | 'live'
 type PreviewDevice = 'desktop' | 'mobile'
 
 function isHexColor(value: string) {
@@ -170,7 +169,7 @@ type Product = {
 
 // ── Interactive chat widget ───────────────────────────────────────────────────
 
-function ChatWidget({ s }: { s: Settings }) {
+function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number; onClose?: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -280,7 +279,7 @@ function ChatWidget({ s }: { s: Settings }) {
   }
 
   return (
-    <div className="flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100" style={{ height: 480 }}>
+    <div className="flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100" style={{ height }}>
       <div className="px-4 py-3 flex items-center gap-3 shrink-0" style={{ backgroundColor: color }}>
         <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white shrink-0">
           <SvgIcon icon={s.bubble_icon} className="w-4 h-4" />
@@ -294,6 +293,16 @@ function ChatWidget({ s }: { s: Settings }) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer le chat"
+            className="flex h-6 w-6 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/15 hover:text-white"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50">
@@ -413,7 +422,6 @@ function BubbleButton({ s, onClick }: { s: Settings; onClick?: () => void }) {
 function VisualWidgetPreview({ s, device, teaserPreviewNonce }: { s: Settings; device: PreviewDevice; teaserPreviewNonce: number }) {
   const [open, setOpen] = useState(false)
   const [forceTeaser, setForceTeaser] = useState(false)
-  const color = safeColor(s.primary_color)
   const isMobile = device === 'mobile'
   const teaser = s.teaser_text || 'Besoin d’un devis ? Je suis là 👋'
   const sideClass = s.position === 'left' ? 'left-5 items-start' : 'right-5 items-end'
@@ -455,45 +463,8 @@ function VisualWidgetPreview({ s, device, teaserPreviewNonce }: { s: Settings; d
           </div>
         )}
         {open && (
-          <div
-            className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-2xl"
-            style={{ width: chatWidth, height: chatHeight }}
-          >
-            <div className="flex items-center gap-3 px-4 py-3" style={{ backgroundColor: color }}>
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white">
-                <SvgIcon icon={s.bubble_icon} className="w-4 h-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold text-white">{s.assistant_name || 'FilmeAI'}</p>
-                <p className="text-xs text-white/70">IA · En ligne</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Fermer le chat"
-                className="flex h-7 w-7 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/15 hover:text-white"
-              >
-                ×
-              </button>
-            </div>
-            <div className="space-y-3 bg-gray-50 p-3" style={{ height: Number(chatHeight) - (s.show_branding ? 104 : 78) }}>
-              <div className="max-w-[84%] rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm">
-                Bonjour 👋 Collez votre liste matériel, je vous prépare un devis.
-              </div>
-              <div className="ml-auto max-w-[82%] rounded-2xl rounded-br-sm px-3 py-2 text-xs text-white" style={{ backgroundColor: color }}>
-                Je cherche une caméra pour une interview.
-              </div>
-              <div className="max-w-[84%] rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm">
-                Je peux vous proposer une FX6, un 24-70, un micro HF et une lumière douce.
-              </div>
-            </div>
-            <div className="flex items-center gap-2 border-t border-gray-100 px-3 py-2">
-              <div className="flex-1 text-xs text-gray-400">Écrivez votre message…</div>
-              <div className="h-7 w-7 rounded-full" style={{ backgroundColor: color }} />
-            </div>
-            {s.show_branding && (
-              <div className="border-t border-gray-50 py-1.5 text-center text-xs text-gray-400">Propulsé par <span className="font-medium text-gray-600">FilmeAI</span></div>
-            )}
+          <div style={{ width: chatWidth }}>
+            <ChatWidget s={s} height={chatHeight} onClose={() => setOpen(false)} />
           </div>
         )}
         {!open && <BubbleButton s={s} onClick={() => setOpen(true)} />}
@@ -507,7 +478,6 @@ export default function AssistantAppearancePage() {
   const [initialSettings, setInitialSettings] = useState<Settings>(defaults)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [previewMode, setPreviewMode] = useState<PreviewMode>('visual')
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop')
   const [teaserPreviewNonce, setTeaserPreviewNonce] = useState(0)
   const [previewWidth, setPreviewWidth] = useState(() => {
@@ -746,7 +716,7 @@ export default function AssistantAppearancePage() {
                   className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white">
                   {[2, 4, 8, 15].map(d => <option key={d} value={d}>{d} secondes</option>)}
                 </select>
-                <button type="button" onClick={() => { setPreviewMode('visual'); setTeaserPreviewNonce(n => n + 1) }} className="ml-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:border-gray-300 hover:text-gray-900">
+                <button type="button" onClick={() => setTeaserPreviewNonce(n => n + 1)} className="ml-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:border-gray-300 hover:text-gray-900">
                   Tester l’apparition
                 </button>
               </div>
@@ -788,34 +758,20 @@ export default function AssistantAppearancePage() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="space-y-3 border-b border-gray-100 px-4 py-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-gray-900">Aperçu</span>
-              <span className={`text-xs border px-2 py-0.5 rounded-full ${previewMode === 'live' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                {previewMode === 'live' ? 'Chat actif' : 'Aperçu visuel'}
-              </span>
+              <span className="text-sm font-semibold text-gray-900">Aperçu interactif</span>
+              <span className="text-xs border px-2 py-0.5 rounded-full bg-green-50 text-green-700 border-green-200">IA active</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              <SegmentedButton<PreviewMode>
-                value={previewMode}
-                onChange={v => setPreviewMode(v)}
-                options={[{ value: 'visual', label: 'Visuel' }, { value: 'live', label: 'Tester IA' }]}
+              <SegmentedButton<PreviewDevice>
+                value={previewDevice}
+                onChange={v => setPreviewDevice(v)}
+                options={[{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }]}
               />
-              {previewMode === 'visual' && (
-                <SegmentedButton<PreviewDevice>
-                  value={previewDevice}
-                  onChange={v => setPreviewDevice(v)}
-                  options={[{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }]}
-                />
-              )}
             </div>
-            {previewMode === 'visual' && (
-              <p className="text-xs text-gray-400">Cliquez directement sur la bulle dans l’aperçu pour ouvrir ou fermer le chat.</p>
-            )}
+            <p className="text-xs text-gray-400">Cliquez sur la bulle pour ouvrir le chat, puis testez l’IA directement dans l’aperçu.</p>
           </div>
           <div className="p-3">
-            {previewMode === 'live'
-              ? <ChatWidget s={previewSettings} />
-              : <VisualWidgetPreview s={previewSettings} device={previewDevice} teaserPreviewNonce={teaserPreviewNonce} />
-            }
+            <VisualWidgetPreview s={previewSettings} device={previewDevice} teaserPreviewNonce={teaserPreviewNonce} />
           </div>
         </div>
       </div>
