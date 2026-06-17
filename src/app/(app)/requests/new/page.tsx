@@ -249,7 +249,7 @@ export default function NewRequestPage() {
         body: JSON.stringify({ message: text }),
       })
       const data = await res.json() as {
-        items?: { requestedName: string; matched: Product | null }[]
+        items?: { requestedName: string; matched: Product | null; quantity?: number }[]
         error?: string
       }
 
@@ -257,7 +257,7 @@ export default function NewRequestPage() {
       const newItems: QuoteItem[] = found.map(i => ({
         uid: crypto.randomUUID(),
         product: i.matched!,
-        quantity: 1,
+        quantity: Math.max(1, i.quantity || 1),
         requestedName: i.requestedName,
       }))
 
@@ -503,7 +503,7 @@ export default function NewRequestPage() {
       <div className="flex gap-4 flex-1 min-h-0">
 
         {/* ── LEFT: Assistant ─────────────────────────────────────────────── */}
-        <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-0">
+        <div className="flex-1 min-w-0 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-0">
           <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
             <p className="text-sm font-semibold text-gray-900">Assistant</p>
             <p className="text-xs text-gray-400">Devis pour {clientName}</p>
@@ -576,7 +576,7 @@ export default function NewRequestPage() {
         </div>
 
         {/* ── RIGHT: Quote panel ──────────────────────────────────────────── */}
-        <div className="w-96 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-0">
+        <div className="w-[520px] flex-shrink-0 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col min-h-0">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
             <span>📋</span>
             <p className="text-sm font-semibold text-gray-900">Devis</p>
@@ -653,7 +653,7 @@ export default function NewRequestPage() {
                           </span>
                           {/* Product info */}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{item.product.name}</p>
+                            <p className="text-sm font-medium text-gray-900 leading-snug">{item.product.name}</p>
                             <p className="text-xs text-gray-400">
                               {item.product.price_per_day != null ? `${item.product.price_per_day}€/jour` : 'Prix sur demande'}
                             </p>
