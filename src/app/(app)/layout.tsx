@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
+import { usePathname } from 'next/navigation'
+import { createBrowserClient } from '@supabase/ssr'
 
 const nav = [
   { label: 'Tableau de bord', href: '/dashboard' },
@@ -23,15 +23,14 @@ function IconLogout() {
 
 function Sidebar() {
   const pathname = usePathname()
-  const router = useRouter()
 
   async function signOut() {
-    const supabase = createClient(
+    const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     await supabase.auth.signOut()
-    router.push('/login')
+    window.location.href = '/login'
   }
 
   return (
