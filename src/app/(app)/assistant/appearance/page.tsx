@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 
 type Settings = {
   primary_color: string
@@ -53,114 +53,258 @@ function SvgIcon({ icon, className = 'w-5 h-5' }: { icon: string; className?: st
   )
 }
 
-// ── Live widget preview ──────────────────────────────────────────────────────
-function WidgetPreview({ s }: { s: Settings }) {
-  const chips = ['Faire un devis', 'Vérifier une dispo', 'Question technique', 'Question administrative']
+// ── Types for chat ────────────────────────────────────────────────────────────
+
+type ChatMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  products?: Product[]
+}
+
+type Product = {
+  id: string
+  name: string
+  description: string | null
+  price_per_day: number | null
+}
+
+// ── Interactive chat widget ───────────────────────────────────────────────────
+
+function ChatWidget({ s }: { s: Settings }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [streamText, setStreamText] = useState('')
+  const [pendingProducts, setPendingProducts] = useState<Product[]>([])
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const chips = ['Faire un devis', 'Disponibilité ?', 'Question technique']
+
+  function scrollBottom() {
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    }, 50)
+  }
+
+  function reset() {
+    setMessages([])
+    setInput('')
+    setStreamText('')
+    setPendingProducts([])
+    setLoading(false)
+  }
+
+  const send = useCallback(async (text: string) => {
+    const t = text.trim()
+    if (!t || loading) return
+    setInput('')
+
+    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: t }
+    setMessages(prev => [...prev, userMsg])
+    setLoading(true)
+    setStreamText('')
+    setPendingProducts([])
+    scrollBottom()
+
+    const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history, sessionData: {} }),
+      })
+
+      if (!res.body) throw new Error('No stream')
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = ''
+      let localProducts: Product[] = []
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const raw = decoder.decode(value, { stream: true })
+        const lines = raw.split('\n')
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(line.slice(6)) as { type: string; content?: string; products?: Product[] }
+
+            if (evt.type === 'delta' && evt.content) {
+              accumulated += evt.content
+              setStreamText(accumulated)
+              scrollBottom()
+            } else if (evt.type === 'selected_products' && evt.products) {
+              localProducts = evt.products
+              setPendingProducts(evt.products)
+            } else if (evt.type === 'done') {
+              const assistantMsg: ChatMessage = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: accumulated,
+                products: localProducts.length > 0 ? localProducts : undefined,
+              }
+              setMessages(prev => [...prev, assistantMsg])
+              setStreamText('')
+              setPendingProducts([])
+              localProducts = []
+              scrollBottom()
+            }
+          } catch {
+            // skip malformed lines
+          }
+        }
+      }
+    } catch (err) {
+      console.error(err)
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: "Désolé, une erreur est survenue. Vérifiez votre connexion." }])
+    } finally {
+      setLoading(false)
+      setStreamText('')
+      inputRef.current?.focus()
+    }
+  }, [loading, messages])
+
+  function renderContent(content: string) {
+    // Bold markdown
+    return content.split(/(\*\*[^*]+\*\*)/).map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>
+      }
+      return <span key={i}>{part}</span>
+    })
+  }
+
   return (
-    <div className="bg-gray-100 rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
-      {/* Browser chrome */}
-      <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-2">
-        <div className="flex gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-          <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
-          <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
+    <div className="flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100" style={{ height: 480 }}>
+      {/* Header */}
+      <div className="px-4 py-3 flex items-center gap-3 shrink-0" style={{ backgroundColor: s.primary_color }}>
+        <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white shrink-0">
+          <SvgIcon icon={s.bubble_icon} className="w-4 h-4" />
         </div>
-        <div className="flex-1 bg-gray-100 rounded-md px-3 py-1 text-xs text-gray-400 text-center">votre-site.fr</div>
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-xs font-semibold truncate">{s.assistant_name || 'FilmeAI'}</p>
+          <p className="text-white/70 text-xs">IA · En ligne</p>
+        </div>
+        <button onClick={reset} title="Réinitialiser" className="text-white/60 hover:text-white transition-colors">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
       </div>
 
-      {/* Page area */}
-      <div className="relative bg-gray-50" style={{ height: 480 }}>
-        {/* Fake page content */}
-        <div className="p-6 space-y-3 opacity-30">
-          <div className="h-3 bg-gray-300 rounded w-3/4" />
-          <div className="h-3 bg-gray-300 rounded w-1/2" />
-          <div className="h-3 bg-gray-300 rounded w-2/3" />
-          <div className="h-3 bg-gray-300 rounded w-1/3" />
-        </div>
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50">
 
-        {/* Chat window — positioned bottom right or left */}
-        <div
-          className={`absolute bottom-4 flex flex-col ${s.position === 'right' ? 'right-4 items-end' : 'left-4 items-start'}`}
-          style={{ width: s.size === 'large' ? 320 : 280 }}
-        >
-          {/* Teaser bubble */}
-          {s.show_teaser && s.teaser_text && (
-            <div className={`mb-2 bg-white border border-gray-200 rounded-2xl px-3 py-2 text-xs text-gray-700 shadow-md max-w-full ${s.position === 'right' ? 'rounded-br-sm' : 'rounded-bl-sm'}`}>
-              {s.teaser_text}
+        {/* Empty state with chips */}
+        {messages.length === 0 && !loading && (
+          <div className="flex flex-col items-center text-center pt-4 pb-2 space-y-3">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: s.primary_color }}>
+              <SvgIcon icon={s.bubble_icon} className="w-6 h-6 text-white" />
             </div>
-          )}
-
-          {/* Chat window */}
-          <div className="w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
-            {/* Header */}
-            <div className="px-4 py-3 flex items-center gap-3" style={{ backgroundColor: s.primary_color }}>
-              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white shrink-0">
-                <SvgIcon icon={s.bubble_icon} className="w-4 h-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-semibold truncate">{s.assistant_name || 'FilmeAI'}</p>
-                <p className="text-white/70 text-xs">IA · En ligne</p>
-              </div>
-              <svg className="w-4 h-4 text-white/60 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+            <p className="text-xs font-semibold text-gray-900">Comment puis-je vous aider ?</p>
+            <div className="flex flex-wrap gap-1.5 justify-center">
+              {chips.map(chip => (
+                <button key={chip} onClick={() => send(chip)}
+                  className="text-xs bg-white border border-gray-200 rounded-full px-2.5 py-1 text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
+                  {chip}
+                </button>
+              ))}
             </div>
+          </div>
+        )}
 
-            {/* Body */}
-            <div className="px-3 py-4 space-y-3 bg-gray-50">
-              {/* Welcome */}
-              <div className="flex flex-col items-center text-center pt-1 pb-2">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: s.primary_color }}>
-                  <SvgIcon icon={s.bubble_icon} className="w-5 h-5 text-white" />
+        {/* Message history */}
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] space-y-2`}>
+              <div className={`px-3 py-2 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
+                msg.role === 'user'
+                  ? 'text-white rounded-br-sm'
+                  : 'bg-white text-gray-800 border border-gray-100 shadow-sm rounded-bl-sm'
+              }`} style={msg.role === 'user' ? { backgroundColor: s.primary_color } : {}}>
+                {renderContent(msg.content)}
+              </div>
+              {/* Product cards */}
+              {msg.products && msg.products.length > 0 && (
+                <div className="space-y-1.5">
+                  {msg.products.slice(0, 3).map(p => (
+                    <div key={p.id} className="bg-white border border-gray-100 rounded-xl p-2.5 shadow-sm">
+                      <p className="text-xs font-medium text-gray-900 leading-tight">{p.name}</p>
+                      {p.price_per_day && (
+                        <p className="text-xs text-gray-500 mt-0.5">{p.price_per_day} €/jour</p>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <p className="text-xs font-semibold text-gray-900">Comment puis-je vous aider ?</p>
-              </div>
-              {/* Quick chips */}
-              <div className="flex flex-wrap gap-1.5 justify-center">
-                {chips.map(chip => (
-                  <button key={chip}
-                    className="text-xs bg-white border border-gray-200 rounded-full px-2.5 py-1 text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
-                    {chip}
-                  </button>
-                ))}
-              </div>
+              )}
             </div>
+          </div>
+        ))}
 
-            {/* Input */}
-            <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-center gap-2">
-              <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-              <span className="flex-1 text-xs text-gray-400">Écrivez votre message…</span>
-              <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: s.primary_color }}>
-                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              </div>
+        {/* Streaming / loading */}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%]">
+              {streamText ? (
+                <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-3 py-2 text-xs text-gray-800 leading-relaxed shadow-sm whitespace-pre-wrap">
+                  {renderContent(streamText)}
+                  <span className="inline-block w-1.5 h-3 bg-gray-400 ml-0.5 animate-pulse rounded-sm" />
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-3 py-2 shadow-sm flex gap-1 items-center">
+                  {[0, 150, 300].map(d => (
+                    <span key={d} className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                  ))}
+                </div>
+              )}
+              {pendingProducts.length > 0 && (
+                <p className="text-xs text-gray-400 mt-1 pl-1">Recherche en cours…</p>
+              )}
             </div>
-
-            {/* Branding */}
-            {s.show_branding && (
-              <div className="px-3 py-1.5 text-center border-t border-gray-50">
-                <span className="text-xs text-gray-400">Propulsé par <span className="font-medium text-gray-600">FilmeAI</span></span>
-              </div>
-            )}
           </div>
-
-          {/* Bubble button */}
-          <div className="mt-3 self-end">
-            <button
-              className={`flex items-center justify-center rounded-full shadow-lg text-white ${s.size === 'large' ? 'w-14 h-14' : 'w-12 h-12'}`}
-              style={{ backgroundColor: s.primary_color }}
-            >
-              <SvgIcon icon={s.bubble_icon} className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+        )}
       </div>
+
+      {/* Input */}
+      <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-center gap-2 shrink-0">
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input) } }}
+          placeholder="Écrivez votre message…"
+          disabled={loading}
+          className="flex-1 text-xs bg-transparent outline-none text-gray-700 placeholder-gray-400 disabled:opacity-50"
+        />
+        <button
+          onClick={() => void send(input)}
+          disabled={loading || !input.trim()}
+          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-opacity disabled:opacity-40"
+          style={{ backgroundColor: s.primary_color }}
+        >
+          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Branding */}
+      {s.show_branding && (
+        <div className="px-3 py-1.5 text-center border-t border-gray-50 bg-white shrink-0">
+          <span className="text-xs text-gray-400">Propulsé par <span className="font-medium text-gray-600">FilmeAI</span></span>
+        </div>
+      )}
     </div>
   )
 }
+
+// ── Defaults + page ───────────────────────────────────────────────────────────
 
 const defaults: Settings = {
   primary_color: '#000000',
@@ -219,12 +363,8 @@ export default function AssistantAppearancePage() {
               <input type="color" value={s.primary_color} onChange={e => set('primary_color', e.target.value)} className="sr-only" />
               <div className="w-10 h-10 rounded-lg border border-gray-200 shadow-sm" style={{ backgroundColor: s.primary_color }} />
             </label>
-            <input
-              value={s.primary_color}
-              onChange={e => set('primary_color', e.target.value)}
-              maxLength={7}
-              className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black"
-            />
+            <input value={s.primary_color} onChange={e => set('primary_color', e.target.value)} maxLength={7}
+              className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black" />
           </div>
         </div>
 
@@ -252,7 +392,7 @@ export default function AssistantAppearancePage() {
           <div>
             <h2 className="text-sm font-semibold text-gray-900 mb-3">Position de la bulle</h2>
             <div className="flex gap-2">
-              {[['right', 'En bas à droite'], ['left', 'En bas à gauche']] .map(([val, label]) => (
+              {[['right', 'En bas à droite'], ['left', 'En bas à gauche']].map(([val, label]) => (
                 <button key={val} type="button" onClick={() => set('position', val)}
                   className={`flex-1 py-2 text-sm rounded-lg border transition-all ${s.position === val ? 'border-black bg-black text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
                   {label}
@@ -261,8 +401,7 @@ export default function AssistantAppearancePage() {
             </div>
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-gray-900 mb-1">Taille par défaut</h2>
-            <p className="text-xs text-gray-500 mb-3">Taille par défaut de la fenêtre de chat sur ordinateur (<span className="italic">Grande</span> occupe presque tout l&apos;écran). Le visiteur peut aussi l&apos;agrandir via le bouton de l&apos;en-tête.</p>
+            <h2 className="text-sm font-semibold text-gray-900 mb-3">Taille par défaut</h2>
             <div className="flex gap-2">
               {[['standard', 'Standard'], ['large', 'Grande']].map(([val, label]) => (
                 <button key={val} type="button" onClick={() => set('size', val)}
@@ -274,18 +413,14 @@ export default function AssistantAppearancePage() {
           </div>
         </div>
 
-        {/* Nom de l'assistant */}
+        {/* Nom */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Nom de l&apos;assistant</h2>
             <p className="text-xs text-gray-500 mt-0.5">Affiché en haut du widget et dans les messages.</p>
           </div>
-          <input
-            value={s.assistant_name}
-            onChange={e => set('assistant_name', e.target.value)}
-            maxLength={40}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-          />
+          <input value={s.assistant_name} onChange={e => set('assistant_name', e.target.value)} maxLength={40}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
         </div>
 
         {/* Bulle d'accroche */}
@@ -304,27 +439,21 @@ export default function AssistantAppearancePage() {
                   <label className="text-sm font-medium text-gray-700">Texte</label>
                   <span className="text-xs text-gray-400">{s.teaser_text.length}/60</span>
                 </div>
-                <input
-                  value={s.teaser_text}
-                  onChange={e => set('teaser_text', e.target.value.slice(0, 60))}
+                <input value={s.teaser_text} onChange={e => set('teaser_text', e.target.value.slice(0, 60))}
                   placeholder="Besoin d'un devis ? Je suis là 👋"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-                />
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Délai d&apos;apparition</label>
-                <select
-                  value={s.teaser_delay}
-                  onChange={e => set('teaser_delay', Number(e.target.value))}
-                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white"
-                >
+                <select value={s.teaser_delay} onChange={e => set('teaser_delay', Number(e.target.value))}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white">
                   {[2, 4, 8, 15].map(d => <option key={d} value={d}>{d} secondes</option>)}
                 </select>
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-700">Attirer l&apos;attention</p>
-                  <p className="text-xs text-gray-500">Animation légère sur le bouton pour capter l&apos;œil.</p>
+                  <p className="text-xs text-gray-500">Animation légère sur le bouton.</p>
                 </div>
                 <Toggle value={s.attract_attention} onChange={v => set('attract_attention', v)} />
               </div>
@@ -332,7 +461,7 @@ export default function AssistantAppearancePage() {
           )}
         </div>
 
-        {/* Marque FilmeAI */}
+        {/* Marque */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -349,15 +478,15 @@ export default function AssistantAppearancePage() {
         </button>
       </div>
 
-      {/* ── Right: live preview (sticky) ── */}
+      {/* ── Right: live interactive preview ── */}
       <div className="w-96 shrink-0 sticky top-0">
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm font-semibold text-gray-900">Aperçu</span>
-            <span className="text-xs text-gray-400">Mis à jour en temps réel</span>
+            <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">Chat actif</span>
           </div>
           <div className="p-3">
-            <WidgetPreview s={s} />
+            <ChatWidget s={s} />
           </div>
         </div>
       </div>
