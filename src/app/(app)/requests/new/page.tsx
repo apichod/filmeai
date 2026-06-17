@@ -436,7 +436,7 @@ export default function NewRequestPage() {
             type: i.type,
             productId: i.type === 'product' ? i.product?.id : undefined,
             quantity: i.type === 'section' ? 1 : i.quantity,
-            name: i.type === 'custom_charge' ? i.title || i.requestedName : undefined,
+            name: i.type === 'product' ? i.product?.name : i.title || i.requestedName,
             title: i.type === 'section' ? i.title : undefined,
             requestedName: i.requestedName,
             section: i.section || null,

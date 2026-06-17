@@ -29,17 +29,27 @@ type Customer = {
 type BooqableCustomerResponse = {
   customer?: { id: string }
   error?: unknown
+  errors?: unknown
 }
 
 type BooqableOrderResponse = {
   order?: { id: string }
   error?: unknown
+  errors?: unknown
 }
 
-type BooqableLineResponse = {
+type BooqableJsonResponse = {
   data?: { id: string }
+  line?: { id: string }
+  order_line?: { id: string }
   error?: unknown
   errors?: unknown
+}
+
+type AttemptResult = {
+  ok: boolean
+  id: string | null
+  error?: string
 }
 
 function cleanTitle(value: string | undefined | null, fallback: string) {
@@ -51,7 +61,7 @@ function quantityOf(item: QuoteItem) {
   return Math.max(1, Math.round(Number(item.quantity) || 1))
 }
 
-async function readJsonOrThrow<T>(res: Response, context: string): Promise<T> {
+async function parseResponse(res: Response, context: string): Promise<BooqableJsonResponse> {
   const text = await res.text()
   let parsed: unknown = null
 
@@ -68,66 +78,156 @@ async function readJsonOrThrow<T>(res: Response, context: string): Promise<T> {
     throw new Error(`${context} failed (${res.status}): ${JSON.stringify(parsed)}`)
   }
 
-  return parsed as T
+  return parsed as BooqableJsonResponse
 }
 
-async function createV4CustomLine({
+async function postJson(url: string, body: unknown, headers: Record<string, string>, context: string): Promise<BooqableJsonResponse> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+
+  return parseResponse(res, context)
+}
+
+async function tryPostJson(url: string, body: unknown, headers: Record<string, string>, context: string): Promise<AttemptResult> {
+  try {
+    const json = await postJson(url, body, headers, context)
+    if (json.error || json.errors) {
+      return { ok: false, id: null, error: `${context}: ${JSON.stringify(json)}` }
+    }
+    return {
+      ok: true,
+      id: json.data?.id || json.line?.id || json.order_line?.id || null,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      id: null,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+function lineNotes(item: QuoteItem, extra?: string) {
+  return [
+    extra,
+    item.requestedName ? `Produit demandé : ${item.requestedName}` : null,
+    item.name ? `Produit suggéré : ${item.name}` : null,
+    item.productId ? `ID catalogue FilmeAI : ${item.productId}` : null,
+    item.section ? `Section : ${item.section}` : null,
+  ].filter(Boolean).join('\n')
+}
+
+async function createV4LineWithFallbacks({
   orderId,
   item,
   position,
-  lineType,
+  lineKind,
 }: {
   orderId: string
   item: QuoteItem
   position: number
-  lineType: 'charge' | 'section'
+  lineKind: 'section' | 'charge' | 'product'
 }) {
   const BOOQABLE_V4_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/4`
   const KEY = process.env.BOOQABLE_API_KEY
-  const title = cleanTitle(item.title || item.name || item.requestedName, lineType === 'section' ? 'Section' : 'Produit à vérifier')
+  const title = cleanTitle(
+    item.title || item.name || item.requestedName,
+    lineKind === 'section' ? 'Section' : 'Produit à vérifier'
+  )
+  const quantity = quantityOf(item)
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${KEY}`,
+  }
 
-  const attributes: Record<string, string | number | boolean | null> = {
-    owner_id: orderId,
-    owner_type: 'orders',
-    line_type: lineType,
+  const commonAttributes: Record<string, string | number | boolean | null> = {
     title,
+    name: title,
+    quantity,
     position,
   }
 
-  if (lineType === 'charge') {
-    attributes.quantity = quantityOf(item)
-    attributes.price_each_in_cents = 0
-    attributes.extra_information = [
-      'Ligne custom créée par FilmeAI car la correspondance catalogue est incertaine.',
-      item.requestedName ? `Produit demandé : ${item.requestedName}` : null,
-      item.section ? `Section : ${item.section}` : null,
-      'À vérifier et chiffrer dans Booqable.',
-    ].filter(Boolean).join('\n')
+  if (lineKind === 'section') {
+    commonAttributes.line_type = 'section'
+    commonAttributes.quantity = 1
+  } else if (lineKind === 'charge') {
+    commonAttributes.line_type = 'charge'
+    commonAttributes.price_each_in_cents = 0
+    commonAttributes.extra_information = lineNotes(item, 'Ligne custom créée par FilmeAI car la correspondance catalogue est incertaine. À vérifier et chiffrer dans Booqable.')
+  } else {
+    commonAttributes.line_type = 'product'
+    commonAttributes.item_id = item.productId || null
+    commonAttributes.item_type = 'product_groups'
+    commonAttributes.product_group_id = item.productId || null
+    commonAttributes.extra_information = lineNotes(item)
   }
 
-  const res = await fetch(`${BOOQABLE_V4_BASE}/lines`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${KEY}`,
-    },
-    body: JSON.stringify({
+  const attempts: Array<{ context: string; body: unknown }> = []
+
+  // Shape 1: JSON:API with owner/item relationships.
+  attempts.push({
+    context: `Booqable v4 ${lineKind} line relationships`,
+    body: {
       data: {
         type: 'lines',
-        attributes,
+        attributes: commonAttributes,
+        relationships: {
+          owner: { data: { type: 'orders', id: orderId } },
+          ...(lineKind === 'product' && item.productId
+            ? { item: { data: { type: 'product_groups', id: item.productId } } }
+            : {}),
+        },
       },
-    }),
+    },
   })
 
-  const data = await readJsonOrThrow<BooqableLineResponse>(res, `Custom ${lineType} line`)
-  if (data.error || data.errors) {
-    throw new Error(`Custom ${lineType} line failed: ${JSON.stringify(data)}`)
+  // Shape 2: flat owner_id / owner_type attributes.
+  attempts.push({
+    context: `Booqable v4 ${lineKind} line flat plural`,
+    body: {
+      data: {
+        type: 'lines',
+        attributes: {
+          ...commonAttributes,
+          owner_id: orderId,
+          owner_type: 'orders',
+        },
+      },
+    },
+  })
+
+  // Shape 3: flat Rails-style casing sometimes used by Booqable internals.
+  attempts.push({
+    context: `Booqable v4 ${lineKind} line flat singular`,
+    body: {
+      data: {
+        type: 'lines',
+        attributes: {
+          ...commonAttributes,
+          owner_id: orderId,
+          owner_type: 'Order',
+          ...(lineKind === 'product' && item.productId
+            ? { item_type: 'ProductGroup', product_group_id: item.productId }
+            : {}),
+        },
+      },
+    },
+  })
+
+  const errors: string[] = []
+  for (const attempt of attempts) {
+    const result = await tryPostJson(`${BOOQABLE_V4_BASE}/lines`, attempt.body, headers, attempt.context)
+    if (result.ok) return result.id
+    if (result.error) errors.push(result.error)
   }
 
-  return data.data?.id || null
+  throw new Error(errors.join(' | '))
 }
 
-async function createV1ProductLine({
+async function createV1ProductLineFallbacks({
   orderId,
   item,
   position,
@@ -138,33 +238,84 @@ async function createV1ProductLine({
 }) {
   const BOOQABLE_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
   const KEY = process.env.BOOQABLE_API_KEY
-
-  if (!item.productId) {
-    throw new Error(`Missing productId for product line: ${JSON.stringify(item)}`)
+  const headers = { 'Content-Type': 'application/json' }
+  const body = {
+    line: {
+      order_id: orderId,
+      item_id: item.productId,
+      product_group_id: item.productId,
+      quantity: quantityOf(item),
+      position,
+    },
+  }
+  const orderLineBody = {
+    order_line: {
+      order_id: orderId,
+      item_id: item.productId,
+      product_group_id: item.productId,
+      quantity: quantityOf(item),
+      position,
+    },
   }
 
-  const res = await fetch(`${BOOQABLE_BASE}/order_lines?api_key=${KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      order_line: {
-        order_id: orderId,
-        item_id: item.productId,
-        quantity: quantityOf(item),
-        position,
-      },
-    }),
+  const attempts = [
+    { url: `${BOOQABLE_BASE}/lines?api_key=${KEY}`, body, context: 'Booqable v1 /lines' },
+    { url: `${BOOQABLE_BASE}/orders/${orderId}/lines?api_key=${KEY}`, body, context: 'Booqable v1 /orders/:id/lines' },
+    { url: `${BOOQABLE_BASE}/order_lines?api_key=${KEY}`, body: orderLineBody, context: 'Booqable v1 /order_lines' },
+  ]
+
+  const errors: string[] = []
+  for (const attempt of attempts) {
+    const result = await tryPostJson(attempt.url, attempt.body, headers, attempt.context)
+    if (result.ok) return result.id
+    if (result.error) errors.push(result.error)
+  }
+  throw new Error(errors.join(' | '))
+}
+
+async function createProductLineOrCustomFallback({
+  orderId,
+  item,
+  position,
+}: {
+  orderId: string
+  item: QuoteItem
+  position: number
+}) {
+  const errors: string[] = []
+
+  // First try the modern v4 lines endpoint with product_group relationship.
+  try {
+    return await createV4LineWithFallbacks({ orderId, item, position, lineKind: 'product' })
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error))
+  }
+
+  // Then try a few v1 line endpoints. Some Booqable accounts still expose these.
+  try {
+    return await createV1ProductLineFallbacks({ orderId, item, position })
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error))
+  }
+
+  // Final safety: do not block the quote. Create a custom charge line with the product name.
+  // This preserves the quote order and lets you correct/chiffrer inside Booqable.
+  return createV4LineWithFallbacks({
+    orderId,
+    position,
+    lineKind: 'charge',
+    item: {
+      ...item,
+      title: cleanTitle(item.name || item.requestedName, 'Produit à vérifier'),
+      requestedName: item.requestedName || item.name,
+      name: item.name,
+      type: 'custom_charge',
+      section: item.section,
+    },
+  }).catch(error => {
+    const customError = error instanceof Error ? error.message : String(error)
+    throw new Error(`Impossible de créer une ligne produit ni une ligne custom. Product attempts: ${errors.join(' || ')}. Custom fallback: ${customError}`)
   })
-
-  const data = await readJsonOrThrow<{ order_line?: { id: string }; error?: unknown; errors?: unknown }>(
-    res,
-    `Product line (${item.requestedName || item.productId})`
-  )
-  if (data.error || data.errors) {
-    throw new Error(`Product line failed (${item.requestedName || item.productId}): ${JSON.stringify(data)}`)
-  }
-
-  return data.order_line?.id || null
 }
 
 export async function POST(req: NextRequest) {
@@ -188,52 +339,52 @@ export async function POST(req: NextRequest) {
     if (customer.booqableId) {
       customerId = customer.booqableId
     } else {
-      const custRes = await fetch(`${BOOQABLE_BASE}/customers?api_key=${KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const custData = await postJson(
+        `${BOOQABLE_BASE}/customers?api_key=${KEY}`,
+        {
           customer: {
             name: customer.name,
             ...(customer.email ? { email: customer.email } : {}),
             ...(customer.phone ? { phone: customer.phone } : {}),
           },
-        }),
-      })
-      const custData = await readJsonOrThrow<BooqableCustomerResponse>(custRes, 'Customer creation')
+        },
+        { 'Content-Type': 'application/json' },
+        'Customer creation'
+      ) as BooqableCustomerResponse
+
       customerId = custData.customer?.id ?? ''
       if (!customerId) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
     }
 
     // 2. Create order
-    const orderRes = await fetch(`${BOOQABLE_BASE}/orders?api_key=${KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const orderData = await postJson(
+      `${BOOQABLE_BASE}/orders?api_key=${KEY}`,
+      {
         order: {
           customer_id: customerId,
           starts_at: startsAt,
           stops_at: stopsAt,
           status: 'concept',
         },
-      }),
-    })
-    const orderData = await readJsonOrThrow<BooqableOrderResponse>(orderRes, 'Order creation')
+      },
+      { 'Content-Type': 'application/json' },
+      'Order creation'
+    ) as BooqableOrderResponse
+
     const orderId = orderData.order?.id
     if (!orderId) throw new Error(`Order creation failed: ${JSON.stringify(orderData)}`)
 
     // 3. Add lines in the exact order from the quote builder.
-    // Product lines still use the stable v1 order_lines endpoint already used by the app.
-    // Sections + doubtful products use Booqable v4 custom lines (line_type section/charge).
     let position = 1
     for (const item of items || []) {
       const type = item.type || (item.productId ? 'product' : 'custom_charge')
 
       if (type === 'section') {
-        await createV4CustomLine({ orderId, item, position, lineType: 'section' })
+        await createV4LineWithFallbacks({ orderId, item, position, lineKind: 'section' })
       } else if (type === 'product' && item.productId) {
-        await createV1ProductLine({ orderId, item, position })
+        await createProductLineOrCustomFallback({ orderId, item, position })
       } else {
-        await createV4CustomLine({ orderId, item, position, lineType: 'charge' })
+        await createV4LineWithFallbacks({ orderId, item, position, lineKind: 'charge' })
       }
 
       position += 1
