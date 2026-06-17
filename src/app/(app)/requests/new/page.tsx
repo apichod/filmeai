@@ -639,7 +639,7 @@ export default function NewRequestPage() {
               <div key={i} className="space-y-1.5">
                 {/* User message */}
                 <div className="flex justify-end">
-                  <div className="max-w-[80%] bg-gray-900 text-white rounded-2xl rounded-br-sm px-3 py-2 text-sm">
+                  <div className="max-w-[80%] bg-gray-900 text-white rounded-2xl rounded-br-sm px-3 py-2 text-sm whitespace-pre-wrap break-words">
                     {entry.text}
                   </div>
                 </div>
