@@ -49,6 +49,7 @@ function getDisplayName(name: string | null, email: string | null): string {
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/conversations')
@@ -59,6 +60,20 @@ export default function InboxPage() {
       .catch(() => setConversations([]))
       .finally(() => setLoading(false))
   }, [])
+
+  async function deleteConversation(id: string) {
+    if (!confirm('Supprimer définitivement cette conversation ?')) return
+    setDeletingId(id)
+    try {
+      const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Suppression impossible')
+      setConversations(prev => prev.filter(c => c.id !== id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Suppression impossible')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -89,34 +104,44 @@ export default function InboxPage() {
           </div>
         ) : (
           conversations.map(c => (
-            <Link
+            <div
               key={c.id}
-              href={`/inbox/${c.id}`}
-              className="flex items-start gap-4 px-6 py-4 hover:bg-gray-50 transition-colors"
+              className="group flex items-start gap-3 px-6 py-4 hover:bg-gray-50 transition-colors"
             >
-              <div className="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center text-sm font-medium shrink-0 mt-0.5">
-                {getInitial(c.contact_name, c.contact_email)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-900">
-                    {getDisplayName(c.contact_name, c.contact_email)}
-                  </span>
-                  <span className="text-xs text-gray-400 ml-4 shrink-0">{formatDate(c.updated_at)}</span>
+              <Link href={`/inbox/${c.id}`} className="flex items-start gap-4 flex-1 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center text-sm font-medium shrink-0 mt-0.5">
+                  {getInitial(c.contact_name, c.contact_email)}
                 </div>
-                {c.contact_email && (
-                  <p className="text-xs text-gray-500 mt-0.5">{c.contact_email}</p>
-                )}
-                {c.last_message && (
-                  <p className="text-sm text-gray-600 mt-1 truncate">{c.last_message.content}</p>
-                )}
-              </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-900">
+                      {getDisplayName(c.contact_name, c.contact_email)}
+                    </span>
+                    <span className="text-xs text-gray-400 ml-4 shrink-0">{formatDate(c.updated_at)}</span>
+                  </div>
+                  {c.contact_email && (
+                    <p className="text-xs text-gray-500 mt-0.5">{c.contact_email}</p>
+                  )}
+                  {c.last_message && (
+                    <p className="text-sm text-gray-600 mt-1 truncate">{c.last_message.content}</p>
+                  )}
+                </div>
+              </Link>
               {c.booqable_order_id && (
                 <span className="text-xs font-medium text-gray-500 shrink-0 mt-1 bg-gray-100 px-2 py-0.5 rounded-full">
                   Devis
                 </span>
               )}
-            </Link>
+              <button
+                type="button"
+                onClick={() => deleteConversation(c.id)}
+                disabled={deletingId === c.id}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-red-600 hover:text-red-700 disabled:opacity-40 px-2 py-1 rounded-lg hover:bg-red-50"
+                title="Supprimer"
+              >
+                {deletingId === c.id ? '…' : 'Supprimer'}
+              </button>
+            </div>
           ))
         )}
       </div>

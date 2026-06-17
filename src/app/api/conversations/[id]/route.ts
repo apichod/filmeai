@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
@@ -163,6 +163,27 @@ export async function PATCH(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('Conversation PATCH error:', msg)
+    return NextResponse.json({ error: msg }, { status: 500, headers: CORS_HEADERS })
+  }
+}
+
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = getSupabaseAdmin()
+    const { error } = await supabase
+      .from('conversations')
+      .delete()
+      .eq('id', params.id)
+
+    if (error) throw error
+    return NextResponse.json({ success: true }, { headers: CORS_HEADERS })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('Conversation DELETE error:', msg)
     return NextResponse.json({ error: msg }, { status: 500, headers: CORS_HEADERS })
   }
 }

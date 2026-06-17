@@ -40,6 +40,7 @@ export default function InboxDetailPage({ params }: { params: { id: string } }) 
   const [conv, setConv] = useState<ConversationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     fetch(`/api/conversations/${params.id}`)
@@ -53,6 +54,19 @@ export default function InboxDetailPage({ params }: { params: { id: string } }) 
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false))
   }, [params.id])
+
+  async function deleteConversation() {
+    if (!confirm('Supprimer définitivement cette conversation ?')) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/conversations/${params.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Suppression impossible')
+      window.location.href = '/inbox'
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Suppression impossible')
+      setDeleting(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -82,10 +96,20 @@ export default function InboxDetailPage({ params }: { params: { id: string } }) 
 
   return (
     <div className="space-y-4 h-full flex flex-col">
-      <div className="flex items-center gap-3">
-        <Link href="/inbox" className="text-sm text-gray-500 hover:text-gray-900">← Inbox</Link>
-        <span className="text-gray-300">/</span>
-        <span className="text-sm font-medium text-gray-900">{displayName}</span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Link href="/inbox" className="text-sm text-gray-500 hover:text-gray-900">← Inbox</Link>
+          <span className="text-gray-300">/</span>
+          <span className="text-sm font-medium text-gray-900">{displayName}</span>
+        </div>
+        <button
+          type="button"
+          onClick={deleteConversation}
+          disabled={deleting}
+          className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50 px-3 py-1.5 rounded-lg border border-red-100 hover:bg-red-50"
+        >
+          {deleting ? 'Suppression…' : 'Supprimer'}
+        </button>
       </div>
 
       <div className="flex gap-4 flex-1">

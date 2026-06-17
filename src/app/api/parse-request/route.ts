@@ -19,6 +19,8 @@ type Product = {
   deposit: number | null
   photo_url: string | null
   similarity?: number
+  is_bundle?: boolean
+  bundle_items?: string[]
 }
 
 type ExtractedItem = {
@@ -202,6 +204,45 @@ function dedupeProducts(products: Product[]): Product[] {
     if (!map.has(product.id)) map.set(product.id, product)
   }
   return Array.from(map.values())
+}
+
+function parseBundleItems(enrichedText: string | null | undefined): string[] {
+  if (!enrichedText) return []
+  const match = enrichedText.match(/Contenu du pack\s*:\s*(.+?)(?:\.\s|$)/i)
+  if (!match?.[1]) return []
+  return match[1]
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+}
+
+async function hydrateProductMetadata(products: Product[]): Promise<Product[]> {
+  if (products.length === 0) return []
+
+  const supabase = getSupabaseAdmin()
+  const ids = Array.from(new Set(products.map(product => product.id)))
+  const { data } = await supabase
+    .from('products_cache')
+    .select('id, enriched_text')
+    .in('id', ids)
+
+  const metaById = new Map<string, { enriched_text?: string | null }>()
+  for (const row of data || []) {
+    metaById.set(String(row.id), { enriched_text: row.enriched_text as string | null })
+  }
+
+  return products.map(product => {
+    const enrichedText = metaById.get(product.id)?.enriched_text || ''
+    const bundleItems = parseBundleItems(enrichedText)
+    const isBundle = /^Pack\s*\/\s*bundle/i.test(enrichedText) || bundleItems.length > 0 || /\bpack\b/i.test(product.name)
+
+    return {
+      ...product,
+      is_bundle: isBundle,
+      bundle_items: bundleItems,
+    }
+  })
 }
 
 async function createEmbeddingMap(queries: string[]): Promise<EmbeddingMap> {
@@ -484,7 +525,7 @@ export async function POST(req: NextRequest) {
     const selections = await rerankAll(candidateSets)
     const selectionByIndex = new Map(selections.map(selection => [selection.index, selection]))
 
-    const items = candidateSets.map((set, index) => {
+    const rawItems = candidateSets.map((set, index) => {
       const selection = selectionByIndex.get(index)
       const aiSelected = selection && selection.confidence >= MIN_RERANK_CONFIDENCE
         ? set.candidates.find(candidate => candidate.id === selection.product_id) || null
@@ -512,6 +553,19 @@ export async function POST(req: NextRequest) {
           .slice(0, 4),
       }
     })
+
+    const productsToHydrate = rawItems.flatMap(item => [
+      ...(item.matched ? [item.matched] : []),
+      ...item.alternatives,
+    ])
+    const hydrated = await hydrateProductMetadata(productsToHydrate)
+    const hydratedById = new Map(hydrated.map(product => [product.id, product]))
+
+    const items = rawItems.map(item => ({
+      ...item,
+      matched: item.matched ? hydratedById.get(item.matched.id) || item.matched : null,
+      alternatives: item.alternatives.map(product => hydratedById.get(product.id) || product),
+    }))
 
     return NextResponse.json({ items })
   } catch (err) {

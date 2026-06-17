@@ -158,6 +158,7 @@ type ChatMessage = {
   role: 'user' | 'assistant'
   content: string
   products?: Product[]
+  quoteMatches?: QuoteMatch[]
 }
 
 type Product = {
@@ -165,6 +166,17 @@ type Product = {
   name: string
   description: string | null
   price_per_day: number | null
+  is_bundle?: boolean
+  bundle_items?: string[]
+}
+
+type QuoteMatch = {
+  requestedName: string
+  section: string | null
+  quantity: number
+  matched: Product | null
+  confidence: number
+  alternatives: Product[]
 }
 
 // ── Interactive chat widget ───────────────────────────────────────────────────
@@ -175,6 +187,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [loading, setLoading] = useState(false)
   const [streamText, setStreamText] = useState('')
   const [pendingProducts, setPendingProducts] = useState<Product[]>([])
+  const [sessionData, setSessionData] = useState<{ selectedProductIds: string[]; conversationId: string | null }>({ selectedProductIds: [], conversationId: null })
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const color = safeColor(s.primary_color)
@@ -193,6 +206,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setStreamText('')
     setPendingProducts([])
     setLoading(false)
+    setSessionData({ selectedProductIds: [], conversationId: null })
   }
 
   const send = useCallback(async (text: string) => {
@@ -213,7 +227,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, sessionData: {} }),
+        body: JSON.stringify({ messages: history, sessionData }),
       })
 
       if (!res.body) throw new Error('No stream')
@@ -221,6 +235,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
       const decoder = new TextDecoder()
       let accumulated = ''
       let localProducts: Product[] = []
+      let localQuoteMatches: QuoteMatch[] = []
 
       while (true) {
         const { done, value } = await reader.read()
@@ -232,7 +247,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           try {
-            const evt = JSON.parse(line.slice(6)) as { type: string; content?: string; products?: Product[] }
+            const evt = JSON.parse(line.slice(6)) as { type: string; content?: string; products?: Product[]; items?: QuoteMatch[]; conversationId?: string }
 
             if (evt.type === 'delta' && evt.content) {
               accumulated += evt.content
@@ -241,17 +256,28 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
             } else if (evt.type === 'selected_products' && evt.products) {
               localProducts = evt.products
               setPendingProducts(evt.products)
+              setSessionData(prev => ({ ...prev, selectedProductIds: evt.products?.map(p => p.id) || prev.selectedProductIds }))
+            } else if (evt.type === 'quote_matches' && evt.items) {
+              localQuoteMatches = evt.items as QuoteMatch[]
+              const selectedIds = localQuoteMatches
+                .filter(item => item.matched && item.confidence >= 0.8)
+                .map(item => item.matched!.id)
+              setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds }))
+            } else if (evt.type === 'conversation_saved' && evt.conversationId) {
+              setSessionData(prev => ({ ...prev, conversationId: evt.conversationId as string }))
             } else if (evt.type === 'done') {
               const assistantMsg: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
                 content: accumulated,
                 products: localProducts.length > 0 ? localProducts : undefined,
+                quoteMatches: localQuoteMatches.length > 0 ? localQuoteMatches : undefined,
               }
               setMessages(prev => [...prev, assistantMsg])
               setStreamText('')
               setPendingProducts([])
               localProducts = []
+              localQuoteMatches = []
               scrollBottom()
             }
           } catch {
@@ -267,7 +293,31 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
       setStreamText('')
       inputRef.current?.focus()
     }
-  }, [loading, messages])
+  }, [loading, messages, sessionData])
+
+  function matchPercent(value: number) {
+    return Math.max(0, Math.min(100, Math.round((value || 0) * 100)))
+  }
+
+  function matchColor(value: number) {
+    if (value >= 0.8) return '#16a34a'
+    if (value >= 0.5) return '#f59e0b'
+    return '#ef4444'
+  }
+
+  function choosePreviewProduct(productId: string) {
+    setSessionData(prev => ({
+      ...prev,
+      selectedProductIds: Array.from(new Set([...prev.selectedProductIds, productId])),
+    }))
+  }
+
+  function removePreviewProduct(productId: string) {
+    setSessionData(prev => ({
+      ...prev,
+      selectedProductIds: prev.selectedProductIds.filter(id => id !== productId),
+    }))
+  }
 
   function renderContent(content: string) {
     return content.split(/(\*\*[^*]+\*\*)/).map((part, i) => {
@@ -343,6 +393,55 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+              {msg.quoteMatches && msg.quoteMatches.length > 0 && (
+                <div className="space-y-2">
+                  {msg.quoteMatches.map((item, idx) => {
+                    const strong = Boolean(item.matched && item.confidence >= 0.8)
+                    const choices = [item.matched, ...(item.alternatives || [])].filter(Boolean) as Product[]
+                    const uniqueChoices = choices.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i).slice(0, 3)
+                    const pct = matchPercent(item.confidence)
+                    const bar = matchColor(item.confidence)
+                    return (
+                      <div key={`${item.requestedName}-${idx}`} className={`rounded-xl border p-2.5 text-xs shadow-sm ${strong ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-gray-500">{item.section ? `${item.section} · ` : ''}{item.quantity}× demandé : {item.requestedName}</p>
+                            {item.matched && strong && (
+                              <>
+                                <p className="font-semibold text-gray-900">
+                                  {item.matched.name}
+                                  {(item.matched.is_bundle || item.matched.bundle_items?.length) && <span className="ml-1 rounded-full bg-black px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                                </p>
+                                {item.matched.bundle_items && item.matched.bundle_items.length > 0 && (
+                                  <p className="mt-0.5 text-[11px] text-gray-500">Contenu : {item.matched.bundle_items.slice(0, 4).join(', ')}{item.matched.bundle_items.length > 4 ? '…' : ''}</p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          {item.matched && strong && sessionData.selectedProductIds.includes(item.matched.id) && (
+                            <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
+                          )}
+                        </div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: bar }} />
+                        </div>
+                        <p className="mt-1 text-[11px] font-semibold" style={{ color: bar }}>{pct}% match</p>
+                        {!strong && (
+                          <div className="mt-2 space-y-1">
+                            {uniqueChoices.map(choice => (
+                              <button key={choice.id} onClick={() => choosePreviewProduct(choice.id)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${sessionData.selectedProductIds.includes(choice.id) ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-800'}`}>
+                                {choice.name}
+                                {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                              </button>
+                            ))}
+                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-600">Laisser Filme le trouver pour moi</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

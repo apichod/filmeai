@@ -90,6 +90,27 @@
     }
     .filmeai-product-name { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
     .filmeai-product-price { color: #555; }
+    .filmeai-match-list { max-width: 96%; align-self: flex-start; display: flex; flex-direction: column; gap: 10px; }
+    .filmeai-match-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 13px; padding: 11px; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+    .filmeai-match-card.strong { border-color: #bbf7d0; background: #f7fee7; }
+    .filmeai-match-card.uncertain { border-color: #fde68a; background: #fffbeb; }
+    .filmeai-match-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .filmeai-requested { font-size:12px; color:#6b7280; margin-bottom:4px; }
+    .filmeai-selected-name { font-size:13px; font-weight:700; color:#111827; line-height:1.35; }
+    .filmeai-pack-label { display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px; background:#111827; color:#fff; font-size:9px; font-weight:700; letter-spacing:.08em; vertical-align:middle; }
+    .filmeai-bundle-items { margin-top:4px; color:#6b7280; font-size:11px; line-height:1.35; }
+    .filmeai-match-meter { margin-top:8px; height:6px; background:#e5e7eb; border-radius:999px; overflow:hidden; }
+    .filmeai-match-fill { height:100%; border-radius:999px; }
+    .filmeai-match-percent { margin-top:4px; font-size:11px; font-weight:700; }
+    .filmeai-remove-line { width:24px; height:24px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; color:#9ca3af; cursor:pointer; flex-shrink:0; }
+    .filmeai-remove-line:hover { color:#111; border-color:#111; }
+    .filmeai-options { display:flex; flex-direction:column; gap:6px; margin-top:9px; }
+    .filmeai-option-btn { text-align:left; border:1px solid #e5e7eb; background:white; border-radius:9px; padding:8px 9px; cursor:pointer; font-size:12px; color:#111827; line-height:1.35; }
+    .filmeai-option-btn:hover { border-color:#111; }
+    .filmeai-option-btn.selected { border-color:#111; background:#111; color:white; }
+    .filmeai-option-price { color:#6b7280; font-size:11px; }
+    .filmeai-option-btn.selected .filmeai-option-price { color:rgba(255,255,255,.68); }
+    .filmeai-confirm-hint { font-size:12px; color:#6b7280; padding:8px 2px 0; }
     @media (max-width: 400px) {
       #filmeai-panel { width: calc(100vw - 24px); right: 12px; bottom: 84px; }
     }
@@ -133,7 +154,8 @@
     startsAt: savedSession.startsAt || null,
     stopsAt: savedSession.stopsAt || null,
     selectedProductIds: savedSession.selectedProductIds || [],
-    conversationId: savedSession.conversationId || null
+    conversationId: savedSession.conversationId || null,
+    quoteMatches: savedSession.quoteMatches || []
   };
   var typingEl = null;
 
@@ -249,6 +271,156 @@
     } catch (e) {}
   }
 
+  function matchColor(confidence) {
+    if (confidence >= 0.8) return '#16a34a';
+    if (confidence >= 0.5) return '#f59e0b';
+    return '#ef4444';
+  }
+
+  function formatPercent(confidence) {
+    return Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)));
+  }
+
+  function formatPrice(value) {
+    if (typeof value !== 'number') return 'prix à confirmer';
+    return value.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + '€/j';
+  }
+
+  function isBundle(product) {
+    return !!(product && (product.is_bundle || /\bpack\b/i.test(product.name || '') || (product.bundle_items || []).length));
+  }
+
+  function bundleText(product) {
+    var items = (product && product.bundle_items) || [];
+    if (!items.length) return '';
+    return 'Contenu : ' + items.slice(0, 5).join(', ') + (items.length > 5 ? '…' : '');
+  }
+
+  function updateSelectedProductIds() {
+    var ids = [];
+    (sessionData.quoteMatches || []).forEach(function(item) {
+      if (item.selectedProductId && ids.indexOf(item.selectedProductId) === -1) ids.push(item.selectedProductId);
+    });
+    sessionData.selectedProductIds = ids;
+    persistSession();
+  }
+
+  function candidateChoices(item) {
+    var choices = [];
+    if (item.matched) choices.push(item.matched);
+    (item.alternatives || []).forEach(function(product) { choices.push(product); });
+    var seen = {};
+    return choices.filter(function(product) {
+      if (!product || seen[product.id]) return false;
+      seen[product.id] = true;
+      return true;
+    }).slice(0, 3);
+  }
+
+  function findChoice(item, productId) {
+    return candidateChoices(item).filter(function(product) { return product.id === productId; })[0] || null;
+  }
+
+  function initQuoteMatches(items) {
+    sessionData.quoteMatches = (items || []).map(function(item, index) {
+      var selectedProductId = item.matched && item.confidence >= 0.8 ? item.matched.id : null;
+      return Object.assign({}, item, {
+        clientIndex: index,
+        selectedProductId: selectedProductId,
+        leaveToFilme: false
+      });
+    });
+    updateSelectedProductIds();
+  }
+
+  function renderProductName(product) {
+    return formatMarkdown((product && product.name) || 'Produit à confirmer') + (isBundle(product) ? '<span class="filmeai-pack-label">PACK</span>' : '');
+  }
+
+  function renderQuoteMatches() {
+    var items = sessionData.quoteMatches || [];
+    if (!items.length) return;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'filmeai-match-list';
+
+    items.forEach(function(item, index) {
+      var strong = item.selectedProductId && item.confidence >= 0.8;
+      var selectedProduct = item.selectedProductId ? findChoice(item, item.selectedProductId) || item.matched : null;
+      var bestProduct = selectedProduct || item.matched;
+      var percent = formatPercent(item.confidence || 0);
+      var color = matchColor(item.confidence || 0);
+      var card = document.createElement('div');
+      card.className = 'filmeai-match-card ' + (strong ? 'strong' : 'uncertain');
+
+      var html = '';
+      html += '<div class="filmeai-match-top"><div style="min-width:0;flex:1">';
+      html += '<div class="filmeai-requested">' + (item.section ? formatMarkdown(item.section) + ' · ' : '') + formatMarkdown(String(item.quantity || 1)) + '× demandé : ' + formatMarkdown(item.requestedName || item.searchQuery || '') + '</div>';
+
+      if (selectedProduct) {
+        html += '<div class="filmeai-selected-name">' + renderProductName(selectedProduct) + '</div>';
+        html += '<div class="filmeai-option-price">' + formatPrice(selectedProduct.price_per_day) + '</div>';
+        if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
+      } else if (item.leaveToFilme) {
+        html += '<div class="filmeai-selected-name">L’équipe Filme le trouvera pour moi</div>';
+      } else {
+        html += '<div class="filmeai-selected-name">Correspondance à choisir</div>';
+      }
+
+      html += '<div class="filmeai-match-meter"><div class="filmeai-match-fill" style="width:' + percent + '%;background:' + color + '"></div></div>';
+      html += '<div class="filmeai-match-percent" style="color:' + color + '">' + percent + '% match</div>';
+      html += '</div><button class="filmeai-remove-line" data-action="remove" data-index="' + index + '" title="Supprimer">×</button></div>';
+
+      if (!strong) {
+        html += '<div class="filmeai-options">';
+        candidateChoices(item).forEach(function(product) {
+          var selected = item.selectedProductId === product.id;
+          html += '<button class="filmeai-option-btn ' + (selected ? 'selected' : '') + '" data-action="choose" data-index="' + index + '" data-product-id="' + product.id + '">';
+          html += renderProductName(product);
+          html += '<div class="filmeai-option-price">' + formatPrice(product.price_per_day) + '</div>';
+          if (isBundle(product) && bundleText(product)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(product)) + '</div>';
+          html += '</button>';
+        });
+        html += '<button class="filmeai-option-btn ' + (item.leaveToFilme ? 'selected' : '') + '" data-action="filme" data-index="' + index + '">Laisser Filme le trouver pour moi</button>';
+        html += '</div>';
+      }
+
+      card.innerHTML = html;
+      wrap.appendChild(card);
+    });
+
+    var hint = document.createElement('div');
+    hint.className = 'filmeai-confirm-hint';
+    hint.textContent = 'Quand la liste vous convient, écrivez “je confirme” pour créer le devis.';
+    wrap.appendChild(hint);
+
+    wrap.addEventListener('click', function(e) {
+      var target = e.target.closest('[data-action]');
+      if (!target) return;
+      var action = target.getAttribute('data-action');
+      var index = parseInt(target.getAttribute('data-index'), 10);
+      var item = sessionData.quoteMatches[index];
+      if (!item) return;
+
+      if (action === 'remove') {
+        sessionData.quoteMatches.splice(index, 1);
+      } else if (action === 'choose') {
+        item.selectedProductId = target.getAttribute('data-product-id');
+        item.leaveToFilme = false;
+      } else if (action === 'filme') {
+        item.selectedProductId = null;
+        item.leaveToFilme = true;
+      }
+
+      updateSelectedProductIds();
+      wrap.remove();
+      renderQuoteMatches();
+    });
+
+    messagesEl.appendChild(wrap);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
   function parseDate(str) {
     var parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
@@ -330,9 +502,8 @@
         sessionData.selectedProductIds = (evt.products || []).map(function(p) { return p.id; });
         persistSession();
       } else if (evt.type === 'quote_matches') {
-        var matched = (evt.items || []).filter(function(item) { return item.matched && item.confidence >= 0.5; });
-        sessionData.selectedProductIds = matched.map(function(item) { return item.matched.id; });
-        persistSession();
+        initQuoteMatches(evt.items || []);
+        renderQuoteMatches();
       } else if (evt.type === 'creating_quote') {
         if (botEl) botContent += '\n\n⏳ Création du devis en cours…';
         if (botEl) botEl.innerHTML = formatMarkdown(botContent);

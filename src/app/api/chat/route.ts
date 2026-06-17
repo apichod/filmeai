@@ -24,6 +24,8 @@ type Product = {
   deposit: number | null
   photo_url: string | null
   similarity?: number
+  is_bundle?: boolean
+  bundle_items?: string[]
 }
 
 type SessionData = {
@@ -158,12 +160,24 @@ function looksLikeQuoteList(text: string): boolean {
   const sectionHits = text.match(/^[A-Za-zÀ-ÖØ-öø-ÿ /&+-]{3,}:\s*$/gm)?.length || 0
 
   return (
-    lines.length >= 5 && quantityHits >= 3
+    quantityHits >= 3
   ) || (
     lines.length >= 8 && sectionHits >= 1
   ) || (
     /devis|liste|mat[eé]riel|location/i.test(text) && quantityHits >= 2
   )
+}
+
+function isExplicitQuoteConfirmation(text: string): boolean {
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+
+  if (/^\d+\s*\/\s*\d+$/.test(normalized)) return false
+
+  return /\b(je confirme|confirme|confirmation|valider|valide|creer le devis|cree le devis|créer le devis|crée le devis|generer le devis|générer le devis|pousser dans booqable|envoyer le devis)\b/.test(normalized)
 }
 
 function formatPrice(value: number | null): string {
@@ -328,48 +342,60 @@ async function parseQuoteList(req: NextRequest, message: string): Promise<QuoteP
   return data.items || []
 }
 
+function productLabel(product: Product): string {
+  return product.is_bundle ? `${product.name} [PACK]` : product.name
+}
+
 function buildQuoteWorkflowResponse(items: QuoteParseItem[]): string {
   if (items.length === 0) {
     return "Je n’ai pas réussi à extraire clairement les lignes matériel. Pouvez-vous me renvoyer la liste avec une ligne par article et les quantités ?"
   }
 
-  const found = items.filter(item => item.matched && item.confidence >= 0.5)
-  const uncertain = items.filter(item => !item.matched || item.confidence < 0.5)
+  const autoMatched = items.filter(item => item.matched && item.confidence >= 0.8)
+  const toValidate = items.filter(item => !item.matched || item.confidence < 0.8)
   const lines: string[] = []
 
-  lines.push("Voici ce que j’ai trouvé dans notre catalogue. J’ai gardé l’ordre de votre liste pour que ce soit simple à vérifier.")
+  lines.push("Voici la première vérification catalogue. J’ai gardé l’ordre de votre liste.")
 
-  if (found.length > 0) {
-    lines.push('', '**Trouvés**')
+  if (autoMatched.length > 0) {
+    lines.push('', '**Correspondances fortes — ajoutées au brouillon**')
     let currentSection: string | null = null
-    for (const item of found) {
+    for (const item of autoMatched) {
       if (item.section && item.section !== currentSection) {
         currentSection = item.section
         lines.push('', `**${item.section.toUpperCase()}**`)
       }
       const product = item.matched!
       const confidence = Math.round((item.confidence || 0) * 100)
-      lines.push(`✓ ${item.quantity}× ${product.name} — ${formatPrice(product.price_per_day)} (${confidence}% match)`)
-    }
-  }
-
-  if (uncertain.length > 0) {
-    lines.push('', '**À préciser / à valider**')
-    for (const item of uncertain.slice(0, 8)) {
-      lines.push(`! ${item.quantity}× « ${item.requestedName} » — lequel exactement ?`)
-      const alternatives = item.alternatives?.slice(0, 3) || []
-      for (const alternative of alternatives) {
-        lines.push(`  • ${alternative.name} — ${formatPrice(alternative.price_per_day)}`)
+      lines.push(`✓ ${item.quantity}× ${productLabel(product)} — ${formatPrice(product.price_per_day)} (${confidence}% match)`)
+      if (product.is_bundle && product.bundle_items?.length) {
+        lines.push(`  Contenu pack : ${product.bundle_items.slice(0, 6).join(', ')}${product.bundle_items.length > 6 ? '…' : ''}`)
       }
-      if (alternatives.length === 0) lines.push('  • Je peux laisser l’équipe Filme faire une proposition.')
-    }
-
-    if (uncertain.length > 8) {
-      lines.push(`  • ${uncertain.length - 8} autre(s) ligne(s) à vérifier.`)
     }
   }
 
-  lines.push('', 'Confirmez-moi les lignes à préciser, et je prépare ensuite le devis complet.')
+  if (toValidate.length > 0) {
+    lines.push('', '**À choisir ou à laisser à Filme**')
+    for (const item of toValidate.slice(0, 8)) {
+      const confidence = Math.round((item.confidence || 0) * 100)
+      lines.push(`! ${item.quantity}× « ${item.requestedName} » — match ${confidence}%`)
+      const choices = [
+        ...(item.matched ? [item.matched] : []),
+        ...(item.alternatives || []),
+      ].filter((product, index, arr) => arr.findIndex(p => p.id === product.id) === index).slice(0, 3)
+
+      for (const choice of choices) {
+        lines.push(`  • ${productLabel(choice)} — ${formatPrice(choice.price_per_day)}`)
+      }
+      lines.push('  • Laisser Filme le trouver pour moi')
+    }
+
+    if (toValidate.length > 8) {
+      lines.push(`  • ${toValidate.length - 8} autre(s) ligne(s) à vérifier.`)
+    }
+  }
+
+  lines.push('', 'Vous pouvez supprimer les correspondances fortes ou choisir une option pour les lignes incertaines avant de confirmer le devis.')
   return lines.join('\n')
 }
 
@@ -383,7 +409,7 @@ FLOW STANDARD :
 2. Collecte ces infos UNE PAR UNE : prénom/nom, email, matériel souhaité, dates de location.
 3. Si le client veut faire un devis sur liste, demande-lui de coller la liste avec quantités et dates.
 4. Quand tu as une demande produit simple, émets : [SEARCH: terme de recherche principal]
-5. Quand les produits sont affichés et le client confirme, émets : [CREATE_QUOTE]
+5. Quand les produits sont affichés et le client confirme explicitement la liste validée, émets : [CREATE_QUOTE]
 
 STYLE POUR UNE DEMANDE DEVIS SUR LISTE :
 - Commence par : "Avec plaisir ! Collez votre liste de matériel..." si la liste n'est pas encore fournie.
@@ -397,6 +423,7 @@ RÈGLES :
 - Sois concis, professionnel et chaleureux.
 - Une seule question à la fois.
 - Si plusieurs produits sont demandés en liste, le backend analysera chaque ligne : ne lance pas une recherche unique globale.
+- N’émets JAMAIS [CREATE_QUOTE] après une simple précision comme "1/4" ou "Sony". Attends une validation claire : "je confirme", "valider le devis", "crée le devis avec cette liste".
 
 INFOS FILME :
 - Site : filme.fr | Email : bonjour@filme.fr
@@ -439,12 +466,7 @@ export async function POST(req: NextRequest) {
             send({ type: 'progress', step: 'parse_request', message: 'Analyse de la liste matériel…' })
 
             const items = await parseQuoteList(req, lastUserText)
-            const foundProducts = items
-              .filter(item => item.matched && item.confidence >= 0.5)
-              .map(item => item.matched as Product)
-
             send({ type: 'quote_matches', items })
-            if (foundProducts.length > 0) send({ type: 'products', products: foundProducts })
 
             const responseText = buildQuoteWorkflowResponse(items)
             fullResponse += `\n\n${responseText}`
@@ -528,9 +550,18 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
 
             // ── Step 4: Create Booqable quote if confirmed ───────────────────
             if (fullResponse.includes('[CREATE_QUOTE]') && sessionData.customerEmail) {
-              send({ type: 'creating_quote' })
+              if (!isExplicitQuoteConfirmation(lastUserText)) {
+                const needsExplicitConfirmation = "\n\nJ’ai bien noté cette précision. Je ne crée pas encore le devis : confirmez explicitement la liste validée quand elle vous convient, par exemple « je confirme le devis »."
+                fullResponse += needsExplicitConfirmation
+                send({ type: 'delta', content: needsExplicitConfirmation })
+              } else if (!sessionData.selectedProductIds || sessionData.selectedProductIds.length === 0) {
+                const needsSelection = "\n\nJe ne crée pas encore le devis : aucun produit catalogue n’a été validé. Envoyez ou collez votre liste matériel, puis choisissez les correspondances proposées avant de confirmer."
+                fullResponse += needsSelection
+                send({ type: 'delta', content: needsSelection })
+              } else {
+                send({ type: 'creating_quote' })
 
-              try {
+                try {
                 const booqableBase = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
                 const key = process.env.BOOQABLE_API_KEY
                 const name = sessionData.customerName || sessionData.customerEmail
@@ -574,12 +605,13 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
                 const createdText = `\n\n✅ **Devis créé !** Vous recevrez une confirmation à **${sessionData.customerEmail}**.\n[Voir le devis →](${booqableOrderUrl})`
                 fullResponse += createdText
                 send({ type: 'delta', content: createdText })
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err)
-                console.error('Quote error:', msg)
-                const errorText = `\n\nJe n'ai pas pu créer le devis automatiquement (${msg}). Contactez-nous à bonjour@filme.fr.`
-                fullResponse += errorText
-                send({ type: 'delta', content: errorText })
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err)
+                  console.error('Quote error:', msg)
+                  const errorText = `\n\nJe n'ai pas pu créer le devis automatiquement (${msg}). Contactez-nous à bonjour@filme.fr.`
+                  fullResponse += errorText
+                  send({ type: 'delta', content: errorText })
+                }
               }
             }
           }
