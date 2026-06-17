@@ -8,6 +8,22 @@ function getSupabaseAdmin() {
   )
 }
 
+async function getDefaultOrganizationId(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('organizations')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('Default organization lookup failed:', error.message)
+    return null
+  }
+
+  return data?.id || null
+}
+
 type QuoteItem = {
   type?: 'product' | 'custom_charge' | 'section'
   productId?: string
@@ -578,9 +594,11 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString()
 
     const supabase = getSupabaseAdmin()
+    const organizationId = await getDefaultOrganizationId(supabase)
     const { data: conv, error: convError } = await supabase
       .from('conversations')
       .insert({
+        ...(organizationId ? { organization_id: organizationId } : {}),
         contact_name: customer.name || null,
         contact_email: customer.email || null,
         contact_phone: customer.phone || null,
