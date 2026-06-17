@@ -65,7 +65,6 @@ const defaults: Settings = {
 }
 
 type PreviewMode = 'visual' | 'live'
-type PreviewState = 'closed' | 'teaser' | 'open'
 type PreviewDevice = 'desktop' | 'mobile'
 
 function isHexColor(value: string) {
@@ -395,26 +394,40 @@ function ChatWidget({ s }: { s: Settings }) {
   )
 }
 
-function BubbleButton({ s }: { s: Settings }) {
+function BubbleButton({ s, onClick }: { s: Settings; onClick?: () => void }) {
   const color = safeColor(s.primary_color)
   const isLarge = s.size === 'large'
   return (
-    <div
-      className={`rounded-full shadow-2xl text-white flex items-center justify-center ${s.attract_attention ? 'animate-pulse' : ''}`}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Ouvrir le chat"
+      className={`rounded-full shadow-2xl text-white flex items-center justify-center transition-transform hover:scale-105 active:scale-95 ${s.attract_attention ? 'animate-pulse' : ''}`}
       style={{ width: isLarge ? 64 : 56, height: isLarge ? 64 : 56, backgroundColor: color }}
     >
       <SvgIcon icon={s.bubble_icon} className={isLarge ? 'w-7 h-7' : 'w-6 h-6'} />
-    </div>
+    </button>
   )
 }
 
-function VisualWidgetPreview({ s, state, device }: { s: Settings; state: PreviewState; device: PreviewDevice }) {
+function VisualWidgetPreview({ s, device, teaserPreviewNonce }: { s: Settings; device: PreviewDevice; teaserPreviewNonce: number }) {
+  const [open, setOpen] = useState(false)
+  const [forceTeaser, setForceTeaser] = useState(false)
   const color = safeColor(s.primary_color)
   const isMobile = device === 'mobile'
   const teaser = s.teaser_text || 'Besoin d’un devis ? Je suis là 👋'
   const sideClass = s.position === 'left' ? 'left-5 items-start' : 'right-5 items-end'
   const chatWidth = isMobile ? 'calc(100% - 32px)' : s.size === 'large' ? 380 : 340
   const chatHeight = isMobile ? 430 : s.size === 'large' ? 500 : 455
+  const showTeaser = !open && (s.show_teaser || forceTeaser)
+
+  useEffect(() => {
+    if (teaserPreviewNonce === 0) return
+    setOpen(false)
+    setForceTeaser(true)
+    const timer = window.setTimeout(() => setForceTeaser(false), 3500)
+    return () => window.clearTimeout(timer)
+  }, [teaserPreviewNonce])
 
   return (
     <div className={`relative overflow-hidden rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 ${isMobile ? 'mx-auto h-[560px] max-w-[330px]' : 'h-[560px]'}`}>
@@ -436,12 +449,12 @@ function VisualWidgetPreview({ s, state, device }: { s: Settings; state: Preview
       </div>
 
       <div className={`absolute bottom-5 flex flex-col gap-3 ${sideClass}`}>
-        {(state === 'teaser' || (s.show_teaser && state === 'closed')) && (
+        {showTeaser && (
           <div className="max-w-[240px] rounded-2xl bg-white px-4 py-3 text-sm font-medium text-gray-800 shadow-xl border border-gray-100">
             {teaser}
           </div>
         )}
-        {state === 'open' && (
+        {open && (
           <div
             className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-2xl"
             style={{ width: chatWidth, height: chatHeight }}
@@ -450,10 +463,18 @@ function VisualWidgetPreview({ s, state, device }: { s: Settings; state: Preview
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white">
                 <SvgIcon icon={s.bubble_icon} className="w-4 h-4" />
               </div>
-              <div>
-                <p className="text-xs font-semibold text-white">{s.assistant_name || 'FilmeAI'}</p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-white">{s.assistant_name || 'FilmeAI'}</p>
                 <p className="text-xs text-white/70">IA · En ligne</p>
               </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Fermer le chat"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/15 hover:text-white"
+              >
+                ×
+              </button>
             </div>
             <div className="space-y-3 bg-gray-50 p-3" style={{ height: Number(chatHeight) - (s.show_branding ? 104 : 78) }}>
               <div className="max-w-[84%] rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm">
@@ -475,7 +496,7 @@ function VisualWidgetPreview({ s, state, device }: { s: Settings; state: Preview
             )}
           </div>
         )}
-        {state !== 'open' && <BubbleButton s={s} />}
+        {!open && <BubbleButton s={s} onClick={() => setOpen(true)} />}
       </div>
     </div>
   )
@@ -485,10 +506,9 @@ export default function AssistantAppearancePage() {
   const [s, setS] = useState<Settings>(defaults)
   const [initialSettings, setInitialSettings] = useState<Settings>(defaults)
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [previewMode, setPreviewMode] = useState<PreviewMode>('visual')
-  const [previewState, setPreviewState] = useState<PreviewState>('open')
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop')
+  const [teaserPreviewNonce, setTeaserPreviewNonce] = useState(0)
   const [previewWidth, setPreviewWidth] = useState(() => {
     if (typeof window === 'undefined') return 430
     const savedWidth = Number(window.localStorage.getItem('filmeai-appearance-preview-width'))
@@ -516,12 +536,10 @@ export default function AssistantAppearancePage() {
 
   function set<K extends keyof Settings>(key: K, val: Settings[K]) {
     setS(prev => ({ ...prev, [key]: val }))
-    setSaved(false)
   }
 
   function resetChanges() {
     setS(initialSettings)
-    setSaved(false)
   }
 
   function startPreviewResize(e: React.MouseEvent<HTMLDivElement>) {
@@ -561,8 +579,6 @@ export default function AssistantAppearancePage() {
     setInitialSettings(savedSettings)
     setS(savedSettings)
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
   }
 
   return (
@@ -706,7 +722,7 @@ export default function AssistantAppearancePage() {
                   className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white">
                   {[2, 4, 8, 15].map(d => <option key={d} value={d}>{d} secondes</option>)}
                 </select>
-                <button type="button" onClick={() => { setPreviewMode('visual'); setPreviewState('teaser') }} className="ml-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:border-gray-300 hover:text-gray-900">
+                <button type="button" onClick={() => { setPreviewMode('visual'); setTeaserPreviewNonce(n => n + 1) }} className="ml-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:border-gray-300 hover:text-gray-900">
                   Tester l’apparition
                 </button>
               </div>
@@ -732,25 +748,6 @@ export default function AssistantAppearancePage() {
           </div>
         </div>
 
-        <div className="sticky bottom-4 z-30 rounded-2xl border border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-gray-900">
-                {dirty ? 'Modifications en attente' : saved ? 'Sauvegardé ✓' : 'Apparence synchronisée'}
-              </p>
-              <p className="text-xs text-gray-500">
-                {dirty ? 'Sauvegardez pour appliquer ces réglages au widget.' : 'Les réglages affichés correspondent à la version enregistrée.'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {dirty && <button onClick={resetChanges} className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100">Annuler</button>}
-              <button onClick={save} disabled={saving || !dirty || !colorValid}
-                className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-40">
-                {saving ? 'Sauvegarde…' : saved ? 'Sauvegardé ✓' : 'Sauvegarder'}
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Resize handle */}
@@ -779,25 +776,21 @@ export default function AssistantAppearancePage() {
                 options={[{ value: 'visual', label: 'Visuel' }, { value: 'live', label: 'Tester IA' }]}
               />
               {previewMode === 'visual' && (
-                <>
-                  <SegmentedButton<PreviewState>
-                    value={previewState}
-                    onChange={v => setPreviewState(v)}
-                    options={[{ value: 'closed', label: 'Fermé' }, { value: 'teaser', label: 'Accroche' }, { value: 'open', label: 'Ouvert' }]}
-                  />
-                  <SegmentedButton<PreviewDevice>
-                    value={previewDevice}
-                    onChange={v => setPreviewDevice(v)}
-                    options={[{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }]}
-                  />
-                </>
+                <SegmentedButton<PreviewDevice>
+                  value={previewDevice}
+                  onChange={v => setPreviewDevice(v)}
+                  options={[{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }]}
+                />
               )}
             </div>
+            {previewMode === 'visual' && (
+              <p className="text-xs text-gray-400">Cliquez directement sur la bulle dans l’aperçu pour ouvrir ou fermer le chat.</p>
+            )}
           </div>
           <div className="p-3">
             {previewMode === 'live'
               ? <ChatWidget s={previewSettings} />
-              : <VisualWidgetPreview s={previewSettings} state={previewState} device={previewDevice} />
+              : <VisualWidgetPreview s={previewSettings} device={previewDevice} teaserPreviewNonce={teaserPreviewNonce} />
             }
           </div>
         </div>
