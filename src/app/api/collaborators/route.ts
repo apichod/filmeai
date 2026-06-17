@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
   if (existing) {
     return NextResponse.json(
-      { error: existing.status === 'pending' ? 'Invitation déjà envoyée.' : 'Déjà membre de l'équipe.' },
+      { error: existing.status === 'pending' ? 'Invitation déjà envoyée.' : "Déjà membre de l'équipe." },
       { status: 409 }
     )
   }

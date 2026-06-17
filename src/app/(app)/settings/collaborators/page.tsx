@@ -75,7 +75,7 @@ export default function SettingsCollaboratorsPage() {
     const data = await res.json() as { error?: string }
 
     if (!res.ok) {
-      setError(data.error || 'Erreur lors de l'invitation.')
+      setError(data.error || "Erreur lors de l'invitation.")
     } else {
       setSuccess(`Invitation envoyée à ${inviteEmail}.`)
       setInviteEmail('')
@@ -85,7 +85,7 @@ export default function SettingsCollaboratorsPage() {
   }
 
   async function remove(memberId: string) {
-    if (!confirm('Retirer ce membre de l'équipe ?')) return
+    if (!confirm("Retirer ce membre de l'équipe ?")) return
     setRemoving(memberId)
     await fetch('/api/collaborators', {
       method: 'DELETE',
