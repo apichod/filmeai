@@ -1,12 +1,13 @@
 'use client'
+
 import { useState } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@supabase/ssr'
 
-export default function LoginPage() {
+export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const supabase = createBrowserClient(
@@ -14,17 +15,24 @@ export default function LoginPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  async function handleLogin(e: React.FormEvent) {
+  async function handleReset(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    setSent(false)
+
+    const origin = window.location.origin
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${origin}/reset-password`,
+    })
+
     if (error) {
       setError(error.message)
-      setLoading(false)
     } else {
-      window.location.href = '/dashboard'
+      setSent(true)
     }
+
+    setLoading(false)
   }
 
   return (
@@ -32,12 +40,19 @@ export default function LoginPage() {
       <div className="w-full max-w-sm px-6">
         <div className="mb-8 text-center">
           <span className="text-2xl font-light tracking-wider text-black">filme<span className="font-semibold">AI</span></span>
-          <p className="mt-2 text-sm text-gray-500">Connectez-vous à votre espace</p>
+          <p className="mt-2 text-sm text-gray-500">Réinitialiser votre mot de passe</p>
         </div>
-        <form onSubmit={handleLogin} className="space-y-4">
+
+        <form onSubmit={handleReset} className="space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
           )}
+          {sent && (
+            <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-lg">
+              Email envoyé. Vérifiez votre boîte mail puis cliquez sur le lien de réinitialisation.
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
@@ -49,33 +64,18 @@ export default function LoginPage() {
               placeholder="vous@exemple.fr"
             />
           </div>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium text-gray-700">Mot de passe</label>
-              <Link href="/forgot-password" className="text-xs text-gray-500 hover:text-black hover:underline">
-                Mot de passe oublié ?
-              </Link>
-            </div>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-              placeholder="••••••••"
-            />
-          </div>
+
           <button
             type="submit"
             disabled={loading}
             className="w-full bg-black text-white rounded-lg py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
           >
-            {loading ? 'Connexion…' : 'Se connecter'}
+            {loading ? 'Envoi…' : 'Recevoir le lien'}
           </button>
         </form>
+
         <p className="mt-6 text-center text-sm text-gray-500">
-          Pas encore de compte ?{' '}
-          <Link href="/signup" className="text-black font-medium hover:underline">Créer un compte</Link>
+          <Link href="/login" className="text-black font-medium hover:underline">Retour à la connexion</Link>
         </p>
       </div>
     </div>

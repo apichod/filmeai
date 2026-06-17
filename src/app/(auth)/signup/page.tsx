@@ -85,10 +85,17 @@ export default function SignupPage() {
             {loading ? 'Création…' : 'Créer mon compte'}
           </button>
         </form>
-        <p className="mt-6 text-center text-sm text-gray-500">
-          Déjà un compte ?{' '}
-          <Link href="/login" className="text-black font-medium hover:underline">Se connecter</Link>
-        </p>
+        <div className="mt-6 space-y-2 text-center text-sm text-gray-500">
+          <p>
+            Déjà un compte ?{' '}
+            <Link href="/login" className="text-black font-medium hover:underline">Se connecter</Link>
+          </p>
+          <p>
+            <Link href="/forgot-password" className="text-gray-500 hover:text-black hover:underline">
+              Mot de passe oublié ?
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   )
