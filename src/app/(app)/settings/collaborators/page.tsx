@@ -107,7 +107,7 @@ export default function SettingsCollaboratorsPage() {
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Inviter un collaborateur</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Un email d'invitation sera envoyé. Le collaborateur pourra se connecter avec ce compte.
+            Un email d&apos;invitation sera envoyé. Le collaborateur pourra se connecter avec ce compte.
           </p>
         </div>
 
