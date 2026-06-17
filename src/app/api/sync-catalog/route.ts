@@ -199,8 +199,9 @@ async function fetchAllBooqableBundles(): Promise<CatalogItem[]> {
 
 async function fetchAllBooqableBundleItems(): Promise<BundleLink[]> {
   const resources = await fetchAllV4('/bundle_items')
+  const links: BundleLink[] = []
 
-  return resources.map(resource => {
+  for (const resource of resources) {
     const attrs = getAttributes(resource)
     const bundleId =
       firstString(attrs, ['bundle_id']) ||
@@ -209,14 +210,17 @@ async function fetchAllBooqableBundleItems(): Promise<BundleLink[]> {
       firstString(attrs, ['product_group_id']) ||
       getRelationshipId(resource, 'product_group')
 
-    if (!bundleId || !productGroupId) return null
+    if (!bundleId || !productGroupId) continue
 
-    return {
+    const quantity = firstNumber(attrs, ['quantity'])
+    links.push({
       bundleId,
       productGroupId,
-      quantity: firstNumber(attrs, ['quantity']),
-    }
-  }).filter((link): link is BundleLink => Boolean(link))
+      ...(quantity !== undefined ? { quantity } : {}),
+    })
+  }
+
+  return links
 }
 
 function attachBundleContext(
