@@ -187,8 +187,6 @@ export default function SettingsGeneralPage() {
   const [savingOrg, setSavingOrg] = useState(false)
   const [savedOrg, setSavedOrg] = useState(false)
 
-  // Auth user email (récupéré mais affiché via Supabase auth)
-  const [_userEmail, setUserEmail] = useState('')
 
   // Profil
   const [sector, setSector] = useState('audiovisuel')
@@ -210,11 +208,6 @@ export default function SettingsGeneralPage() {
   // Load data
   useEffect(() => {
     const supabase = getSupabase()
-
-    // Get auth user
-    supabase.auth.getUser().then(({ data }) => {
-      if (data?.user?.email) setUserEmail(data.user.email)
-    })
 
     // Get organization
     supabase
