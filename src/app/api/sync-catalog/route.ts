@@ -47,27 +47,27 @@ async function fetchAllBooqableProducts(): Promise<BooqableRawProduct[]> {
   return all
 }
 
-// Fetch all Booqable bundles (paginated)
-async function fetchAllBooqableBundles(): Promise<BooqableRawProduct[]> {
+// Fetch all Booqable product_groups (= catalog items + packs, paginated)
+// These are different from /products which are individual SKUs
+async function fetchAllBooqableProductGroups(): Promise<BooqableRawProduct[]> {
   const all: BooqableRawProduct[] = []
   let page = 1
   let hasMore = true
 
   while (hasMore) {
     const res = await fetch(
-      `${BOOQABLE_BASE}/bundles?api_key=${BOOQABLE_KEY}&per=200&page=${page}`
+      `${BOOQABLE_BASE}/product_groups?api_key=${BOOQABLE_KEY}&per=200&page=${page}`
     )
     if (!res.ok) {
-      // Bundles endpoint might not exist on all plans — fail gracefully
-      console.warn(`Bundles fetch skipped: ${res.status}`)
+      console.warn(`product_groups fetch error: ${res.status}`)
       break
     }
     const data = await res.json()
-    const bundles: BooqableRawProduct[] = (data.bundles || []).map(
-      (b: BooqableRawProduct) => ({ ...b, _type: 'bundle' as const })
+    const groups: BooqableRawProduct[] = (data.product_groups || []).map(
+      (g: BooqableRawProduct) => ({ ...g, _type: 'bundle' as const })
     )
-    all.push(...bundles)
-    hasMore = bundles.length === 200
+    all.push(...groups)
+    hasMore = groups.length === 200
     page++
   }
 
@@ -108,14 +108,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    console.log('Fetching Booqable products + bundles...')
-    const [rawProducts, rawBundles] = await Promise.all([
+    console.log('Fetching Booqable products + product_groups...')
+    const [rawProducts, rawGroups] = await Promise.all([
       fetchAllBooqableProducts(),
-      fetchAllBooqableBundles(),
+      fetchAllBooqableProductGroups(),
     ])
-    const allRaw = [...rawProducts, ...rawBundles]
+    // Deduplicate: product_groups often overlap with products by name — keep both IDs
+    // since Booqable uses different IDs for products vs product_groups
+    const allRaw = [...rawProducts, ...rawGroups]
     const active = allRaw.filter(p => !p.archived)
-    console.log(`Found ${rawProducts.length} products + ${rawBundles.length} bundles = ${active.length} active items`)
+    console.log(`Found ${rawProducts.length} products + ${rawGroups.length} product_groups = ${active.length} active items`)
 
     // Build enriched texts
     const enrichedTexts = active.map(buildEnrichedText)
@@ -163,7 +165,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       products: rawProducts.length,
-      bundles: rawBundles.length,
+      product_groups: rawGroups.length,
       total: allRaw.length,
       active: active.length,
       upserted,
