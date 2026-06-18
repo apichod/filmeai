@@ -696,19 +696,11 @@ async function bookBundleById(orderId: string, item: QuoteItem, bundleId: string
     }
   }
 
-  if (components.length > 0) {
-    for (const component of components) {
-      await bookProductById(
-        orderId,
-        component.productId,
-        component.quantity * quantity,
-        `Book bundle component ${component.productId} from ${item.name || item.requestedName || bundleId}`
-      )
-    }
-    return
-  }
+  const componentInfo = components.length > 0
+    ? ` Le bundle contient ${components.length} composant${components.length > 1 ? 's' : ''}, mais FilmeAI ne les ajoute plus séparément pour éviter de casser la structure pack dans Booqable.`
+    : ''
 
-  throw new Error(`Bundle ${item.name || item.requestedName || bundleId} impossible à ajouter. ${errors.join(' | ')}`)
+  throw new Error(`Bundle ${item.name || item.requestedName || bundleId} impossible à ajouter comme pack Booqable.${componentInfo} Erreurs Booqable : ${errors.join(' | ')}`)
 }
 
 async function bookResolvedItem({
