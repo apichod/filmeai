@@ -14,6 +14,49 @@ export async function OPTIONS() {
   return new Response(null, { headers: CORS })
 }
 
+// ── Sécurité 1 : échapper le HTML pour éviter les injections dans l'email ──
+function esc(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+// ── Sécurité 2 : types de fichiers autorisés (MIME côté serveur) ────────────
+const ALLOWED_MIME = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/csv',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/zip',
+  'application/x-zip-compressed',
+])
+
+// ── Sécurité 3 : rate limiting simple en mémoire (par IP, max 5/heure) ──────
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT = 5
+const RATE_WINDOW_MS = 60 * 60 * 1000 // 1 heure
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
+    return true
+  }
+  if (entry.count >= RATE_LIMIT) return false
+  entry.count++
+  return true
+}
+
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,6 +66,8 @@ function getSupabase() {
 }
 
 async function getOrgId(supabase: ReturnType<typeof getSupabase>, key: string) {
+  // Valide que key est bien un UUID (évite les injections de chemin)
+  if (!/^[0-9a-f-]{36}$/i.test(key)) return null
   const { data } = await supabase
     .from('organizations')
     .select('id')
@@ -36,25 +81,31 @@ function json(body: unknown, status = 200) {
 }
 
 const BUCKET = 'form-attachments'
-const MAX_BYTES = 20 * 1024 * 1024 // 20 Mo
+const MAX_BYTES = 20 * 1024 * 1024
 
 async function uploadFile(
   supabase: ReturnType<typeof getSupabase>,
   file: File,
   convId: string
 ): Promise<string | null> {
-  if (file.size > MAX_BYTES) return null
+  // Vérification MIME côté serveur
+  if (!ALLOWED_MIME.has(file.type)) {
+    throw new Error(`Type de fichier non autorisé : ${file.type}`)
+  }
+  if (file.size > MAX_BYTES) {
+    throw new Error('Le fichier dépasse 20 Mo.')
+  }
 
-  // Crée le bucket s'il n'existe pas encore
   await supabase.storage.createBucket(BUCKET, { public: true }).catch(() => null)
 
-  const ext = file.name.split('.').pop() ?? 'bin'
-  const path = `${convId}/${Date.now()}.${ext}`
+  // Forcer l'extension depuis le MIME (ignore le nom fourni par l'utilisateur)
+  const ext = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80)
+  const path = `${convId}/${Date.now()}_${ext}`
   const buffer = Buffer.from(await file.arrayBuffer())
 
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(path, buffer, { contentType: file.type, upsert: true })
+    .upload(path, buffer, { contentType: file.type, upsert: false })
 
   if (error) { console.error('Storage upload error:', error.message); return null }
 
@@ -63,18 +114,36 @@ async function uploadFile(
 }
 
 export async function POST(req: NextRequest) {
+  // ── Rate limiting ──────────────────────────────────────────────────────────
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  if (!checkRateLimit(ip)) {
+    return json({ error: 'Trop de demandes. Réessayez dans une heure.' }, 429)
+  }
+
   try {
     const formData = await req.formData()
 
-    const key     = formData.get('key') as string
-    const name    = formData.get('name') as string
-    const email   = formData.get('email') as string
-    const phone   = (formData.get('phone') as string) || ''
-    const message = formData.get('message') as string
-    const file    = formData.get('file') as File | null
+    const key      = (formData.get('key') as string ?? '').trim()
+    const name     = (formData.get('name') as string ?? '').trim().slice(0, 200)
+    const email    = (formData.get('email') as string ?? '').trim().slice(0, 200)
+    const phone    = (formData.get('phone') as string ?? '').trim().slice(0, 50)
+    const message  = (formData.get('message') as string ?? '').trim().slice(0, 5000)
+    const honeypot = (formData.get('website') as string ?? '').trim() // champ piège
+    const file     = formData.get('file') as File | null
+
+    // ── Sécurité 4 : honeypot — les bots remplissent ce champ caché ──────────
+    if (honeypot) {
+      // Simule un succès pour ne pas alerter le bot
+      return json({ ok: true })
+    }
 
     if (!key || !name || !email || !message) {
       return json({ error: 'Champs obligatoires manquants.' }, 400)
+    }
+
+    // Validation email basique
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return json({ error: 'Adresse e-mail invalide.' }, 400)
     }
 
     const supabase = getSupabase()
@@ -100,40 +169,28 @@ export async function POST(req: NextRequest) {
 
     // ── 2. Upload fichier (optionnel) ──────────────────────────────────────
     let fileUrl: string | null = null
-    let fileInfo = ''
     if (file && file.size > 0) {
-      if (file.size > MAX_BYTES) {
-        return json({ error: 'Le fichier dépasse 20 Mo.' }, 400)
-      }
       fileUrl = await uploadFile(supabase, file, conv.id)
-      if (fileUrl) {
-        fileInfo = `\n\n📎 Fichier joint : ${file.name} (${(file.size / 1024).toFixed(0)} Ko)\n${fileUrl}`
-      }
     }
 
-    // Ajouter le message initial
     await supabase.from('messages').insert({
       conversation_id: conv.id,
       role: 'user',
       content: message + (fileUrl ? `\n\n📎 [${file!.name}](${fileUrl})` : ''),
     })
 
-    // Log activité
     void supabase.from('activity_log').insert({
       organization_id: orgId,
       action: 'Demande reçue via formulaire',
       target_id: conv.id,
     })
 
-    // ── 3. Envoyer l'email ─────────────────────────────────────────────────
+    // ── 3. Envoyer l'email (contenus échappés) ─────────────────────────────
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     })
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://filmeai.vercel.app'
@@ -142,23 +199,23 @@ export async function POST(req: NextRequest) {
       from: `"FilmeAI" <${process.env.SMTP_USER}>`,
       to: process.env.SMTP_USER,
       replyTo: email,
-      subject: `Nouvelle demande de devis — ${name}`,
+      subject: `Nouvelle demande de devis — ${esc(name)}`,
       html: `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
           <h2 style="margin:0 0 16px;font-size:18px">Nouvelle demande de devis sur liste</h2>
           <table style="width:100%;border-collapse:collapse;font-size:14px">
-            <tr><td style="padding:8px 0;color:#666;width:120px">Nom</td><td style="padding:8px 0;font-weight:600">${name}</td></tr>
-            <tr><td style="padding:8px 0;color:#666">E-mail</td><td style="padding:8px 0"><a href="mailto:${email}">${email}</a></td></tr>
-            <tr><td style="padding:8px 0;color:#666">Téléphone</td><td style="padding:8px 0">${phone || '—'}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;width:120px">Nom</td><td style="padding:8px 0;font-weight:600">${esc(name)}</td></tr>
+            <tr><td style="padding:8px 0;color:#666">E-mail</td><td style="padding:8px 0"><a href="mailto:${esc(email)}">${esc(email)}</a></td></tr>
+            <tr><td style="padding:8px 0;color:#666">Téléphone</td><td style="padding:8px 0">${esc(phone) || '—'}</td></tr>
           </table>
-          <div style="margin-top:16px;padding:16px;background:#f9f9f9;border-radius:8px;font-size:14px;line-height:1.6;white-space:pre-wrap">${message}</div>
+          <div style="margin-top:16px;padding:16px;background:#f9f9f9;border-radius:8px;font-size:14px;line-height:1.6;white-space:pre-wrap">${esc(message)}</div>
           ${fileUrl ? `
           <div style="margin-top:12px;padding:12px 16px;background:#f0f9ff;border-radius:8px;font-size:13px">
-            📎 <strong>${file!.name}</strong> — <a href="${fileUrl}" style="color:#0070f3">Télécharger le fichier →</a>
+            📎 <strong>${esc(file!.name)}</strong> — <a href="${esc(fileUrl)}" style="color:#0070f3">Télécharger →</a>
           </div>` : ''}
           <p style="margin-top:24px;font-size:12px;color:#999">
             Demande reçue via le formulaire FilmeAI ·
-            <a href="${appUrl}/inbox/${conv.id}" style="color:#000">Voir dans l&apos;Inbox →</a>
+            <a href="${appUrl}/inbox/${conv.id}" style="color:#000">Voir dans l'Inbox →</a>
           </p>
         </div>
       `,

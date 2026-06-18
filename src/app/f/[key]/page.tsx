@@ -45,6 +45,7 @@ export default function FormPage() {
       fd.append('email', email)
       fd.append('phone', phone)
       fd.append('message', message)
+      fd.append('website', '') // honeypot — toujours vide pour les humains
       if (file) fd.append('file', file)
 
       const res = await fetch('/api/form-submit', { method: 'POST', body: fd })
@@ -82,6 +83,9 @@ export default function FormPage() {
           </div>
 
           <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Honeypot — invisible pour les humains, les bots le remplissent */}
+            <input name="website" type="text" tabIndex={-1} autoComplete="off"
+              style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0 }} />
 
             <div>
               <label style={labelStyle}>Prénom et Nom *</label>
