@@ -1123,6 +1123,21 @@ function estimateLinesForQuote(estimate: QuoteEstimate) {
   }))
 }
 
+function buildEstimateAvailabilitySummary(estimate: QuoteEstimate): string {
+  if (!estimate.lines.length) return ''
+
+  const statusIcon: Record<AvailabilityStatus, string> = {
+    available: '✅',
+    limited: '⚠️',
+    unavailable: '❌',
+    unknown: 'ℹ️',
+  }
+
+  return estimate.lines
+    .map(line => `${statusIcon[line.availabilityStatus]} ${line.quantity}× ${line.title} — ${line.availabilityLabel}`)
+    .join('\n')
+}
+
 async function createQuoteFromEstimate(req: NextRequest, sessionData: SessionData, estimate: QuoteEstimate): Promise<CreateQuoteResponse> {
   if (!sessionData.customerEmail) throw new Error('Il manque votre email pour envoyer le devis.')
   if (!estimate.startsAt || !estimate.stopsAt) throw new Error('Il manque les dates de location.')
@@ -1199,10 +1214,12 @@ export async function POST(req: NextRequest) {
         let requestContext: string | null = null
         let booqableOrderId: string | null = null
         let booqableOrderUrl: string | null = null
+        let lastQuoteEstimate: QuoteEstimate | null = null
 
         const sendQuoteEstimate = async () => {
           send({ type: 'progress', step: 'quote_estimate', message: 'Vérification des disponibilités et préparation de l’estimation…' })
           const estimate = await buildQuoteEstimate(sessionData)
+          lastQuoteEstimate = estimate
           send({ type: 'quote_estimate', estimate })
 
           const unavailableCount = estimate.lines.filter(line => line.availabilityStatus === 'unavailable').length
@@ -1212,7 +1229,8 @@ export async function POST(req: NextRequest) {
             ? `\n${estimate.interventionCount} ligne${estimate.interventionCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront créées en ligne custom pour ne pas bloquer le devis.`
             : ''
           const availabilityText = `\nDisponibilités : ${availableCount} disponible${availableCount > 1 ? 's' : ''}, ${limitedCount} limitée${limitedCount > 1 ? 's' : ''}, ${unavailableCount} indisponible${unavailableCount > 1 ? 's' : ''}.`
-          return `Voilà une première estimation ${estimate.dateLabel}.${availabilityText}${interventionText}\n\nLe détail de disponibilité est indiqué produit par produit sur la carte ci-dessous. Si tout vous convient, cliquez sur “Continuer — recevoir mon devis”.`
+          const linesText = buildEstimateAvailabilitySummary(estimate)
+          return `Voilà une première estimation ${estimate.dateLabel}.${availabilityText}${interventionText}\n\nDisponibilité par produit :\n${linesText}\n\nLe détail est aussi sur la carte ci-dessous. Si tout vous convient, cliquez sur “Continuer — recevoir mon devis” ou répondez “je souhaite recevoir le devis”.`
         }
 
         try {
@@ -1457,7 +1475,7 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
             send({ type: 'conversation_save_error', message: msg })
           }
 
-          send({ type: 'done' })
+          send(lastQuoteEstimate ? { type: 'done', estimate: lastQuoteEstimate } : { type: 'done' })
         } catch (err) {
           console.error('Stream error:', err)
           send({ type: 'error', message: 'Une erreur est survenue.' })

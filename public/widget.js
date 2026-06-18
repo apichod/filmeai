@@ -236,6 +236,7 @@
   var typingEl = null;
   var matchListEl = null;
   var manualSearchTimer = null;
+  var lastRenderedEstimateKey = null;
 
   var panel = document.getElementById('filmeai-panel');
   var bubble = document.getElementById('filmeai-bubble');
@@ -891,6 +892,15 @@
 
   function renderEstimateCard(estimate) {
     if (!estimate || !Array.isArray(estimate.lines)) return;
+    var estimateKey = JSON.stringify({
+      startsAt: estimate.startsAt || '',
+      stopsAt: estimate.stopsAt || '',
+      lines: estimate.lines.map(function(line) {
+        return [line.productId || line.requestedName || line.title, line.quantity, line.availabilityStatus].join(':');
+      })
+    });
+    if (lastRenderedEstimateKey === estimateKey) return;
+    lastRenderedEstimateKey = estimateKey;
 
     var card = document.createElement('div');
     card.className = 'filmeai-estimate-card';
@@ -1063,6 +1073,7 @@
       } else if (evt.type === 'done') {
         hideTyping();
         if (progressEl) { progressEl.remove(); progressEl = null; }
+        if (evt.estimate) renderEstimateCard(evt.estimate);
         isLoading = false;
         sendBtn.disabled = false;
         input.focus();
