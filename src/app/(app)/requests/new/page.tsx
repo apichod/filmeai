@@ -448,7 +448,25 @@ export default function NewRequestPage() {
     setItems(prev => prev.filter(item => item.uid !== uid))
     if (editingUid === uid) setEditingUid(null)
   }
+  function recordCatalogSignal(term: string, product: Product) {
+    const cleanTerm = term.trim()
+    if (!cleanTerm || cleanTerm.toLowerCase() === product.name.toLowerCase()) return
+
+    void fetch('/api/catalog-signals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        term: cleanTerm,
+        productId: product.id,
+        productName: product.name,
+        source: 'requests_new_manual',
+      }),
+    }).catch(() => {})
+  }
   function replaceProduct(uid: string, product: Product) {
+    const previous = items.find(item => item.uid === uid)
+    if (previous) recordCatalogSignal(previous.requestedName || previous.title || product.name, product)
+
     setItems(prev => prev.map(item => item.uid === uid ? {
       ...item,
       type: 'product',

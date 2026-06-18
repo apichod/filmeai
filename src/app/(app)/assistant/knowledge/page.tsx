@@ -4,6 +4,16 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 /* ── Types ── */
 type FaqItem = { id: string; question: string; answer: string; synced: boolean; updated_at: string }
 type KnowledgeUrl = { id: string; url: string; title: string | null; status: string; created_at: string }
+type CatalogSignal = {
+  id: string
+  term: string
+  product_name: string
+  product_id: string | null
+  source: string
+  occurrences: number
+  approved?: boolean
+  updated_at: string
+}
 type Tab = 'faq' | 'files' | 'webpages' | 'signals'
 
 /* ── Icons ── */
@@ -95,6 +105,13 @@ export default function AssistantKnowledgePage() {
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  /* ── Signals state ── */
+  const [signals, setSignals] = useState<CatalogSignal[]>([])
+  const [signalsLoading, setSignalsLoading] = useState(true)
+  const [signalTerm, setSignalTerm] = useState('')
+  const [signalProduct, setSignalProduct] = useState('')
+  const [signalSaving, setSignalSaving] = useState(false)
+
   /* ── Load FAQ ── */
   const loadFaq = useCallback(async () => {
     setFaqLoading(true)
@@ -119,8 +136,21 @@ export default function AssistantKnowledgePage() {
     }
   }, [])
 
+  /* ── Load Signals ── */
+  const loadSignals = useCallback(async () => {
+    setSignalsLoading(true)
+    try {
+      const res = await fetch('/api/catalog-signals')
+      const data = await res.json() as { signals?: CatalogSignal[] }
+      setSignals(data.signals ?? [])
+    } finally {
+      setSignalsLoading(false)
+    }
+  }, [])
+
   useEffect(() => { void loadFaq() }, [loadFaq])
   useEffect(() => { void loadUrls() }, [loadUrls])
+  useEffect(() => { void loadSignals() }, [loadSignals])
 
   /* ── FAQ CRUD ── */
   async function addFaq() {
@@ -178,6 +208,47 @@ export default function AssistantKnowledgePage() {
   async function deleteUrl(id: string) {
     await fetch(`/api/knowledge-urls/${id}`, { method: 'DELETE' })
     setUrls(p => p.filter(u => u.id !== id))
+  }
+
+  /* ── Signals CRUD ── */
+  async function addSignal() {
+    if (!signalTerm.trim() || !signalProduct.trim()) return
+    setSignalSaving(true)
+    try {
+      const res = await fetch('/api/catalog-signals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          term: signalTerm,
+          productName: signalProduct,
+          source: 'knowledge_manual',
+        }),
+      })
+      const data = await res.json() as { signal?: CatalogSignal }
+      if (data.signal) {
+        setSignals(prev => [data.signal!, ...prev.filter(signal => signal.id !== data.signal!.id)])
+        setSignalTerm('')
+        setSignalProduct('')
+      }
+    } finally {
+      setSignalSaving(false)
+    }
+  }
+
+  async function deleteSignal(id: string) {
+    if (!confirm('Supprimer cette association apprise ?')) return
+    await fetch(`/api/catalog-signals/${id}`, { method: 'DELETE' })
+    setSignals(prev => prev.filter(signal => signal.id !== id))
+  }
+
+  async function approveSignal(id: string) {
+    const res = await fetch(`/api/catalog-signals/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: true }),
+    })
+    const data = await res.json() as { signal?: CatalogSignal }
+    if (data.signal) setSignals(prev => prev.map(signal => signal.id === id ? data.signal! : signal))
   }
 
   /* ── Tabs ── */
@@ -493,18 +564,93 @@ export default function AssistantKnowledgePage() {
 
           {/* Alias appris */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <p className="text-sm font-semibold text-gray-900">Alias appris par le bot</p>
-              <p className="text-xs text-gray-500 mt-0.5">Associations apprises automatiquement entre une formulation visiteur et un article de votre catalogue. Supprimez celles qui sont fausses.</p>
-            </div>
-            <div className="flex flex-col items-center justify-center gap-2 py-12">
-              <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-                <IconSparkle className="w-5 h-5 text-gray-400" />
+            <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Alias / associations catalogue</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Ces signaux alimentent le glossaire d’extraction : “terme client” → “produit catalogue”. Les corrections manuelles dans les devis l’enrichissent automatiquement.
+                </p>
               </div>
-              <p className="text-sm text-gray-500">Aucun alias appris pour l&apos;instant.</p>
-              <p className="text-xs text-gray-400">Les alias se construisent au fil des conversations.</p>
+              <button
+                onClick={() => void loadSignals()}
+                className="flex items-center gap-1 text-xs border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
+              >
+                <IconRefresh className="w-3.5 h-3.5" /> Rafraîchir
+              </button>
             </div>
+
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+              <div className="grid md:grid-cols-[1fr_1fr_auto] gap-2">
+                <input
+                  value={signalTerm}
+                  onChange={e => setSignalTerm(e.target.value)}
+                  placeholder="Terme client : ex. indie 5"
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white"
+                />
+                <input
+                  value={signalProduct}
+                  onChange={e => setSignalProduct(e.target.value)}
+                  placeholder="Produit catalogue : ex. Atomos Shogun Indie 5"
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white"
+                />
+                <button
+                  onClick={() => void addSignal()}
+                  disabled={signalSaving || !signalTerm.trim() || !signalProduct.trim()}
+                  className="text-xs bg-gray-900 text-white rounded-lg px-3 py-2 hover:bg-gray-700 transition-colors disabled:opacity-40"
+                >
+                  {signalSaving ? 'Ajout…' : '+ Ajouter'}
+                </button>
+              </div>
+            </div>
+
+            {signalsLoading ? (
+              <div className="px-6 py-10 text-sm text-gray-400">Chargement des signaux…</div>
+            ) : signals.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-12">
+                <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                  <IconSparkle className="w-5 h-5 text-gray-400" />
+                </div>
+                <p className="text-sm text-gray-500">Aucun alias appris pour l&apos;instant.</p>
+                <p className="text-xs text-gray-400">Ils apparaîtront dès qu’un produit sera corrigé manuellement.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {signals.map(signal => (
+                  <div key={signal.id} className="px-6 py-3 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-900">
+                        <span className="font-semibold">“{signal.term}”</span>
+                        <span className="text-gray-400 mx-2">→</span>
+                        <span>{signal.product_name}</span>
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {signal.source || 'manual'} · {signal.occurrences || 1} occurrence{(signal.occurrences || 1) > 1 ? 's' : ''}
+                        {signal.approved === false && <span className="ml-2 text-amber-600 font-medium">à valider</span>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {signal.approved === false && (
+                        <button
+                          onClick={() => void approveSignal(signal.id)}
+                          className="text-xs border border-amber-200 bg-amber-50 text-amber-700 rounded-lg px-2 py-1 hover:bg-amber-100"
+                        >
+                          Valider
+                        </button>
+                      )}
+                      <button
+                        onClick={() => void deleteSignal(signal.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                        title="Supprimer l'association"
+                      >
+                        <IconTrash className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
 
         </div>
       )}

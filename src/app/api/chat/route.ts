@@ -1,7 +1,13 @@
 import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { DEFAULT_CHAT_SYSTEM_PROMPT, DEFAULT_QUOTE_BACKEND_PROMPT, normalizeEditablePrompt } from '@/lib/defaultAssistantPrompts'
+import {
+  DEFAULT_CHAT_SYSTEM_PROMPT,
+  DEFAULT_QUOTE_EXTRACTION_PROMPT,
+  DEFAULT_QUOTE_RERANK_PROMPT,
+  normalizeEditablePrompt,
+  splitQuoteBackendPrompt,
+} from '@/lib/defaultAssistantPrompts'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -83,6 +89,8 @@ type ConversationPatch = {
 
 type AssistantPromptSettings = {
   chat_system_prompt?: string | null
+  quote_extraction_prompt?: string | null
+  quote_rerank_prompt?: string | null
   quote_backend_prompt?: string | null
 }
 
@@ -259,7 +267,8 @@ async function getDefaultOrganizationId(supabase: SupabaseAdmin): Promise<string
 
 async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
   chatSystemPrompt: string
-  quoteBackendPrompt: string
+  quoteExtractionPrompt: string
+  quoteRerankPrompt: string
 }> {
   try {
     const organizationId = await getDefaultOrganizationId(supabase)
@@ -274,15 +283,18 @@ async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
     if (error) throw error
 
     const settings = (data || {}) as AssistantPromptSettings
+    const legacyPrompts = splitQuoteBackendPrompt(settings.quote_backend_prompt)
     return {
       chatSystemPrompt: normalizeEditablePrompt(settings.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT),
-      quoteBackendPrompt: normalizeEditablePrompt(settings.quote_backend_prompt, DEFAULT_QUOTE_BACKEND_PROMPT),
+      quoteExtractionPrompt: normalizeEditablePrompt(settings.quote_extraction_prompt, legacyPrompts.extractionPrompt),
+      quoteRerankPrompt: normalizeEditablePrompt(settings.quote_rerank_prompt, legacyPrompts.rerankPrompt),
     }
   } catch (err) {
     console.warn('Assistant prompt settings fallback:', err instanceof Error ? err.message : String(err))
     return {
       chatSystemPrompt: DEFAULT_CHAT_SYSTEM_PROMPT,
-      quoteBackendPrompt: DEFAULT_QUOTE_BACKEND_PROMPT,
+      quoteExtractionPrompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
+      quoteRerankPrompt: DEFAULT_QUOTE_RERANK_PROMPT,
     }
   }
 }
@@ -404,12 +416,17 @@ async function hybridSearch(query: string, limit = 10): Promise<Product[]> {
   return (data || []) as Product[]
 }
 
-async function parseQuoteList(req: NextRequest, message: string, quoteBackendPrompt: string): Promise<QuoteParseItem[]> {
+async function parseQuoteList(
+  req: NextRequest,
+  message: string,
+  quoteExtractionPrompt: string,
+  quoteRerankPrompt: string
+): Promise<QuoteParseItem[]> {
   const url = new URL('/api/parse-request', req.url)
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, quoteBackendPrompt }),
+    body: JSON.stringify({ message, quoteExtractionPrompt, quoteRerankPrompt }),
     cache: 'no-store',
   })
 
@@ -460,7 +477,7 @@ export async function POST(req: NextRequest) {
       : isBrandClarification(lastUserText) && previousLooksLikeQuoteList
         ? `${previousUserText}\nPrécision client : ${lastUserText}`
         : ''
-    const { chatSystemPrompt, quoteBackendPrompt } = await getAssistantPromptSettings(getSupabaseAdmin())
+    const { chatSystemPrompt, quoteExtractionPrompt, quoteRerankPrompt } = await getAssistantPromptSettings(getSupabaseAdmin())
 
     const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: chatSystemPrompt },
@@ -503,7 +520,7 @@ export async function POST(req: NextRequest) {
 
             let items: QuoteParseItem[] = []
             try {
-              items = await parseQuoteList(req, quoteRequestText, quoteBackendPrompt)
+              items = await parseQuoteList(req, quoteRequestText, quoteExtractionPrompt, quoteRerankPrompt)
             } finally {
               clearInterval(progressTimer)
             }

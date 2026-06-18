@@ -28,6 +28,9 @@ const ALLOWED_FIELDS = new Set([
   'greeting_message',
   'internal_persona',
   'chat_system_prompt',
+  'quote_extraction_prompt',
+  'quote_rerank_prompt',
+  // Ancien champ conservé pour compatibilité.
   'quote_backend_prompt',
   'forbidden_topics',
 

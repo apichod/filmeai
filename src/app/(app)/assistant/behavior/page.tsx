@@ -1,14 +1,25 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { DEFAULT_CHAT_SYSTEM_PROMPT, DEFAULT_QUOTE_BACKEND_PROMPT, normalizeEditablePrompt } from '@/lib/defaultAssistantPrompts'
+import {
+  DEFAULT_CHAT_SYSTEM_PROMPT,
+  DEFAULT_QUOTE_EXTRACTION_PROMPT,
+  DEFAULT_QUOTE_RERANK_PROMPT,
+  normalizeEditablePrompt,
+  splitQuoteBackendPrompt,
+} from '@/lib/defaultAssistantPrompts'
 
 type Settings = {
   language: string
   greeting_message: string
   internal_persona: string
   chat_system_prompt: string
-  quote_backend_prompt: string
+  quote_extraction_prompt: string
+  quote_rerank_prompt: string
   forbidden_topics: string[]
+}
+
+type ApiSettings = Partial<Settings> & {
+  quote_backend_prompt?: string | null
 }
 
 const defaults: Settings = {
@@ -16,7 +27,8 @@ const defaults: Settings = {
   greeting_message: '',
   internal_persona: '',
   chat_system_prompt: DEFAULT_CHAT_SYSTEM_PROMPT,
-  quote_backend_prompt: DEFAULT_QUOTE_BACKEND_PROMPT,
+  quote_extraction_prompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
+  quote_rerank_prompt: DEFAULT_QUOTE_RERANK_PROMPT,
   forbidden_topics: [],
 }
 
@@ -31,13 +43,15 @@ export default function AssistantBehaviorPage() {
   const load = useCallback(() => {
     fetch('/api/assistant-settings')
       .then(r => r.json())
-      .then((d: { settings?: Partial<Settings> }) => {
+      .then((d: { settings?: ApiSettings }) => {
         if (!d.settings) return
+        const legacyPrompts = splitQuoteBackendPrompt(d.settings.quote_backend_prompt)
         setS(prev => ({
           ...prev,
           ...d.settings,
           chat_system_prompt: normalizeEditablePrompt(d.settings?.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT),
-          quote_backend_prompt: normalizeEditablePrompt(d.settings?.quote_backend_prompt, DEFAULT_QUOTE_BACKEND_PROMPT),
+          quote_extraction_prompt: normalizeEditablePrompt(d.settings?.quote_extraction_prompt, legacyPrompts.extractionPrompt),
+          quote_rerank_prompt: normalizeEditablePrompt(d.settings?.quote_rerank_prompt, legacyPrompts.rerankPrompt),
           forbidden_topics: Array.isArray(d.settings?.forbidden_topics) ? d.settings.forbidden_topics : prev.forbidden_topics,
         }))
       })
@@ -66,10 +80,20 @@ export default function AssistantBehaviorPage() {
     setError('')
 
     try {
+      const payload = {
+        language: s.language,
+        greeting_message: s.greeting_message,
+        internal_persona: s.internal_persona,
+        chat_system_prompt: s.chat_system_prompt,
+        quote_extraction_prompt: s.quote_extraction_prompt,
+        quote_rerank_prompt: s.quote_rerank_prompt,
+        forbidden_topics: s.forbidden_topics,
+      }
+
       const res = await fetch('/api/assistant-settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(s),
+        body: JSON.stringify(payload),
       })
       const data = await res.json() as { error?: string }
       if (!res.ok) throw new Error(data.error || 'Sauvegarde impossible.')
@@ -134,7 +158,7 @@ export default function AssistantBehaviorPage() {
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Prompts avancés</h2>
           <p className="text-xs text-gray-500 mt-1">
-            Ces instructions sont utilisées côté backend. À modifier prudemment : le prompt devis doit conserver une sortie JSON exploitable.
+            Ces instructions sont utilisées côté backend. À modifier prudemment : extraction et reranking doivent conserver une sortie JSON exploitable.
           </p>
         </div>
 
@@ -167,27 +191,53 @@ export default function AssistantBehaviorPage() {
         <div>
           <div className="flex items-start justify-between gap-4 mb-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Prompt côté devis automatique</label>
+              <label className="block text-sm font-medium text-gray-700">Prompt extraction liste</label>
               <p className="text-xs text-gray-500 mt-0.5">
-                Contient deux sections : extraction de liste puis reranking catalogue. Garde idéalement les séparateurs si tu modifies le prompt.
+                Commun au chat et à /requests/new. Il transforme un message client en lignes produit structurées, avec quantités, ordre et sections.
               </p>
             </div>
             <button
               type="button"
-              onClick={() => set('quote_backend_prompt', DEFAULT_QUOTE_BACKEND_PROMPT)}
+              onClick={() => set('quote_extraction_prompt', DEFAULT_QUOTE_EXTRACTION_PROMPT)}
               className="shrink-0 text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50"
             >
               Réinitialiser
             </button>
           </div>
           <textarea
-            value={s.quote_backend_prompt}
-            onChange={e => set('quote_backend_prompt', e.target.value)}
+            value={s.quote_extraction_prompt}
+            onChange={e => set('quote_extraction_prompt', e.target.value)}
             rows={22}
             spellCheck={false}
             className="w-full font-mono border border-gray-200 rounded-lg px-3 py-2 text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-black resize-y"
           />
-          <p className="mt-1 text-[11px] text-gray-400">{s.quote_backend_prompt.length.toLocaleString('fr-FR')} caractères</p>
+          <p className="mt-1 text-[11px] text-gray-400">{s.quote_extraction_prompt.length.toLocaleString('fr-FR')} caractères</p>
+        </div>
+
+        <div>
+          <div className="flex items-start justify-between gap-4 mb-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Prompt reranking catalogue</label>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Commun au chat et à /requests/new. Il choisit le meilleur produit parmi les candidats du moteur hybride, sans inventer.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => set('quote_rerank_prompt', DEFAULT_QUOTE_RERANK_PROMPT)}
+              className="shrink-0 text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50"
+            >
+              Réinitialiser
+            </button>
+          </div>
+          <textarea
+            value={s.quote_rerank_prompt}
+            onChange={e => set('quote_rerank_prompt', e.target.value)}
+            rows={14}
+            spellCheck={false}
+            className="w-full font-mono border border-gray-200 rounded-lg px-3 py-2 text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-black resize-y"
+          />
+          <p className="mt-1 text-[11px] text-gray-400">{s.quote_rerank_prompt.length.toLocaleString('fr-FR')} caractères</p>
         </div>
       </div>
 

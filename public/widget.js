@@ -12,6 +12,10 @@
     try { return new URL('/api/catalog-search', API_URL).toString(); }
     catch (e) { return 'https://filmeai.vercel.app/api/catalog-search'; }
   })();
+  var CATALOG_SIGNALS_URL = script.getAttribute('data-signals-url') || (function () {
+    try { return new URL('/api/catalog-signals', API_URL).toString(); }
+    catch (e) { return 'https://filmeai.vercel.app/api/catalog-signals'; }
+  })();
   var ORG_ID = script.getAttribute('data-org-id') || '';
 
   // ── Styles ─────────────────────────────────────────────────────────────────
@@ -343,6 +347,26 @@
       .replace(/\b(RX\s*1500)0\b/gi, '$1');
   }
 
+  function recordCatalogSignal(item, product) {
+    if (!item || !product) return;
+    var term = String(item.requestedName || item.searchQuery || '').trim();
+    var productName = displayProductName(product).trim();
+    if (!term || !productName || term.toLowerCase() === productName.toLowerCase()) return;
+
+    try {
+      fetch(CATALOG_SIGNALS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          term: term,
+          productId: product.id || null,
+          productName: productName,
+          source: 'chat_manual'
+        })
+      }).catch(function() {});
+    } catch (e) {}
+  }
+
   function searchCatalogForMatch(index, query) {
     var item = sessionData.quoteMatches[index];
     if (!item) return;
@@ -497,6 +521,7 @@
         item.editing = !item.editing;
       } else if (action === 'choose') {
         item.selectedProductId = target.getAttribute('data-product-id');
+        recordCatalogSignal(item, findChoice(item, item.selectedProductId) || item.matched);
         item.userResolved = true;
         item.leaveToFilme = false;
         item.editing = false;

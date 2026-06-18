@@ -1,7 +1,12 @@
 import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { DEFAULT_QUOTE_BACKEND_PROMPT, normalizeEditablePrompt, splitQuoteBackendPrompt } from '@/lib/defaultAssistantPrompts'
+import {
+  DEFAULT_QUOTE_EXTRACTION_PROMPT,
+  DEFAULT_QUOTE_RERANK_PROMPT,
+  normalizeEditablePrompt,
+  splitQuoteBackendPrompt,
+} from '@/lib/defaultAssistantPrompts'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -25,10 +30,15 @@ async function getDefaultOrganizationId(): Promise<string | null> {
   return data?.id ? String(data.id) : null
 }
 
-async function getQuoteBackendPrompt(): Promise<string> {
+async function getQuotePrompts(): Promise<{ extractionPrompt: string; rerankPrompt: string }> {
   try {
     const organizationId = await getDefaultOrganizationId()
-    if (!organizationId) return DEFAULT_QUOTE_BACKEND_PROMPT
+    if (!organizationId) {
+      return {
+        extractionPrompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
+        rerankPrompt: DEFAULT_QUOTE_RERANK_PROMPT,
+      }
+    }
 
     const supabase = getSupabaseAdmin()
     const { data, error } = await supabase
@@ -42,10 +52,53 @@ async function getQuoteBackendPrompt(): Promise<string> {
     if (error) throw error
 
     const settings = (data || {}) as AssistantPromptSettings
-    return normalizeEditablePrompt(settings.quote_backend_prompt, DEFAULT_QUOTE_BACKEND_PROMPT)
+    const legacyPrompts = splitQuoteBackendPrompt(settings.quote_backend_prompt)
+    return {
+      extractionPrompt: normalizeEditablePrompt(settings.quote_extraction_prompt, legacyPrompts.extractionPrompt),
+      rerankPrompt: normalizeEditablePrompt(settings.quote_rerank_prompt, legacyPrompts.rerankPrompt),
+    }
   } catch (err) {
     console.warn('Quote backend prompt fallback:', err instanceof Error ? err.message : String(err))
-    return DEFAULT_QUOTE_BACKEND_PROMPT
+    return {
+      extractionPrompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
+      rerankPrompt: DEFAULT_QUOTE_RERANK_PROMPT,
+    }
+  }
+}
+
+async function getCatalogSignalsGlossary(): Promise<string> {
+  try {
+    const organizationId = await getDefaultOrganizationId()
+    if (!organizationId) return ''
+
+    const supabase = getSupabaseAdmin()
+    const { data, error } = await supabase
+      .from('catalog_signals')
+      .select('term, product_name, occurrences')
+      .eq('organization_id', organizationId)
+      .eq('approved', true)
+      .order('occurrences', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(150)
+
+    if (error || !data?.length) return ''
+
+    const lines = data
+      .map(row => {
+        const term = String(row.term || '').trim()
+        const productName = String(row.product_name || '').trim()
+        if (!term || !productName) return null
+        return `- ${term} → ${productName}`
+      })
+      .filter(Boolean)
+      .join('\n')
+
+    return lines
+      ? `GLOSSAIRE APPRIS DEPUIS L'INTERFACE :\n${lines}\n\nSi un terme client correspond à une entrée de ce glossaire appris, utilise cette association dans le champ query.`
+      : ''
+  } catch (err) {
+    console.warn('Catalog signals glossary fallback:', err instanceof Error ? err.message : String(err))
+    return ''
   }
 }
 
@@ -87,6 +140,8 @@ type RerankResult = {
 type EmbeddingMap = Map<string, number[]>
 
 type AssistantPromptSettings = {
+  quote_extraction_prompt?: string | null
+  quote_rerank_prompt?: string | null
   quote_backend_prompt?: string | null
 }
 
@@ -526,16 +581,39 @@ async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: string): P
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, quoteBackendPrompt: bodyQuoteBackendPrompt } = await req.json() as {
+    const {
+      message,
+      quoteExtractionPrompt: bodyQuoteExtractionPrompt,
+      quoteRerankPrompt: bodyQuoteRerankPrompt,
+      quoteBackendPrompt: bodyQuoteBackendPrompt,
+    } = await req.json() as {
       message: string
+      quoteExtractionPrompt?: string
+      quoteRerankPrompt?: string
       quoteBackendPrompt?: string
     }
-    const quoteBackendPrompt = typeof bodyQuoteBackendPrompt === 'string' && bodyQuoteBackendPrompt.trim().length > 0
-      ? bodyQuoteBackendPrompt
-      : await getQuoteBackendPrompt()
-    const { extractionPrompt, rerankPrompt } = splitQuoteBackendPrompt(quoteBackendPrompt)
+    let extractionPrompt: string
+    let rerankPrompt: string
 
-    const extractedItems = await extractItems(message, extractionPrompt)
+    if (typeof bodyQuoteExtractionPrompt === 'string' || typeof bodyQuoteRerankPrompt === 'string') {
+      extractionPrompt = normalizeEditablePrompt(bodyQuoteExtractionPrompt, DEFAULT_QUOTE_EXTRACTION_PROMPT)
+      rerankPrompt = normalizeEditablePrompt(bodyQuoteRerankPrompt, DEFAULT_QUOTE_RERANK_PROMPT)
+    } else if (typeof bodyQuoteBackendPrompt === 'string' && bodyQuoteBackendPrompt.trim().length > 0) {
+      const splitPrompts = splitQuoteBackendPrompt(bodyQuoteBackendPrompt)
+      extractionPrompt = splitPrompts.extractionPrompt
+      rerankPrompt = splitPrompts.rerankPrompt
+    } else {
+      const settingsPrompts = await getQuotePrompts()
+      extractionPrompt = settingsPrompts.extractionPrompt
+      rerankPrompt = settingsPrompts.rerankPrompt
+    }
+
+    const learnedGlossary = await getCatalogSignalsGlossary()
+    const finalExtractionPrompt = learnedGlossary
+      ? `${extractionPrompt}\n\n${learnedGlossary}`
+      : extractionPrompt
+
+    const extractedItems = await extractItems(message, finalExtractionPrompt)
     if (extractedItems.length === 0) return NextResponse.json({ items: [] })
 
     const embeddingMap = await createEmbeddingMap(
