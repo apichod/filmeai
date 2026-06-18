@@ -437,9 +437,13 @@
     }, 280);
   }
 
+  function shouldShowCatalogSuggestion(item) {
+    return item && item.matched && Number(item.confidence || 0) >= 0.5;
+  }
+
   function initQuoteMatches(items) {
     sessionData.quoteMatches = (items || []).map(function(item, index) {
-      var selectedProductId = item.matched && item.confidence >= 0.8 ? item.matched.id : null;
+      var selectedProductId = shouldShowCatalogSuggestion(item) ? item.matched.id : null;
       return Object.assign({}, item, {
         clientIndex: index,
         selectedProductId: selectedProductId,
@@ -470,11 +474,12 @@
 
       var html = '';
       html += '<div class="filmeai-match-top"><div style="min-width:0;flex:1">';
-      html += '<div class="filmeai-requested">' + (item.section ? formatMarkdown(item.section) + ' · ' : '') + formatMarkdown(String(item.quantity || 1)) + '× demandé : ' + formatMarkdown(item.requestedName || item.searchQuery || '') + '</div>';
+      html += '<div class="filmeai-requested">' + formatMarkdown(String(item.quantity || 1)) + '× demandé : ' + formatMarkdown(item.requestedName || item.searchQuery || '') + '</div>';
 
       if (selectedProduct) {
         html += '<div class="filmeai-selected-name">' + renderProductName(selectedProduct) + '</div>';
         html += '<div class="filmeai-option-price">Produit catalogue — prix après dates</div>';
+        if (!strong) html += '<div class="filmeai-human-required">Suggestion catalogue à valider</div>';
         if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
       } else if (item.leaveToFilme) {
         html += '<div class="filmeai-selected-name">L’équipe Filme me fera une proposition</div>';
@@ -689,7 +694,7 @@
         if (evt.item) {
           var item = evt.item;
           item.clientIndex = typeof evt.index === 'number' ? evt.index : sessionData.quoteMatches.length;
-          item.selectedProductId = item.matched && item.confidence >= 0.8 ? item.matched.id : null;
+          item.selectedProductId = shouldShowCatalogSuggestion(item) ? item.matched.id : null;
           item.leaveToFilme = false;
           sessionData.quoteMatches.push(item);
           updateSelectedProductIds();

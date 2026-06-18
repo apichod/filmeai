@@ -327,14 +327,14 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               localQuoteMatches = [...localQuoteMatches, evt.item]
               setStreamQuoteMatches(localQuoteMatches)
               const selectedIds = localQuoteMatches
-                .filter(item => item.matched && item.confidence >= 0.8)
+                .filter(item => item.matched && item.confidence >= 0.5)
                 .map(item => item.matched!.id)
               setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds }))
               scrollBottom()
             } else if (evt.type === 'quote_matches' && evt.items) {
               localQuoteMatches = evt.items as QuoteMatch[]
               const selectedIds = localQuoteMatches
-                .filter(item => item.matched && item.confidence >= 0.8)
+                .filter(item => item.matched && item.confidence >= 0.5)
                 .map(item => item.matched!.id)
               setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds }))
               setStreamQuoteMatches(localQuoteMatches)
@@ -471,9 +471,9 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   function renderQuoteMatchCard(item: QuoteMatch, cardKey: string) {
     if (removedPreviewKeys[cardKey]) return null
 
-    const autoProduct = item.matched && item.confidence >= 0.8 ? item.matched : null
+    const autoProduct = item.matched && item.confidence >= 0.5 ? item.matched : null
     const selectedProduct = leaveToFilmeKeys[cardKey] ? null : selectedPreviewProducts[cardKey] || autoProduct
-    const isResolved = Boolean(selectedProduct && !leaveToFilmeKeys[cardKey])
+    const isStrong = Boolean(selectedProduct && !leaveToFilmeKeys[cardKey] && (item.confidence >= 0.8 || selectedPreviewProducts[cardKey]))
     const editing = Boolean(editingPreviewKeys[cardKey])
     const manualOpen = Boolean(manualOpenKeys[cardKey])
     const choices = [item.matched, ...(item.alternatives || [])].filter(Boolean) as Product[]
@@ -481,19 +481,20 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
       .filter((p, i, arr) => arr.findIndex(x => x.id === p.id || x.name.trim().toLowerCase() === p.name.trim().toLowerCase()) === i)
       .slice(0, 3)
     const manualChoices = manualResults[cardKey] || []
-    const cardIsGreen = isResolved
+    const cardIsGreen = isStrong
 
     return (
       <div key={cardKey} className={`rounded-xl border p-2.5 text-xs shadow-sm ${cardIsGreen ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[11px] text-gray-500">{item.section ? `${item.section} · ` : ''}{item.quantity}× demandé : {item.requestedName}</p>
+            <p className="text-[11px] text-gray-500">{item.quantity}× demandé : {item.requestedName}</p>
             {selectedProduct ? (
               <>
                 <p className="font-semibold text-gray-900">
                   {displayProductName(selectedProduct)}
                   {hasBundleLabel(selectedProduct) && <span className="ml-1 rounded-full bg-black px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
                 </p>
+                {!isStrong && <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Suggestion catalogue à valider</p>}
                 {selectedProduct.bundle_items && selectedProduct.bundle_items.length > 0 && (
                   <p className="mt-0.5 text-[11px] text-gray-500">Contenu : {selectedProduct.bundle_items.slice(0, 4).join(', ')}{selectedProduct.bundle_items.length > 4 ? '…' : ''}</p>
                 )}
