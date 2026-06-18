@@ -1,17 +1,40 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
+import { randomUUID } from 'crypto'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+const ALLOWED_ORIGINS = new Set(
+  [
+    process.env.NEXT_PUBLIC_APP_URL,
+    'https://filmeai.vercel.app',
+    'https://filme.fr',
+    'https://www.filme.fr',
+    ...(process.env.FORM_ALLOWED_ORIGINS || '').split(','),
+  ]
+    .filter(Boolean)
+    .map(origin => String(origin).trim().replace(/\/$/, ''))
+)
+
+function corsHeaders(req: NextRequest) {
+  const origin = req.headers.get('origin')?.replace(/\/$/, '')
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    Vary: 'Origin',
+  }
+
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin
+  }
+
+  return headers
 }
 
-export async function OPTIONS() {
-  return new Response(null, { headers: CORS })
+export async function OPTIONS(req: NextRequest) {
+  return new Response(null, { headers: corsHeaders(req) })
 }
 
 // ── Sécurité 1 : échapper le HTML pour éviter les injections dans l'email ──
@@ -22,6 +45,19 @@ function esc(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function cleanHeader(str: string): string {
+  return str.replace(/[\r\n]+/g, ' ').trim()
+}
+
+class PublicFormError extends Error {
+  status: number
+
+  constructor(message: string, status = 400) {
+    super(message)
+    this.status = status
+  }
 }
 
 // ── Sécurité 2 : types de fichiers autorisés (MIME côté serveur) ────────────
@@ -76,12 +112,13 @@ async function getOrgId(supabase: ReturnType<typeof getSupabase>, key: string) {
   return data?.id ?? null
 }
 
-function json(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: CORS })
+function json(req: NextRequest, body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: corsHeaders(req) })
 }
 
 const BUCKET = 'form-attachments'
 const MAX_BYTES = 20 * 1024 * 1024
+const MAX_REQUEST_BYTES = MAX_BYTES + 512 * 1024
 
 async function uploadFile(
   supabase: ReturnType<typeof getSupabase>,
@@ -90,17 +127,18 @@ async function uploadFile(
 ): Promise<string | null> {
   // Vérification MIME côté serveur
   if (!ALLOWED_MIME.has(file.type)) {
-    throw new Error(`Type de fichier non autorisé : ${file.type}`)
+    throw new PublicFormError(`Type de fichier non autorisé : ${file.type || 'inconnu'}`)
   }
   if (file.size > MAX_BYTES) {
-    throw new Error('Le fichier dépasse 20 Mo.')
+    throw new PublicFormError('Le fichier dépasse 20 Mo.')
   }
 
-  await supabase.storage.createBucket(BUCKET, { public: true }).catch(() => null)
+  await supabase.storage.createBucket(BUCKET, { public: false }).catch(() => null)
+  await supabase.storage.updateBucket(BUCKET, { public: false }).catch(() => null)
 
-  // Forcer l'extension depuis le MIME (ignore le nom fourni par l'utilisateur)
-  const ext = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80)
-  const path = `${convId}/${Date.now()}_${ext}`
+  // Nom non prédictible + nom original nettoyé.
+  const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) || 'attachment'
+  const path = `${convId}/${Date.now()}_${randomUUID()}_${cleanName}`
   const buffer = Buffer.from(await file.arrayBuffer())
 
   const { error } = await supabase.storage
@@ -109,18 +147,31 @@ async function uploadFile(
 
   if (error) { console.error('Storage upload error:', error.message); return null }
 
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
-  return data.publicUrl
+  const { data, error: signedError } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(path, 60 * 60 * 24 * 30)
+
+  if (signedError) {
+    console.error('Storage signed URL error:', signedError.message)
+    return null
+  }
+
+  return data.signedUrl
 }
 
 export async function POST(req: NextRequest) {
   // ── Rate limiting ──────────────────────────────────────────────────────────
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   if (!checkRateLimit(ip)) {
-    return json({ error: 'Trop de demandes. Réessayez dans une heure.' }, 429)
+    return json(req, { error: 'Trop de demandes. Réessayez dans une heure.' }, 429)
   }
 
   try {
+    const contentLength = Number(req.headers.get('content-length') || 0)
+    if (contentLength > MAX_REQUEST_BYTES) {
+      return json(req, { error: 'La demande est trop volumineuse.' }, 413)
+    }
+
     const formData = await req.formData()
 
     const key      = (formData.get('key') as string ?? '').trim()
@@ -134,21 +185,21 @@ export async function POST(req: NextRequest) {
     // ── Sécurité 4 : honeypot — les bots remplissent ce champ caché ──────────
     if (honeypot) {
       // Simule un succès pour ne pas alerter le bot
-      return json({ ok: true })
+      return json(req, { ok: true })
     }
 
     if (!key || !name || !email || !message) {
-      return json({ error: 'Champs obligatoires manquants.' }, 400)
+      return json(req, { error: 'Champs obligatoires manquants.' }, 400)
     }
 
     // Validation email basique
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return json({ error: 'Adresse e-mail invalide.' }, 400)
+      return json(req, { error: 'Adresse e-mail invalide.' }, 400)
     }
 
     const supabase = getSupabase()
     const orgId = await getOrgId(supabase, key)
-    if (!orgId) return json({ error: 'Clé invalide.' }, 400)
+    if (!orgId) return json(req, { error: 'Clé invalide.' }, 400)
 
     // ── 1. Créer la conversation ───────────────────────────────────────────
     const { data: conv, error: convErr } = await supabase
@@ -199,7 +250,7 @@ export async function POST(req: NextRequest) {
       from: `"FilmeAI" <${process.env.SMTP_USER}>`,
       to: process.env.SMTP_USER,
       replyTo: email,
-      subject: `Nouvelle demande de devis — ${esc(name)}`,
+      subject: `Nouvelle demande de devis — ${cleanHeader(name)}`,
       html: `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
           <h2 style="margin:0 0 16px;font-size:18px">Nouvelle demande de devis sur liste</h2>
@@ -221,10 +272,13 @@ export async function POST(req: NextRequest) {
       `,
     })
 
-    return json({ ok: true, conversation_id: conv.id })
+    return json(req, { ok: true, conversation_id: conv.id })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('form-submit error:', message)
-    return json({ error: message }, 500)
+    if (err instanceof PublicFormError) {
+      return json(req, { error: err.message }, err.status)
+    }
+    return json(req, { error: 'Erreur serveur. Réessayez ou contactez bonjour@filme.fr.' }, 500)
   }
 }

@@ -39,14 +39,9 @@ export default function FormPage() {
     setStatus('sending')
     setErrorMsg('')
     try {
-      const fd = new FormData()
-      fd.append('key', key)
-      fd.append('name', name)
-      fd.append('email', email)
-      fd.append('phone', phone)
-      fd.append('message', message)
-      fd.append('website', '') // honeypot — toujours vide pour les humains
-      if (file) fd.append('file', file)
+      const fd = new FormData(e.currentTarget as HTMLFormElement)
+      fd.set('key', key)
+      if (!file) fd.delete('file')
 
       const res = await fetch('/api/form-submit', { method: 'POST', body: fd })
       const data = await res.json() as { ok?: boolean; error?: string }
@@ -86,22 +81,23 @@ export default function FormPage() {
             {/* Honeypot — invisible pour les humains, les bots le remplissent */}
             <input name="website" type="text" tabIndex={-1} autoComplete="off"
               style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0 }} />
+            <input name="key" type="hidden" value={key} />
 
             <div>
               <label style={labelStyle}>Prénom et Nom *</label>
-              <input required value={name} onChange={e => setName(e.target.value)}
+              <input name="name" required value={name} onChange={e => setName(e.target.value)}
                 style={inputStyle} placeholder="Jean Dupont" />
             </div>
 
             <div>
               <label style={labelStyle}>E-mail *</label>
-              <input required type="email" value={email} onChange={e => setEmail(e.target.value)}
+              <input name="email" required type="email" value={email} onChange={e => setEmail(e.target.value)}
                 style={inputStyle} placeholder="jean@exemple.fr" />
             </div>
 
             <div>
               <label style={labelStyle}>Téléphone</label>
-              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+              <input name="phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)}
                 style={inputStyle} placeholder="+33 6 00 00 00 00" />
             </div>
 
@@ -138,7 +134,7 @@ export default function FormPage() {
                   </button>
                 )}
               </div>
-              <input ref={fileRef} type="file" onChange={handleFile}
+              <input ref={fileRef} name="file" type="file" onChange={handleFile}
                 style={{ display: 'none' }}
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.zip" />
               {fileError
@@ -149,7 +145,7 @@ export default function FormPage() {
 
             <div>
               <label style={labelStyle}>Votre liste / message *</label>
-              <textarea required value={message} onChange={e => setMessage(e.target.value)}
+              <textarea name="message" required value={message} onChange={e => setMessage(e.target.value)}
                 rows={6} style={{ ...inputStyle, resize: 'vertical' }}
                 placeholder={"Sony FX3 × 1\nObjectif 24-70mm f/2.8 × 1\nTrépied vidéo × 1\n\nDates : du 20 au 22 juillet 2026"} />
             </div>
