@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { deleteKnowledgeChunksForSource } from '@/lib/knowledgeSync'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,5 +34,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     .eq('organization_id', orgId)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  try {
+    await deleteKnowledgeChunksForSource(supabase, 'url', params.id)
+  } catch {
+    // Best effort.
+  }
+
   return NextResponse.json({ ok: true })
 }

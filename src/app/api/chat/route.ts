@@ -8,6 +8,7 @@ import {
   normalizeEditablePrompt,
   splitQuoteBackendPrompt,
 } from '@/lib/defaultAssistantPrompts'
+import { searchKnowledge, type KnowledgeChunk } from '@/lib/knowledgeSync'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -258,6 +259,32 @@ GARDE-FOUS CONFIGURÉS DANS LE BACK-OFFICE :
 - Si un visiteur insiste sur un sujet interdit, refuse brièvement et recentre vers la location de matériel audiovisuel Filme.`
 }
 
+function shouldSearchKnowledge(text: string): boolean {
+  const clean = text.trim()
+  if (clean.length < 4) return false
+  if (extractEmail(clean)) return false
+  if (/^(oui|non|ok|merci|bonjour|salut|hello)$/i.test(clean)) return false
+  if (/^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,28}$/.test(clean) && !/[?]/.test(clean)) return false
+
+  return clean.length >= 14 || /[?]/.test(clean) || /\b(livraison|assurance|caution|horaire|retrait|retour|disponibilit[eé]|conditions?|cgl|conciergerie|chef|op[eé]rateur|test|pack|paiement|annulation)\b/i.test(clean)
+}
+
+function buildKnowledgeContext(hits: KnowledgeChunk[]): string {
+  if (hits.length === 0) return ''
+
+  const context = hits
+    .slice(0, 5)
+    .map((hit, index) => {
+      const source = hit.source_type === 'faq' ? 'FAQ' : hit.source_type === 'url' ? 'Page web' : 'Document'
+      const title = hit.title || 'Sans titre'
+      const url = hit.url ? `\nURL : ${hit.url}` : ''
+      return `[${index + 1}] ${source} — ${title}${url}\n${hit.content.slice(0, 1100)}`
+    })
+    .join('\n\n---\n\n')
+
+  return `\n\nBASE DE CONNAISSANCES FILME — EXTRAITS PERTINENTS :\n${context}\n\nRÈGLES D'UTILISATION DE CETTE BASE :\n- Utilise ces extraits prioritairement pour répondre aux questions pratiques sur Filme.\n- Ne cite pas la base de connaissances comme une source technique ; réponds naturellement.\n- Si l'information n'apparaît pas dans les extraits, ne l'invente pas : propose de vérifier avec l'équipe Filme.`
+}
+
 async function getDefaultOrganizationId(supabase: SupabaseAdmin): Promise<string> {
   const { data: existing, error: existingError } = await supabase
     .from('organizations')
@@ -493,10 +520,21 @@ export async function POST(req: NextRequest) {
       : isBrandClarification(lastUserText) && previousLooksLikeQuoteList
         ? `${previousUserText}\nPrécision client : ${lastUserText}`
         : ''
-    const { chatSystemPrompt, quoteExtractionPrompt, quoteRerankPrompt } = await getAssistantPromptSettings(getSupabaseAdmin())
+    const supabaseAdmin = getSupabaseAdmin()
+    const { chatSystemPrompt, quoteExtractionPrompt, quoteRerankPrompt } = await getAssistantPromptSettings(supabaseAdmin)
+    let knowledgeContext = ''
+
+    if (!quoteRequestText && shouldSearchKnowledge(lastUserText)) {
+      try {
+        const knowledgeHits = await searchKnowledge(supabaseAdmin, lastUserText, 5)
+        knowledgeContext = buildKnowledgeContext(knowledgeHits)
+      } catch (err) {
+        console.warn('Knowledge context fallback:', err instanceof Error ? err.message : String(err))
+      }
+    }
 
     const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: chatSystemPrompt },
+      { role: 'system', content: `${chatSystemPrompt}${knowledgeContext}` },
       ...incomingMessages,
     ]
 

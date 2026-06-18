@@ -2,8 +2,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
 /* ── Types ── */
-type FaqItem = { id: string; question: string; answer: string; synced: boolean; updated_at: string }
-type KnowledgeUrl = { id: string; url: string; title: string | null; status: string; created_at: string }
+type FaqItem = { id: string; question: string; answer: string; synced: boolean; updated_at: string; sync_error?: string | null }
+type KnowledgeUrl = { id: string; url: string; title: string | null; status: string; created_at: string; error_message?: string | null }
 type CatalogSignal = {
   id: string
   term: string
@@ -93,6 +93,7 @@ export default function AssistantKnowledgePage() {
   const [newQ, setNewQ] = useState('')
   const [newA, setNewA] = useState('')
   const [faqSaving, setFaqSaving] = useState(false)
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set())
 
   /* ── Generate from site state ── */
   type GeneratedPair = { question: string; answer: string; selected: boolean }
@@ -246,6 +247,63 @@ export default function AssistantKnowledgePage() {
     if (!confirm('Supprimer cette entrée ?')) return
     await fetch(`/api/faq/${id}`, { method: 'DELETE' })
     setFaq(p => p.filter(f => f.id !== id))
+  }
+
+  async function syncFaq(id: string) {
+    setSyncingIds(prev => new Set(prev).add(`faq:${id}`))
+    try {
+      const res = await fetch('/api/knowledge-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'faq', id }),
+      })
+      const data = await res.json() as { item?: FaqItem; error?: string }
+      if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+      if (data.item) setFaq(prev => prev.map(item => item.id === id ? data.item! : item))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Synchronisation impossible.')
+    } finally {
+      setSyncingIds(prev => { const next = new Set(prev); next.delete(`faq:${id}`); return next })
+    }
+  }
+
+  async function syncUrl(id: string) {
+    setSyncingIds(prev => new Set(prev).add(`url:${id}`))
+    setUrls(prev => prev.map(url => url.id === id ? { ...url, status: 'crawling' } : url))
+    try {
+      const res = await fetch('/api/knowledge-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'url', id }),
+      })
+      const data = await res.json() as { url?: KnowledgeUrl; error?: string }
+      if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+      if (data.url) setUrls(prev => prev.map(url => url.id === id ? data.url! : url))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Synchronisation impossible.')
+      await loadUrls()
+    } finally {
+      setSyncingIds(prev => { const next = new Set(prev); next.delete(`url:${id}`); return next })
+    }
+  }
+
+  async function syncAllKnowledge() {
+    setSyncingIds(prev => new Set(prev).add('all'))
+    try {
+      const res = await fetch('/api/knowledge-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'all' }),
+      })
+      const data = await res.json() as { error?: string; errors?: string[] }
+      if (!res.ok && !Array.isArray(data.errors)) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+      await Promise.all([loadFaq(), loadUrls()])
+      if (data.errors?.length) alert(`Synchronisation partielle :\n${data.errors.slice(0, 5).join('\n')}`)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Synchronisation impossible.')
+    } finally {
+      setSyncingIds(prev => { const next = new Set(prev); next.delete('all'); return next })
+    }
   }
 
   /* ── URLs CRUD ── */
@@ -507,6 +565,14 @@ export default function AssistantKnowledgePage() {
             </div>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => void syncAllKnowledge()}
+                disabled={syncingIds.has('all')}
+                className="flex items-center gap-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                <IconRefresh className={`w-3.5 h-3.5 ${syncingIds.has('all') ? 'animate-spin' : ''}`} />
+                Synchroniser
+              </button>
+              <button
                 onClick={() => { setShowGenerate(true); setGenerated([]); setGenerateError('') }}
                 className="flex items-center gap-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors"
               >
@@ -597,11 +663,12 @@ export default function AssistantKnowledgePage() {
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button
-                        onClick={() => void loadFaq()}
+                        onClick={() => void syncFaq(item.id)}
                         title="Resynchroniser"
+                        disabled={syncingIds.has(`faq:${item.id}`)}
                         className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
                       >
-                        <IconRefresh className="w-4 h-4" />
+                        <IconRefresh className={`w-4 h-4 ${syncingIds.has(`faq:${item.id}`) ? 'animate-spin' : ''}`} />
                       </button>
                       <button
                         onClick={() => startEdit(item)}
@@ -669,12 +736,22 @@ export default function AssistantKnowledgePage() {
               <p className="text-sm font-semibold text-gray-900">Pages web (crawl ciblé)</p>
               <p className="text-xs text-gray-500 mt-0.5">Le bot explore ces pages pour enrichir ses réponses (CGV, FAQ en ligne…).</p>
             </div>
-            <button
-              onClick={() => setShowUrlInput(true)}
-              className="flex items-center gap-1 text-xs bg-gray-900 text-white rounded-lg px-3 py-1.5 hover:bg-gray-700 transition-colors"
-            >
-              + Ajouter
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void syncAllKnowledge()}
+                disabled={syncingIds.has('all')}
+                className="flex items-center gap-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                <IconRefresh className={`w-3.5 h-3.5 ${syncingIds.has('all') ? 'animate-spin' : ''}`} />
+                Synchroniser
+              </button>
+              <button
+                onClick={() => setShowUrlInput(true)}
+                className="flex items-center gap-1 text-xs bg-gray-900 text-white rounded-lg px-3 py-1.5 hover:bg-gray-700 transition-colors"
+              >
+                + Ajouter
+              </button>
+            </div>
           </div>
 
           {/* Add URL form */}
@@ -733,10 +810,19 @@ export default function AssistantKnowledgePage() {
                     <div className="min-w-0">
                       {u.title && <p className="text-sm font-medium text-gray-900 truncate">{u.title}</p>}
                       <p className="text-xs text-gray-400 truncate">{u.url}</p>
+                      {u.error_message && <p className="text-[11px] text-red-500 truncate">{u.error_message}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <StatusBadge status={u.status} />
+                    <button
+                      onClick={() => void syncUrl(u.id)}
+                      disabled={syncingIds.has(`url:${u.id}`)}
+                      title="Crawler et synchroniser"
+                      className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    >
+                      <IconRefresh className={`w-4 h-4 ${syncingIds.has(`url:${u.id}`) || u.status === 'crawling' ? 'animate-spin' : ''}`} />
+                    </button>
                     <button
                       onClick={() => void deleteUrl(u.id)}
                       className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"

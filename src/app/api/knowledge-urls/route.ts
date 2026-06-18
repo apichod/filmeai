@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { normalizeAllowedKnowledgeUrl } from '@/lib/knowledgeSync'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,9 +45,16 @@ export async function POST(req: NextRequest) {
   const { url } = await req.json() as { url?: string }
   if (!url?.trim()) return NextResponse.json({ error: 'URL requise.' }, { status: 400 })
 
+  let normalizedUrl: string
+  try {
+    normalizedUrl = normalizeAllowedKnowledgeUrl(url.trim())
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'URL non autorisée.' }, { status: 400 })
+  }
+
   const { data, error } = await supabase
     .from('knowledge_urls')
-    .insert({ organization_id: orgId, url: url.trim() })
+    .insert({ organization_id: orgId, url: normalizedUrl, status: 'pending' })
     .select()
     .single()
 

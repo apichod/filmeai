@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { deleteKnowledgeChunksForSource, markFaqUnsynced, syncFaqItem } from '@/lib/knowledgeSync'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json() as { question?: string; answer?: string }
-  const update: Record<string, string> = { updated_at: new Date().toISOString() }
+  const update: Record<string, string | boolean | null> = { updated_at: new Date().toISOString(), synced: false, synced_at: null, sync_error: null }
   if (body.question !== undefined) update.question = body.question.trim()
   if (body.answer !== undefined) update.answer = body.answer.trim()
 
@@ -40,7 +41,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ item: data })
+
+  try {
+    const synced = await syncFaqItem(supabase, data.id as string)
+    return NextResponse.json({ item: synced })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    await markFaqUnsynced(supabase, data.id as string, message)
+    return NextResponse.json({ item: data, sync_error: message })
+  }
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -55,5 +64,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     .eq('organization_id', orgId)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  try {
+    await deleteKnowledgeChunksForSource(supabase, 'faq', params.id)
+  } catch {
+    // Best effort: l'entrée FAQ est supprimée, les chunks orphelins seront ignorés au prochain nettoyage.
+  }
+
   return NextResponse.json({ ok: true })
 }
