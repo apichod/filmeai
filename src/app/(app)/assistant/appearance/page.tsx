@@ -612,7 +612,6 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               </>
             ) : leaveToFilmeKeys[cardKey] ? (
               <>
-                <p className="font-semibold text-gray-900">L’équipe Filme me fera une proposition</p>
                 <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention Filme demandée</p>
               </>
             ) : (

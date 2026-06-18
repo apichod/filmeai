@@ -528,7 +528,6 @@
         if (!strong) html += '<div class="filmeai-human-required">Suggestion catalogue à valider</div>';
         if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
       } else if (item.leaveToFilme) {
-        html += '<div class="filmeai-selected-name">L’équipe Filme me fera une proposition</div>';
         html += '<div class="filmeai-human-required">Intervention Filme demandée</div>';
       } else {
         html += '<div class="filmeai-human-required">Intervention Filme demandée</div>';

@@ -374,6 +374,8 @@ function isBrandClarification(text: string): boolean {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
 
   return (
@@ -387,6 +389,8 @@ function isExplicitQuoteConfirmation(text: string): boolean {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
 
   if (/^\d+\s*\/\s*\d+$/.test(normalized)) return false
@@ -404,6 +408,18 @@ function isListConfirmation(text: string): boolean {
 
   return /\b(confirme|valide|validation|confirmer|valider)\b.*\b(liste|selection|sélection|materiel|matériel)\b/.test(normalized) ||
     /\b(liste|selection|sélection|materiel|matériel)\b.*\b(confirmee|confirmée|validee|validée|ok)\b/.test(normalized)
+}
+
+function isAvailabilityContinuation(text: string): boolean {
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return /^(j attends|jattends|ok|okay|d accord|daccord|parfait|tres bien|ca marche|go|allez y|vous pouvez|je vous laisse|faites|faites le|lancez|lancez la verification|lancer la verification|verifiez)(\s|[.!?])*$/i.test(normalized)
 }
 
 function compactDescription(value: string | null): string {
@@ -732,6 +748,14 @@ export async function POST(req: NextRequest) {
             const responseText = sessionData.startsAt && sessionData.stopsAt
               ? `Parfait, votre liste est confirmée ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}.${unresolvedText}\n\nProchaine étape : vérification des disponibilités et des prix avant préparation du devis.`
               : `Parfait, votre liste est confirmée.${unresolvedText}\n\nIndiquez maintenant vos dates de location pour vérifier les disponibilités et préparer le devis.`
+            fullResponse += responseText
+            send({ type: 'delta', content: responseText })
+          } else if (isAvailabilityContinuation(lastUserText) && hasQuoteDraft(sessionData) && sessionData.startsAt && sessionData.stopsAt) {
+            const unresolvedCount = countUnresolvedQuoteMatches(sessionData.quoteMatches)
+            const unresolvedText = unresolvedCount > 0
+              ? `\n${unresolvedCount} ligne${unresolvedCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront vérifiées à la main.`
+              : ''
+            const responseText = `Parfait, je lance la vérification des disponibilités et des prix ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}.${unresolvedText}\n\nVous recevrez la suite par email dès que la proposition est prête.`
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
           } else if (quoteRequestText) {
