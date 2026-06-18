@@ -355,10 +355,13 @@ export async function POST(req: NextRequest) {
       upserted += batch.length
     }
 
+    const activeProductGroups = active.filter(i => i.source_type === 'product_group').length
+    const activeBundles = active.filter(i => i.source_type === 'bundle').length
+
     return NextResponse.json({
       success: true,
-      product_groups: productGroups.length,
-      bundles: bundles.length,
+      product_groups: activeProductGroups,
+      bundles: activeBundles,
       bundle_items: bundleItems.length,
       total: allRaw.length,
       active: active.length,
