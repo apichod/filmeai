@@ -16,7 +16,13 @@
     try { return new URL('/api/catalog-signals', API_URL).toString(); }
     catch (e) { return 'https://filmeai.vercel.app/api/catalog-signals'; }
   })();
+  var WIDGET_SETTINGS_URL = script.getAttribute('data-settings-url') || (function () {
+    try { return new URL('/api/widget-settings', API_URL).toString(); }
+    catch (e) { return 'https://filmeai.vercel.app/api/widget-settings'; }
+  })();
   var ORG_ID = script.getAttribute('data-org-id') || '';
+  var DEFAULT_GREETING = "Bonjour ! 👋 Je suis l'assistant FilmeAI de Filme, votre loueur de matériel audiovisuel.\n\nJe peux vous préparer un devis en quelques minutes. Pour commencer, pourriez-vous me donner votre prénom et nom ?";
+  var configuredGreeting = DEFAULT_GREETING;
 
   // ── Styles ─────────────────────────────────────────────────────────────────
   var style = document.createElement('style');
@@ -181,6 +187,26 @@
   var input = document.getElementById('filmeai-input');
   var sendBtn = document.getElementById('filmeai-send');
 
+  fetch(WIDGET_SETTINGS_URL)
+    .then(function(res) { return res.ok ? res.json() : null; })
+    .then(function(settings) {
+      if (!settings) return;
+      if (settings.greeting_message && String(settings.greeting_message).trim()) {
+        configuredGreeting = String(settings.greeting_message).trim();
+      }
+      if (settings.assistant_name && String(settings.assistant_name).trim()) {
+        var title = document.getElementById('filmeai-header-title');
+        if (title) title.innerHTML = formatMarkdown(String(settings.assistant_name).trim());
+      }
+      if (settings.primary_color && /^#[0-9a-f]{6}$/i.test(String(settings.primary_color))) {
+        var primary = String(settings.primary_color);
+        document.getElementById('filmeai-header').style.background = primary;
+        document.getElementById('filmeai-send').style.background = primary;
+        document.getElementById('filmeai-bubble').style.background = primary;
+      }
+    })
+    .catch(function() {});
+
   // ── Toggle ─────────────────────────────────────────────────────────────────
   function toggle() {
     isOpen = !isOpen;
@@ -243,7 +269,7 @@
 
   // ── Send greeting ──────────────────────────────────────────────────────────
   function sendBotGreeting() {
-    var greeting = "Bonjour ! 👋 Je suis l'assistant FilmeAI de Filme, votre loueur de matériel audiovisuel.\n\nJe peux vous préparer un devis en quelques minutes. Pour commencer, pourriez-vous me donner votre prénom et nom ?";
+    var greeting = configuredGreeting || DEFAULT_GREETING;
     addMessage('bot', greeting);
     messages.push({ role: 'assistant', content: greeting });
   }

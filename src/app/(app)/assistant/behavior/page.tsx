@@ -11,7 +11,6 @@ import {
 type Settings = {
   language: string
   greeting_message: string
-  internal_persona: string
   chat_system_prompt: string
   quote_extraction_prompt: string
   quote_rerank_prompt: string
@@ -25,7 +24,6 @@ type ApiSettings = Partial<Settings> & {
 const defaults: Settings = {
   language: 'fr',
   greeting_message: '',
-  internal_persona: '',
   chat_system_prompt: DEFAULT_CHAT_SYSTEM_PROMPT,
   quote_extraction_prompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
   quote_rerank_prompt: DEFAULT_QUOTE_RERANK_PROMPT,
@@ -83,7 +81,8 @@ export default function AssistantBehaviorPage() {
       const payload = {
         language: s.language,
         greeting_message: s.greeting_message,
-        internal_persona: s.internal_persona,
+        // internal_persona supprimé du flux actif : le prompt côté chat est désormais la source unique.
+        internal_persona: '',
         chat_system_prompt: s.chat_system_prompt,
         quote_extraction_prompt: s.quote_extraction_prompt,
         quote_rerank_prompt: s.quote_rerank_prompt,
@@ -139,18 +138,6 @@ export default function AssistantBehaviorPage() {
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black resize-none"
           />
         </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Persona interne</label>
-          <p className="text-xs text-gray-500 mb-2">Instructions privées sur le ton et le comportement de l&apos;assistant. Non visible par les visiteurs.</p>
-          <textarea
-            value={s.internal_persona}
-            onChange={e => set('internal_persona', e.target.value)}
-            rows={4}
-            placeholder="Tu es l'assistant de Filme, une société de location de matériel audiovisuel à Paris. Tu es professionnel, concis et à l'écoute. Tu proposes toujours un devis adapté aux besoins."
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black resize-none"
-          />
-        </div>
       </div>
 
       {/* Prompts avancés */}
@@ -158,7 +145,8 @@ export default function AssistantBehaviorPage() {
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Prompts avancés</h2>
           <p className="text-xs text-gray-500 mt-1">
-            Ces instructions sont utilisées côté backend. À modifier prudemment : extraction et reranking doivent conserver une sortie JSON exploitable.
+            Ces instructions sont utilisées côté backend. Le prompt côté chat remplace l’ancien “Persona interne” : c’est la source unique pour le comportement conversationnel.
+            Extraction et reranking doivent conserver une sortie JSON exploitable.
           </p>
         </div>
 

@@ -92,6 +92,7 @@ type AssistantPromptSettings = {
   quote_extraction_prompt?: string | null
   quote_rerank_prompt?: string | null
   quote_backend_prompt?: string | null
+  forbidden_topics?: string[] | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -243,6 +244,20 @@ function compactDescription(value: string | null): string {
   return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 180)
 }
 
+function buildChatSystemPrompt(basePrompt: string, forbiddenTopics?: string[] | null): string {
+  const cleanTopics = Array.isArray(forbiddenTopics)
+    ? forbiddenTopics.map(topic => topic.trim()).filter(Boolean)
+    : []
+
+  if (cleanTopics.length === 0) return basePrompt
+
+  return `${basePrompt}
+
+GARDE-FOUS CONFIGURÉS DANS LE BACK-OFFICE :
+- Ne réponds pas aux sujets / marques interdits suivants : ${cleanTopics.join(', ')}.
+- Si un visiteur insiste sur un sujet interdit, refuse brièvement et recentre vers la location de matériel audiovisuel Filme.`
+}
+
 async function getDefaultOrganizationId(supabase: SupabaseAdmin): Promise<string> {
   const { data: existing, error: existingError } = await supabase
     .from('organizations')
@@ -284,8 +299,9 @@ async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
 
     const settings = (data || {}) as AssistantPromptSettings
     const legacyPrompts = splitQuoteBackendPrompt(settings.quote_backend_prompt)
+    const baseChatPrompt = normalizeEditablePrompt(settings.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT)
     return {
-      chatSystemPrompt: normalizeEditablePrompt(settings.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT),
+      chatSystemPrompt: buildChatSystemPrompt(baseChatPrompt, settings.forbidden_topics),
       quoteExtractionPrompt: normalizeEditablePrompt(settings.quote_extraction_prompt, legacyPrompts.extractionPrompt),
       quoteRerankPrompt: normalizeEditablePrompt(settings.quote_rerank_prompt, legacyPrompts.rerankPrompt),
     }
