@@ -111,6 +111,8 @@ export default function AssistantKnowledgePage() {
   const [signalTerm, setSignalTerm] = useState('')
   const [signalProduct, setSignalProduct] = useState('')
   const [signalSaving, setSignalSaving] = useState(false)
+  const [signalError, setSignalError] = useState('')
+  const [signalSaved, setSignalSaved] = useState(false)
 
   /* ── Load FAQ ── */
   const loadFaq = useCallback(async () => {
@@ -139,10 +141,14 @@ export default function AssistantKnowledgePage() {
   /* ── Load Signals ── */
   const loadSignals = useCallback(async () => {
     setSignalsLoading(true)
+    setSignalError('')
     try {
       const res = await fetch('/api/catalog-signals')
-      const data = await res.json() as { signals?: CatalogSignal[] }
+      const data = await res.json() as { signals?: CatalogSignal[]; error?: string }
+      if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`)
       setSignals(data.signals ?? [])
+    } catch (err) {
+      setSignalError(err instanceof Error ? err.message : 'Impossible de charger les signaux.')
     } finally {
       setSignalsLoading(false)
     }
@@ -214,6 +220,8 @@ export default function AssistantKnowledgePage() {
   async function addSignal() {
     if (!signalTerm.trim() || !signalProduct.trim()) return
     setSignalSaving(true)
+    setSignalError('')
+    setSignalSaved(false)
     try {
       const res = await fetch('/api/catalog-signals', {
         method: 'POST',
@@ -224,12 +232,24 @@ export default function AssistantKnowledgePage() {
           source: 'knowledge_manual',
         }),
       })
-      const data = await res.json() as { signal?: CatalogSignal }
-      if (data.signal) {
-        setSignals(prev => [data.signal!, ...prev.filter(signal => signal.id !== data.signal!.id)])
-        setSignalTerm('')
-        setSignalProduct('')
+      const text = await res.text()
+      let data: { signal?: CatalogSignal; error?: string } = {}
+      try {
+        data = JSON.parse(text) as { signal?: CatalogSignal; error?: string }
+      } catch {
+        throw new Error(`Réponse non JSON de /api/catalog-signals (${res.status}) : ${text.slice(0, 180)}`)
       }
+
+      if (!res.ok || data.error) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+      if (!data.signal) throw new Error('Aucun signal retourné par l’API.')
+
+      setSignals(prev => [data.signal!, ...prev.filter(signal => signal.id !== data.signal!.id)])
+      setSignalTerm('')
+      setSignalProduct('')
+      setSignalSaved(true)
+      setTimeout(() => setSignalSaved(false), 1800)
+    } catch (err) {
+      setSignalError(err instanceof Error ? err.message : 'Impossible d’ajouter cet alias.')
     } finally {
       setSignalSaving(false)
     }
@@ -237,18 +257,31 @@ export default function AssistantKnowledgePage() {
 
   async function deleteSignal(id: string) {
     if (!confirm('Supprimer cette association apprise ?')) return
-    await fetch(`/api/catalog-signals/${id}`, { method: 'DELETE' })
-    setSignals(prev => prev.filter(signal => signal.id !== id))
+    setSignalError('')
+    try {
+      const res = await fetch(`/api/catalog-signals/${id}`, { method: 'DELETE' })
+      const data = await res.json() as { error?: string }
+      if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+      setSignals(prev => prev.filter(signal => signal.id !== id))
+    } catch (err) {
+      setSignalError(err instanceof Error ? err.message : 'Suppression impossible.')
+    }
   }
 
   async function approveSignal(id: string) {
-    const res = await fetch(`/api/catalog-signals/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approved: true }),
-    })
-    const data = await res.json() as { signal?: CatalogSignal }
-    if (data.signal) setSignals(prev => prev.map(signal => signal.id === id ? data.signal! : signal))
+    setSignalError('')
+    try {
+      const res = await fetch(`/api/catalog-signals/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved: true }),
+      })
+      const data = await res.json() as { signal?: CatalogSignal; error?: string }
+      if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+      if (data.signal) setSignals(prev => prev.map(signal => signal.id === id ? data.signal! : signal))
+    } catch (err) {
+      setSignalError(err instanceof Error ? err.message : 'Validation impossible.')
+    }
   }
 
   /* ── Tabs ── */
@@ -601,6 +634,21 @@ export default function AssistantKnowledgePage() {
                   {signalSaving ? 'Ajout…' : '+ Ajouter'}
                 </button>
               </div>
+              {signalError && (
+                <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  Erreur : {signalError}
+                  {signalError.includes('catalog_signals') && (
+                    <span className="block mt-1">
+                      Vérifiez que la migration <code>016_catalog_signals.sql</code> a bien été lancée dans Supabase.
+                    </span>
+                  )}
+                </p>
+              )}
+              {signalSaved && (
+                <p className="mt-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+                  Alias ajouté au glossaire ✓
+                </p>
+              )}
             </div>
 
             {signalsLoading ? (
