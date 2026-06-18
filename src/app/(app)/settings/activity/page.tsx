@@ -42,8 +42,8 @@ export default function SettingsActivityPage() {
       setTotal(data.total ?? 0)
 
       if (!action && !user) {
-        const allActions = [...new Set((data.logs ?? []).map(l => l.action))].sort()
-        const allUsers = [...new Set((data.logs ?? []).map(l => l.user_email).filter(Boolean) as string[])].sort()
+        const allActions = Array.from(new Set((data.logs ?? []).map(l => l.action))).sort()
+        const allUsers = Array.from(new Set((data.logs ?? []).map(l => l.user_email).filter(Boolean) as string[])).sort()
         setActions(allActions)
         setUsers(allUsers)
       }
