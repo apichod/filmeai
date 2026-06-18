@@ -34,6 +34,7 @@ type Product = {
   similarity?: number
   is_bundle?: boolean
   bundle_items?: string[]
+  source_type?: 'product_group' | 'bundle' | null
 }
 
 type SessionData = {
@@ -72,6 +73,35 @@ type QuoteParseResponse = {
 type SelectionResult = {
   selected?: { id: string; reason: string }[]
   response?: string
+}
+
+type QuoteEstimateLine = {
+  id: string
+  productId: string | null
+  title: string
+  requestedName: string
+  section: string | null
+  quantity: number
+  unitPrice: number
+  deposit: number
+  lineTotal: number
+  lineDeposit: number
+  isBundle: boolean
+  bundleItems: string[]
+  requiresFilmeIntervention: boolean
+}
+
+type QuoteEstimate = {
+  startsAt: string | null
+  stopsAt: string | null
+  dateLabel: string
+  days: number
+  lines: QuoteEstimateLine[]
+  subtotal: number
+  deposit: number
+  total: number
+  interventionCount: number
+  status: 'pending_validation'
 }
 
 type ConversationPatch = {
@@ -684,6 +714,126 @@ function buildQuoteWorkflowResponse(items: QuoteParseItem[], hasDates: boolean):
   return parts.join('\n')
 }
 
+function quoteCalendarDays(startsAt?: string | null, stopsAt?: string | null) {
+  if (!startsAt || !stopsAt) return 1
+  const start = new Date(startsAt)
+  const stop = new Date(stopsAt)
+  const startUtc = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())
+  const stopUtc = Date.UTC(stop.getUTCFullYear(), stop.getUTCMonth(), stop.getUTCDate())
+  const diff = Math.round((stopUtc - startUtc) / 86400000)
+  return Math.max(1, diff + 1)
+}
+
+function numberFromUnknown(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function stringFromUnknown(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function productFromUnknown(value: unknown): Product | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const id = stringFromUnknown(record.id)
+  const name = stringFromUnknown(record.name)
+  if (!id || !name) return null
+  return {
+    id,
+    name,
+    description: typeof record.description === 'string' ? record.description : null,
+    price_per_day: numberFromUnknown(record.price_per_day),
+    deposit: numberFromUnknown(record.deposit),
+    photo_url: typeof record.photo_url === 'string' ? record.photo_url : null,
+    similarity: typeof record.similarity === 'number' ? record.similarity : undefined,
+    is_bundle: record.is_bundle === true || record.source_type === 'bundle',
+    bundle_items: Array.isArray(record.bundle_items)
+      ? record.bundle_items.map(item => String(item)).filter(Boolean)
+      : undefined,
+    source_type: record.source_type === 'bundle' || record.source_type === 'product_group'
+      ? record.source_type
+      : null,
+  }
+}
+
+async function buildQuoteEstimate(sessionData: SessionData): Promise<QuoteEstimate> {
+  const days = quoteCalendarDays(sessionData.startsAt, sessionData.stopsAt)
+  const quoteMatches = Array.isArray(sessionData.quoteMatches) ? sessionData.quoteMatches : []
+  const supabase = getSupabaseAdmin()
+
+  const productIds = quoteMatches
+    .map(item => {
+      if (!item || typeof item !== 'object') return null
+      const record = item as Record<string, unknown>
+      return typeof record.selectedProductId === 'string' && record.selectedProductId.trim()
+        ? record.selectedProductId.trim()
+        : productFromUnknown(record.matched)?.id || null
+    })
+    .filter(Boolean) as string[]
+
+  const productById = new Map<string, Product>()
+  if (productIds.length > 0) {
+    const { data } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url, source_type')
+      .in('id', Array.from(new Set(productIds)))
+
+    for (const product of (data || []) as Product[]) {
+      productById.set(product.id, { ...product, is_bundle: product.source_type === 'bundle' })
+    }
+  }
+
+  const lines: QuoteEstimateLine[] = quoteMatches.map((item, index) => {
+    const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+    const requestedName = stringFromUnknown(record.requestedName) || stringFromUnknown(record.searchQuery) || 'Produit à vérifier'
+    const selectedProductId = stringFromUnknown(record.selectedProductId)
+    const matched = productFromUnknown(record.matched)
+    const product = (selectedProductId && productById.get(selectedProductId)) || matched
+    const quantity = Math.max(1, Math.round(numberFromUnknown(record.quantity) || 1))
+    const requiresFilmeIntervention = record.leaveToFilme === true || !product || !selectedProductId
+    const unitPrice = requiresFilmeIntervention ? 0 : numberFromUnknown(product?.price_per_day)
+    const deposit = requiresFilmeIntervention ? 0 : numberFromUnknown(product?.deposit)
+    const bundleItems = Array.isArray(product?.bundle_items) ? product!.bundle_items || [] : []
+
+    return {
+      id: `${index}-${selectedProductId || requestedName}`,
+      productId: requiresFilmeIntervention ? null : product?.id || null,
+      title: requiresFilmeIntervention ? requestedName : product?.name || requestedName,
+      requestedName,
+      section: typeof record.section === 'string' ? record.section : null,
+      quantity,
+      unitPrice,
+      deposit,
+      lineTotal: unitPrice * quantity * days,
+      lineDeposit: deposit * quantity,
+      isBundle: Boolean(product?.is_bundle || (product?.bundle_items || []).length > 0 || /\bpack\b/i.test(product?.name || '')),
+      bundleItems,
+      requiresFilmeIntervention,
+    }
+  })
+
+  const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0)
+  const deposit = lines.reduce((sum, line) => sum + line.lineDeposit, 0)
+
+  return {
+    startsAt: sessionData.startsAt || null,
+    stopsAt: sessionData.stopsAt || null,
+    dateLabel: formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt),
+    days,
+    lines,
+    subtotal,
+    deposit,
+    total: subtotal * 1.2,
+    interventionCount: lines.filter(line => line.requiresFilmeIntervention).length,
+    status: 'pending_validation',
+  }
+}
+
 // ── API route ─────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -751,11 +901,14 @@ export async function POST(req: NextRequest) {
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
           } else if (isAvailabilityContinuation(lastUserText) && hasQuoteDraft(sessionData) && sessionData.startsAt && sessionData.stopsAt) {
-            const unresolvedCount = countUnresolvedQuoteMatches(sessionData.quoteMatches)
-            const unresolvedText = unresolvedCount > 0
-              ? `\n${unresolvedCount} ligne${unresolvedCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront vérifiées à la main.`
+            send({ type: 'progress', step: 'quote_estimate', message: 'Vérification des disponibilités et préparation de l’estimation…' })
+            const estimate = await buildQuoteEstimate(sessionData)
+            send({ type: 'quote_estimate', estimate })
+
+            const interventionText = estimate.interventionCount > 0
+              ? `\n${estimate.interventionCount} ligne${estimate.interventionCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront vérifiées à la main.`
               : ''
-            const responseText = `Parfait, je lance la vérification des disponibilités et des prix ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}.${unresolvedText}\n\nVous recevrez la suite par email dès que la proposition est prête.`
+            const responseText = `Voilà une première estimation ${estimate.dateLabel}.${interventionText}\n\nLe détail est sur la carte ci-dessous. Cette estimation reste à confirmer après vérification finale des disponibilités par l’équipe Filme.`
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
           } else if (quoteRequestText) {

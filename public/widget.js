@@ -147,6 +147,22 @@
     .filmeai-confirm-hint { font-size:12px; color:#6b7280; line-height:1.35; margin-bottom:8px; }
     .filmeai-confirm-button { width:100%; border:none; border-radius:10px; padding:10px 12px; background:#111827; color:white; cursor:pointer; font-size:13px; font-weight:700; }
     .filmeai-confirm-button:hover { background:#000; }
+    .filmeai-estimate-card { max-width: 96%; align-self:flex-start; background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,.04); color:#111827; }
+    .filmeai-estimate-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
+    .filmeai-estimate-title { font-size:15px; font-weight:800; }
+    .filmeai-estimate-sub { font-size:11.5px; color:#6b7280; margin-top:2px; }
+    .filmeai-estimate-badge { border-radius:999px; background:#fef3c7; color:#b45309; padding:4px 8px; font-size:10.5px; font-weight:800; white-space:nowrap; }
+    .filmeai-estimate-lines { border-top:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb; }
+    .filmeai-estimate-line { display:grid; grid-template-columns:1fr auto; gap:8px; padding:8px 0; border-bottom:1px solid #f3f4f6; }
+    .filmeai-estimate-line:last-child { border-bottom:none; }
+    .filmeai-estimate-line-title { font-size:12.5px; font-weight:700; line-height:1.25; }
+    .filmeai-estimate-line-meta { font-size:11px; color:#6b7280; margin-top:1px; }
+    .filmeai-estimate-line-price { font-size:12.5px; font-weight:800; text-align:right; white-space:nowrap; }
+    .filmeai-estimate-manual { color:#b45309; font-weight:700; }
+    .filmeai-estimate-totals { margin-top:10px; display:flex; flex-direction:column; gap:5px; }
+    .filmeai-estimate-total-row { display:flex; justify-content:space-between; gap:10px; font-size:12px; color:#6b7280; }
+    .filmeai-estimate-total-row.strong { color:#111827; font-weight:800; font-size:14px; }
+    .filmeai-estimate-footer { margin-top:10px; font-size:11.5px; color:#6b7280; line-height:1.35; }
     @media (max-width: 400px) {
       #filmeai-panel { width: calc(100vw - 24px); right: 12px; bottom: 84px; }
     }
@@ -801,6 +817,53 @@
       '</div>';
   }
 
+  function formatMoney(value) {
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
+  }
+
+  function renderEstimateCard(estimate) {
+    if (!estimate || !Array.isArray(estimate.lines)) return;
+
+    var card = document.createElement('div');
+    card.className = 'filmeai-estimate-card';
+
+    var html = '';
+    html += '<div class="filmeai-estimate-head">';
+    html += '<div><div class="filmeai-estimate-title">Votre estimation</div>';
+    html += '<div class="filmeai-estimate-sub">' + formatMarkdown(estimate.dateLabel || '') + ' · ' + String(estimate.days || 1) + ' jour' + (Number(estimate.days || 1) > 1 ? 's' : '') + '</div></div>';
+    html += '<div class="filmeai-estimate-badge">À confirmer</div>';
+    html += '</div>';
+
+    html += '<div class="filmeai-estimate-lines">';
+    estimate.lines.forEach(function(line) {
+      html += '<div class="filmeai-estimate-line">';
+      html += '<div>';
+      html += '<div class="filmeai-estimate-line-title">' + String(line.quantity || 1) + '× ' + formatMarkdown(line.title || line.requestedName || 'Produit à vérifier');
+      if (line.isBundle) html += '<span class="filmeai-pack-label">PACK</span>';
+      html += '</div>';
+      if (line.requiresFilmeIntervention) {
+        html += '<div class="filmeai-estimate-line-meta filmeai-estimate-manual">Intervention Filme demandée</div>';
+      } else {
+        html += '<div class="filmeai-estimate-line-meta">' + formatMoney(line.unitPrice || 0) + ' / jour</div>';
+      }
+      html += '</div>';
+      html += '<div class="filmeai-estimate-line-price">' + (line.requiresFilmeIntervention ? 'À chiffrer' : formatMoney(line.lineTotal || 0)) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    html += '<div class="filmeai-estimate-totals">';
+    html += '<div class="filmeai-estimate-total-row"><span>Sous-total</span><strong>' + formatMoney(estimate.subtotal || 0) + '</strong></div>';
+    html += '<div class="filmeai-estimate-total-row"><span>Caution</span><strong>' + formatMoney(estimate.deposit || 0) + '</strong></div>';
+    html += '<div class="filmeai-estimate-total-row strong"><span>Total TTC estimé</span><strong>' + formatMoney(estimate.total || 0) + '</strong></div>';
+    html += '</div>';
+    html += '<div class="filmeai-estimate-footer">Cette estimation n’est pas encore envoyée. Les disponibilités et les lignes “Intervention Filme” seront validées par l’équipe Filme.</div>';
+
+    card.innerHTML = html;
+    messagesEl.appendChild(card);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
   // ── Stream response from API ──────────────────────────────────────────────
   function streamResponse() {
     var botEl = null;
@@ -901,6 +964,9 @@
         }
       } else if (evt.type === 'quote_matches_done') {
         persistSession();
+      } else if (evt.type === 'quote_estimate') {
+        if (progressEl) { progressEl.remove(); progressEl = null; }
+        renderEstimateCard(evt.estimate);
       } else if (evt.type === 'creating_quote') {
         if (progressEl) { progressEl.remove(); progressEl = null; }
         if (botEl) botContent += '\n\n⏳ Création du devis en cours…';
