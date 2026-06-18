@@ -1,22 +1,28 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-async function getOrgId(supabase: ReturnType<typeof createRouteHandlerClient>) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
+
+async function getOrgId(supabase: ReturnType<typeof getSupabase>) {
   const { data } = await supabase
-    .from('organization_members')
-    .select('organization_id')
-    .eq('user_id', user.id)
-    .single()
-  return data?.organization_id ?? null
+    .from('organizations')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  return data?.id ?? null
 }
 
 export async function GET() {
-  const supabase = createRouteHandlerClient({ cookies })
+  const supabase = getSupabase()
   const orgId = await getOrgId(supabase)
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -32,7 +38,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createRouteHandlerClient({ cookies })
+  const supabase = getSupabase()
   const orgId = await getOrgId(supabase)
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
