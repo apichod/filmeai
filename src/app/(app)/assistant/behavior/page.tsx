@@ -30,10 +30,21 @@ const defaults: Settings = {
   forbidden_topics: [],
 }
 
+function topicsToText(topics: string[]) {
+  return topics.join('\n')
+}
+
+function textToTopics(value: string) {
+  return value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter((line, index, arr) => arr.indexOf(line) === index)
+}
+
 
 export default function AssistantBehaviorPage() {
   const [s, setS] = useState<Settings>(defaults)
-  const [topicInput, setTopicInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -59,17 +70,6 @@ export default function AssistantBehaviorPage() {
 
   function set<K extends keyof Settings>(key: K, val: Settings[K]) {
     setS(prev => ({ ...prev, [key]: val }))
-  }
-
-  function addTopic() {
-    const t = topicInput.trim()
-    if (!t || s.forbidden_topics.includes(t)) return
-    set('forbidden_topics', [...s.forbidden_topics, t])
-    setTopicInput('')
-  }
-
-  function removeTopic(topic: string) {
-    set('forbidden_topics', s.forbidden_topics.filter(t => t !== topic))
   }
 
   async function save() {
@@ -233,36 +233,23 @@ export default function AssistantBehaviorPage() {
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Garde-fous</h2>
-          <p className="text-xs text-gray-500 mt-0.5">L&apos;assistant refusera de répondre à ces sujets ou de mentionner ces marques concurrentes.</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Une règle par ligne. Ces garde-fous sont injectés dans le prompt côté chat au moment de répondre.
+          </p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Sujets &amp; marques interdits</label>
-          {s.forbidden_topics.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {s.forbidden_topics.map(topic => (
-                <span key={topic} className="flex items-center gap-1.5 bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded-full">
-                  {topic}
-                  <button onClick={() => removeTopic(topic)} className="text-gray-400 hover:text-gray-700 leading-none">×</button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <input
-              value={topicInput}
-              onChange={e => setTopicInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addTopic()}
-              placeholder="ex: politique, concurrents, prix…"
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-            />
-            <button
-              onClick={addTopic}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              + Ajouter
-            </button>
-          </div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Règles et sujets à éviter</label>
+          <textarea
+            value={topicsToText(s.forbidden_topics)}
+            onChange={e => set('forbidden_topics', textToTopics(e.target.value))}
+            rows={8}
+            placeholder={"ex:\npolitique\nconcurrents directs\nne jamais promettre une disponibilité sans vérification\nne pas accorder de remise sans validation humaine"}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black resize-y"
+          />
+          <p className="mt-1 text-[11px] text-gray-400">
+            {s.forbidden_topics.length} règle{s.forbidden_topics.length > 1 ? 's' : ''} active{s.forbidden_topics.length > 1 ? 's' : ''}
+          </p>
         </div>
       </div>
 
