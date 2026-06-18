@@ -800,27 +800,31 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
       </div>
 
       {!showDevisChoice && !showDevisForm && (
-        <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-center gap-2 shrink-0">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(input) } }}
-            placeholder="Écrivez votre message…"
-            rows={1}
-            disabled={loading}
-            className="max-h-20 flex-1 resize-none bg-transparent text-xs leading-5 text-gray-700 outline-none placeholder-gray-400 disabled:opacity-50"
-          />
-          <button
-            onClick={() => void send(input)}
-            disabled={loading || !input.trim()}
-            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-opacity disabled:opacity-40"
-            style={{ backgroundColor: color }}
-          >
-            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
+        <div className="px-3 py-2.5 border-t border-gray-100 bg-white shrink-0">
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(input) } }}
+              placeholder="Écrivez votre message…"
+              rows={2}
+              disabled={loading}
+              className="max-h-24 min-h-[52px] flex-1 resize-none bg-transparent text-xs leading-5 text-gray-700 outline-none placeholder-gray-400 disabled:opacity-50"
+            />
+            <button
+              onClick={() => void send(input)}
+              disabled={loading || !input.trim()}
+              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-opacity disabled:opacity-40"
+              style={{ backgroundColor: color }}
+              title="Envoyer"
+            >
+              <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              </svg>
+            </button>
+          </div>
+          <p className="mt-1.5 text-[10px] leading-none text-gray-400">Entrée = nouvelle ligne · ⌘/Ctrl + Entrée = envoyer</p>
         </div>
       )}
 

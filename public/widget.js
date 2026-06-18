@@ -79,13 +79,15 @@
     .filmeai-dot:nth-child(3) { animation-delay: 0.4s; }
     @keyframes filmeai-bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
     #filmeai-input-area {
-      border-top: 1px solid #e5e7eb; padding: 12px;
+      border-top: 1px solid #e5e7eb; padding: 10px 12px 8px;
+    }
+    #filmeai-input-row {
       display: flex; gap: 8px; align-items: flex-end;
     }
     #filmeai-input {
       flex: 1; border: 1.5px solid #e5e7eb; border-radius: 10px;
       padding: 9px 12px; font-size: 13.5px; resize: none; outline: none;
-      max-height: 100px; line-height: 1.45; color: #111;
+      min-height: 58px; max-height: 120px; line-height: 1.45; color: #111;
       transition: border-color 0.15s;
     }
     #filmeai-input:focus { border-color: #000; }
@@ -97,6 +99,10 @@
     }
     #filmeai-send:disabled { opacity: 0.35; cursor: not-allowed; }
     #filmeai-send svg { width: 16px; height: 16px; fill: white; }
+    #filmeai-input-help {
+      margin-top: 6px; color: #9ca3af; font-size: 10.5px; line-height: 1.2;
+      padding-left: 2px; user-select: none;
+    }
     .filmeai-products { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
     .filmeai-product-card {
       background: white; border: 1px solid #e5e7eb; border-radius: 10px;
@@ -146,10 +152,13 @@
       </div>
       <div id="filmeai-messages"></div>
       <div id="filmeai-input-area">
-        <textarea id="filmeai-input" placeholder="Écrivez votre message…" rows="1"></textarea>
-        <button id="filmeai-send" disabled>
-          <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-        </button>
+        <div id="filmeai-input-row">
+          <textarea id="filmeai-input" placeholder="Écrivez votre message…" rows="2"></textarea>
+          <button id="filmeai-send" disabled title="Envoyer">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+        </div>
+        <div id="filmeai-input-help">Entrée = nouvelle ligne · ⌘/Ctrl + Entrée = envoyer</div>
       </div>
     </div>
     <button id="filmeai-bubble" title="Assistant FilmeAI">
