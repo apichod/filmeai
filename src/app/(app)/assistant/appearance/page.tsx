@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
+import TurnstileField from '@/components/TurnstileField'
 
 type Settings = {
   primary_color: string
@@ -206,9 +207,11 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [sessionData, setSessionData] = useState<ChatSessionData>({ selectedProductIds: [], conversationId: null, quoteMode: null })
   const [showDevisChoice, setShowDevisChoice] = useState(false)
   const [showDevisForm, setShowDevisForm] = useState(false)
-  const [devisForm, setDevisForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [devisForm, setDevisForm] = useState({ name: '', company: '', email: '', phone: '', startDate: '', endDate: '', message: '' })
   const [devisFormStatus, setDevisFormStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
   const [devisFormError, setDevisFormError] = useState('')
+  const [devisTurnstileToken, setDevisTurnstileToken] = useState('')
+  const handleDevisTurnstile = useCallback((token: string) => setDevisTurnstileToken(token), [])
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const manualSearchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
@@ -240,9 +243,10 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setSessionData({ selectedProductIds: [], conversationId: null, quoteMode: null })
     setShowDevisChoice(false)
     setShowDevisForm(false)
-    setDevisForm({ name: '', email: '', phone: '', message: '' })
+    setDevisForm({ name: '', company: '', email: '', phone: '', startDate: '', endDate: '', message: '' })
     setDevisFormStatus('idle')
     setDevisFormError('')
+    setDevisTurnstileToken('')
   }
 
   const send = useCallback(async (text: string, overrideSessionData?: ChatSessionData) => {
@@ -647,10 +651,15 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                   const fd = new FormData()
                   fd.append('key', s.organization_id ?? '')
                   fd.append('name', devisForm.name)
+                  fd.append('first_name', devisForm.name)
+                  fd.append('company', devisForm.company)
                   fd.append('email', devisForm.email)
                   fd.append('phone', devisForm.phone)
+                  fd.append('start_date', devisForm.startDate)
+                  fd.append('end_date', devisForm.endDate)
                   fd.append('message', devisForm.message)
                   fd.append('website', '')
+                  fd.append('cf-turnstile-response', devisTurnstileToken)
                   const res = await fetch('/api/form-submit', { method: 'POST', body: fd })
                   const data = await res.json() as { ok?: boolean; error?: string }
                   if (!res.ok || !data.ok) { setDevisFormError(data.error ?? 'Erreur'); setDevisFormStatus('error') }
@@ -665,18 +674,44 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                 </button>
                 <p className="text-xs font-semibold text-gray-900">Envoyer ma liste</p>
               </div>
-              {(['name','email','phone'] as const).map(field => (
-                <input key={field} required={field !== 'phone'} type={field === 'email' ? 'email' : 'text'}
-                  value={devisForm[field]} onChange={e => setDevisForm(p => ({ ...p, [field]: e.target.value }))}
-                  placeholder={field === 'name' ? 'Prénom et Nom *' : field === 'email' ? 'E-mail *' : 'Téléphone'}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400"
+              <input required type="text" autoComplete="name"
+                value={devisForm.name} onChange={e => setDevisForm(p => ({ ...p, name: e.target.value }))}
+                placeholder="Prénom et nom *"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400"
+              />
+              <input type="text" autoComplete="organization"
+                value={devisForm.company} onChange={e => setDevisForm(p => ({ ...p, company: e.target.value }))}
+                placeholder="Société"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400"
+              />
+              <input required type="email" autoComplete="email"
+                value={devisForm.email} onChange={e => setDevisForm(p => ({ ...p, email: e.target.value }))}
+                placeholder="E-mail *"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400"
+              />
+              <input type="tel" autoComplete="tel"
+                value={devisForm.phone} onChange={e => setDevisForm(p => ({ ...p, phone: e.target.value }))}
+                placeholder="Téléphone"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input required type="date"
+                  value={devisForm.startDate} onChange={e => setDevisForm(p => ({ ...p, startDate: e.target.value }))}
+                  aria-label="Début de location"
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 text-gray-700"
                 />
-              ))}
+                <input required type="date"
+                  value={devisForm.endDate} onChange={e => setDevisForm(p => ({ ...p, endDate: e.target.value }))}
+                  aria-label="Fin de location"
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 text-gray-700"
+                />
+              </div>
               <textarea required value={devisForm.message} rows={4}
                 onChange={e => setDevisForm(p => ({ ...p, message: e.target.value }))}
-                placeholder={"Sony FX3 × 1\nObjectif 24-70mm × 1\n\nDates : du 20 au 22 juillet"}
+                placeholder={"Votre liste de matériel *\n2x Sony FX6\n1x Canon RF 24-70\n3x trépieds"}
                 className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400 resize-none"
               />
+              <TurnstileField onVerify={handleDevisTurnstile} compact className="scale-90 origin-left" />
               {devisFormStatus === 'error' && <p className="text-[11px] text-red-500">{devisFormError}</p>}
               <button type="submit" disabled={devisFormStatus === 'sending'}
                 className="w-full py-2.5 rounded-xl text-xs font-semibold text-white transition-opacity disabled:opacity-50"

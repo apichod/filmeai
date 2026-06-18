@@ -203,7 +203,8 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData()
 
     const key        = (formData.get('key') as string ?? '').trim()
-    const firstName  = (formData.get('first_name') as string ?? '').trim().slice(0, 200)
+    const submittedName = formData.get('name') || formData.get('first_name')
+    const name       = (submittedName as string ?? '').trim().slice(0, 200)
     const email      = (formData.get('email') as string ?? '').trim().slice(0, 200)
     const phone      = (formData.get('phone') as string ?? '').trim().slice(0, 50)
     const company    = (formData.get('company') as string ?? '').trim().slice(0, 200)
@@ -213,8 +214,6 @@ export async function POST(req: NextRequest) {
     const honeypot   = (formData.get('website') as string ?? '').trim()
     const turnstileToken = (formData.get('cf-turnstile-response') as string ?? '').trim()
     const file       = formData.get('file') as File | null
-
-    const name = firstName // alias pour la suite
 
     // ── Sécurité 4 : honeypot — les bots remplissent ce champ caché ──────────
     if (honeypot) {
@@ -227,7 +226,7 @@ export async function POST(req: NextRequest) {
       return json(req, { error: 'Vérification anti-spam échouée. Rechargez la page puis réessayez.' }, 400)
     }
 
-    if (!key || !name || !message) {
+    if (!key || !name || !email || !message) {
       return json(req, { error: 'Champs obligatoires manquants.' }, 400)
     }
 
@@ -302,7 +301,7 @@ export async function POST(req: NextRequest) {
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
           <h2 style="margin:0 0 16px;font-size:18px">Nouvelle demande de devis sur liste</h2>
           <table style="width:100%;border-collapse:collapse;font-size:14px">
-            <tr><td style="padding:8px 0;color:#666;width:130px">Prénom</td><td style="padding:8px 0;font-weight:600">${esc(name)}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;width:130px">Client</td><td style="padding:8px 0;font-weight:600">${esc(name)}</td></tr>
             ${email ? `<tr><td style="padding:8px 0;color:#666">E-mail</td><td style="padding:8px 0"><a href="mailto:${esc(email)}">${esc(email)}</a></td></tr>` : ''}
             ${phone ? `<tr><td style="padding:8px 0;color:#666">Téléphone</td><td style="padding:8px 0">${esc(phone)}</td></tr>` : ''}
             ${company ? `<tr><td style="padding:8px 0;color:#666">Société</td><td style="padding:8px 0">${esc(company)}</td></tr>` : ''}

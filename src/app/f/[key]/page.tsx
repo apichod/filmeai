@@ -1,6 +1,7 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useCallback, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import TurnstileField from '@/components/TurnstileField'
 
 type Status = 'idle' | 'sending' | 'success' | 'error'
 
@@ -11,7 +12,7 @@ export default function FormPage() {
   const params = useParams()
   const key = params.key as string
 
-  const [firstName, setFirstName] = useState('')
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [company, setCompany] = useState('')
@@ -22,7 +23,9 @@ export default function FormPage() {
   const [fileError, setFileError] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  const handleTurnstile = useCallback((token: string) => setTurnstileToken(token), [])
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null
@@ -44,7 +47,8 @@ export default function FormPage() {
     try {
       const fd = new FormData()
       fd.append('key', key)
-      fd.append('first_name', firstName)
+      fd.append('name', name)
+      fd.append('first_name', name)
       fd.append('email', email)
       fd.append('phone', phone)
       fd.append('company', company)
@@ -52,6 +56,7 @@ export default function FormPage() {
       fd.append('end_date', endDate)
       fd.append('message', message)
       fd.append('website', '') // honeypot
+      fd.append('cf-turnstile-response', turnstileToken)
       if (file) fd.append('file', file)
 
       const res = await fetch('/api/form-submit', { method: 'POST', body: fd })
@@ -89,18 +94,59 @@ export default function FormPage() {
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700 }}>Devis sur liste</h1>
         <p style={{ margin: 0, color: '#555', fontSize: 14, lineHeight: 1.6 }}>
-          Collez votre liste de matériel, indiquez vos dates et vos coordonnées : notre équipe revient vers vous avec un devis.
+          Renseignez vos coordonnées, vos dates et votre liste de matériel : notre équipe revient vers vous avec un devis.
         </p>
       </div>
 
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Coordonnées */}
+        <div>
+          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#888', textTransform: 'uppercase' }}>Vos coordonnées</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Prénom et nom *</label>
+              <input required value={name} onChange={e => setName(e.target.value)}
+                style={inputStyle} placeholder="Camille Dupont" autoComplete="name" />
+            </div>
+            <div>
+              <label style={labelStyle}>Société</label>
+              <input value={company} onChange={e => setCompany(e.target.value)}
+                style={inputStyle} placeholder="Nom de votre société" autoComplete="organization" />
+            </div>
+            <div>
+              <label style={labelStyle}>E-mail *</label>
+              <input required type="email" value={email} onChange={e => setEmail(e.target.value)}
+                style={inputStyle} placeholder="camille@exemple.com" autoComplete="email" />
+            </div>
+            <div>
+              <label style={labelStyle}>Téléphone</label>
+              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                style={inputStyle} placeholder="06 12 34 56 78" autoComplete="tel" />
+            </div>
+          </div>
+        </div>
+
+        {/* Dates */}
+        <div>
+          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#888', textTransform: 'uppercase' }}>Dates de location</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Début de location *</label>
+              <input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Fin de location *</label>
+              <input required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+        </div>
 
         {/* Liste matériel */}
         <div>
           <label style={labelStyle}>Votre liste de matériel *</label>
           <textarea required value={message} onChange={e => setMessage(e.target.value)}
-            rows={6} style={{ ...inputStyle, resize: 'vertical' }}
-            placeholder={"Un article par ligne, ex. :\n2x Canon C300\n3 trépieds\nMicro HF"} />
+            rows={7} style={{ ...inputStyle, resize: 'vertical' }}
+            placeholder={"Un article par ligne, ex. :\n2x Sony FX6\n1x Canon RF 24-70\n3x trépieds\nMicro HF"} />
         </div>
 
         {/* Fichier joint */}
@@ -119,47 +165,7 @@ export default function FormPage() {
           {!fileError && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#9ca3af' }}>Jusqu&apos;à {MAX_MB} Mo.</p>}
         </div>
 
-        {/* Dates */}
-        <div>
-          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#888', textTransform: 'uppercase' }}>Dates de location</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Récupération *</label>
-              <input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Restitution *</label>
-              <input required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} />
-            </div>
-          </div>
-        </div>
-
-        {/* Coordonnées */}
-        <div>
-          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#888', textTransform: 'uppercase' }}>Vos coordonnées</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Prénom *</label>
-              <input required value={firstName} onChange={e => setFirstName(e.target.value)}
-                style={inputStyle} placeholder="Camille" />
-            </div>
-            <div>
-              <label style={labelStyle}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                style={inputStyle} placeholder="camille@exemple.com" />
-            </div>
-            <div>
-              <label style={labelStyle}>Téléphone</label>
-              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                style={inputStyle} placeholder="06 12 34 56 78" />
-            </div>
-            <div>
-              <label style={labelStyle}>Société</label>
-              <input value={company} onChange={e => setCompany(e.target.value)}
-                style={inputStyle} placeholder="Nom de votre société" />
-            </div>
-          </div>
-        </div>
+        <TurnstileField onVerify={handleTurnstile} />
 
         {status === 'error' && (
           <p style={{ margin: 0, fontSize: 13, color: '#dc2626', padding: '10px 12px', background: '#fef2f2', borderRadius: 8 }}>
