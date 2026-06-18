@@ -113,6 +113,10 @@ export default function AssistantKnowledgePage() {
   const [signalSaving, setSignalSaving] = useState(false)
   const [signalError, setSignalError] = useState('')
   const [signalSaved, setSignalSaved] = useState(false)
+  const [editingSignalId, setEditingSignalId] = useState<string | null>(null)
+  const [editSignalTerm, setEditSignalTerm] = useState('')
+  const [editSignalProduct, setEditSignalProduct] = useState('')
+  const [signalEditSaving, setSignalEditSaving] = useState(false)
 
   /* ── Load FAQ ── */
   const loadFaq = useCallback(async () => {
@@ -252,6 +256,44 @@ export default function AssistantKnowledgePage() {
       setSignalError(err instanceof Error ? err.message : 'Impossible d’ajouter cet alias.')
     } finally {
       setSignalSaving(false)
+    }
+  }
+
+  function startEditSignal(signal: CatalogSignal) {
+    setEditingSignalId(signal.id)
+    setEditSignalTerm(signal.term)
+    setEditSignalProduct(signal.product_name)
+    setSignalError('')
+  }
+
+  function cancelEditSignal() {
+    setEditingSignalId(null)
+    setEditSignalTerm('')
+    setEditSignalProduct('')
+  }
+
+  async function saveSignalEdit(id: string) {
+    if (!editSignalTerm.trim() || !editSignalProduct.trim()) return
+    setSignalEditSaving(true)
+    setSignalError('')
+    try {
+      const res = await fetch(`/api/catalog-signals/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          term: editSignalTerm,
+          productName: editSignalProduct,
+          approved: true,
+        }),
+      })
+      const data = await res.json() as { signal?: CatalogSignal; error?: string }
+      if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+      if (data.signal) setSignals(prev => prev.map(signal => signal.id === id ? data.signal! : signal))
+      cancelEditSignal()
+    } catch (err) {
+      setSignalError(err instanceof Error ? err.message : 'Modification impossible.')
+    } finally {
+      setSignalEditSaving(false)
     }
   }
 
@@ -665,34 +707,75 @@ export default function AssistantKnowledgePage() {
               <div className="divide-y divide-gray-50">
                 {signals.map(signal => (
                   <div key={signal.id} className="px-6 py-3 flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-sm text-gray-900">
-                        <span className="font-semibold">“{signal.term}”</span>
-                        <span className="text-gray-400 mx-2">→</span>
-                        <span>{signal.product_name}</span>
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {signal.source || 'manual'} · {signal.occurrences || 1} occurrence{(signal.occurrences || 1) > 1 ? 's' : ''}
-                        {signal.approved === false && <span className="ml-2 text-amber-600 font-medium">à valider</span>}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {signal.approved === false && (
+                    {editingSignalId === signal.id ? (
+                      <div className="flex-1 grid md:grid-cols-[1fr_1fr_auto] gap-2">
+                        <input
+                          value={editSignalTerm}
+                          onChange={e => setEditSignalTerm(e.target.value)}
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                          placeholder="Terme client"
+                        />
+                        <input
+                          value={editSignalProduct}
+                          onChange={e => setEditSignalProduct(e.target.value)}
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                          placeholder="Produit catalogue"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => void saveSignalEdit(signal.id)}
+                            disabled={signalEditSaving || !editSignalTerm.trim() || !editSignalProduct.trim()}
+                            className="text-xs bg-gray-900 text-white rounded-lg px-3 py-2 hover:bg-gray-700 disabled:opacity-40"
+                          >
+                            {signalEditSaving ? 'Sauvegarde…' : 'Sauver'}
+                          </button>
+                          <button
+                            onClick={cancelEditSignal}
+                            className="text-xs border border-gray-200 rounded-lg px-3 py-2 text-gray-500 hover:bg-gray-50"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-semibold">“{signal.term}”</span>
+                            <span className="text-gray-400 mx-2">→</span>
+                            <span>{signal.product_name}</span>
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {signal.source || 'manual'} · {signal.occurrences || 1} occurrence{(signal.occurrences || 1) > 1 ? 's' : ''}
+                            {signal.approved === false && <span className="ml-2 text-amber-600 font-medium">à valider</span>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {signal.approved === false && (
+                            <button
+                              onClick={() => void approveSignal(signal.id)}
+                              className="text-xs border border-amber-200 bg-amber-50 text-amber-700 rounded-lg px-2 py-1 hover:bg-amber-100"
+                            >
+                              Valider
+                            </button>
+                          )}
                         <button
-                          onClick={() => void approveSignal(signal.id)}
-                          className="text-xs border border-amber-200 bg-amber-50 text-amber-700 rounded-lg px-2 py-1 hover:bg-amber-100"
+                          onClick={() => startEditSignal(signal)}
+                          className="p-1.5 text-gray-400 hover:text-gray-900 rounded-lg hover:bg-gray-50 transition-colors"
+                          title="Modifier l'association"
                         >
-                          Valider
+                          <IconPencil className="w-4 h-4" />
                         </button>
-                      )}
-                      <button
-                        onClick={() => void deleteSignal(signal.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                        title="Supprimer l'association"
-                      >
-                        <IconTrash className="w-4 h-4" />
-                      </button>
-                    </div>
+                          <button
+                            onClick={() => void deleteSignal(signal.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                            title="Supprimer l'association"
+                          >
+                            <IconTrash className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
