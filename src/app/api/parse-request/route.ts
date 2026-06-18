@@ -102,13 +102,6 @@ function queryHasAllTokens(product: Product, tokens: string[]): boolean {
   return tokens.every(token => haystack.includes(normalizeText(token)))
 }
 
-function sanitizeIlikeTerm(value: string): string {
-  return value
-    .replace(/[^a-zA-ZÀ-ÖØ-öø-ÿ0-9+\-.\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 function importantModelTokens(item: ExtractedItem): string[] {
   const text = normalizeText(`${item.raw} ${item.query}`)
   const tokens = significantTokens(text)
@@ -311,29 +304,31 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
   const phrases = Array.from(new Set([
     stripQuantityPrefix(item.raw),
     stripQuantityPrefix(item.query),
-  ].map(phrase => sanitizeIlikeTerm(phrase)).filter(phrase => phrase.length >= 3))).slice(0, 3)
+  ].map(phrase => phrase.trim()).filter(phrase => phrase.length >= 3))).slice(0, 3)
 
-  const searchTerms = Array.from(new Set([
-    ...phrases,
-    ...anchors.map(sanitizeIlikeTerm),
-  ].filter(term => term.length >= 2))).slice(0, 10)
+  for (const phrase of phrases) {
+    const safePhrase = phrase.replace(/[%,]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!safePhrase) continue
+    const { data } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .or(`name.ilike.%${safePhrase}%,description.ilike.%${safePhrase}%,enriched_text.ilike.%${safePhrase}%`)
+      .limit(limit)
 
-  if (searchTerms.length === 0) return []
+    if (data?.length) found.push(...data as Product[])
+  }
 
-  const filters = searchTerms.flatMap(term => [
-    `name.ilike.%${term}%`,
-    `description.ilike.%${term}%`,
-    `enriched_text.ilike.%${term}%`,
-  ])
+  for (const anchor of anchors) {
+    const { data } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .ilike('name', `%${anchor}%`)
+      .limit(limit)
 
-  const { data } = await supabase
-    .from('products_cache')
-    .select('id, name, description, price_per_day, deposit, photo_url')
-    .eq('archived', false)
-    .or(filters.join(','))
-    .limit(limit * 2)
-
-  if (data?.length) found.push(...data as Product[])
+    if (data?.length) found.push(...data as Product[])
+  }
 
   return dedupeProducts(found)
 }
