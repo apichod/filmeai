@@ -658,29 +658,26 @@ async function bookBundleById(orderId: string, item: QuoteItem, bundleId: string
 
   const baseAction = {
     action: 'book_bundle',
-    mode: 'create_new',
     bundle_id: bundleId,
     quantity,
   }
 
+  // Booqable refuse `mode` sur book_bundle. Pour les bundles sans variations,
+  // il refuse aussi product_variations avec le message "0 product_variations should be included".
+  // On tente donc d'abord le payload minimal officiel : action + bundle_id + quantity.
   const attempts: { label: string; action: JsonObject }[] = [
     {
-      label: 'book_bundle with product_variations',
-      action: { ...baseAction, product_variations: productVariations },
-    },
-    {
-      label: 'book_bundle without product_variations',
+      label: 'book_bundle minimal',
       action: baseAction,
     },
-    {
-      label: 'book_bundle item_id with product_variations',
-      action: { ...baseAction, item_id: bundleId, product_variations: productVariations },
-    },
-    {
-      label: 'book_bundle item_id without product_variations',
-      action: { ...baseAction, item_id: bundleId },
-    },
   ]
+
+  if (productVariations.length > 0) {
+    attempts.push({
+      label: 'book_bundle with product_variations',
+      action: { ...baseAction, product_variations: productVariations },
+    })
+  }
 
   const errors: string[] = []
   for (const attempt of attempts) {
