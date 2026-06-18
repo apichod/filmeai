@@ -147,8 +147,6 @@
     .filmeai-confirm-hint { font-size:12px; color:#6b7280; line-height:1.35; margin-bottom:8px; }
     .filmeai-confirm-button { width:100%; border:none; border-radius:10px; padding:10px 12px; background:#111827; color:white; cursor:pointer; font-size:13px; font-weight:700; }
     .filmeai-confirm-button:hover { background:#000; }
-    .filmeai-validate-button { width:100%; border:1px solid #d1d5db; border-radius:9px; padding:8px 9px; background:#f3f4f6; color:#374151; cursor:pointer; font-size:12px; font-weight:700; margin-top:6px; }
-    .filmeai-validate-button:hover { background:#111827; border-color:#111827; color:white; }
     @media (max-width: 400px) {
       #filmeai-panel { width: calc(100vw - 24px); right: 12px; bottom: 84px; }
     }
@@ -531,10 +529,9 @@
         if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
       } else if (item.leaveToFilme) {
         html += '<div class="filmeai-selected-name">L’équipe Filme me fera une proposition</div>';
-        html += '<div class="filmeai-human-required">Intervention humaine demandée</div>';
+        html += '<div class="filmeai-human-required">Intervention Filme demandée</div>';
       } else {
-        html += '<div class="filmeai-selected-name">Correspondance catalogue à vérifier</div>';
-        html += '<div class="filmeai-human-required">Intervention humaine requise</div>';
+        html += '<div class="filmeai-human-required">Intervention Filme demandée</div>';
       }
 
       html += '</div><div class="filmeai-card-actions">';
@@ -551,7 +548,6 @@
           html += '<div class="filmeai-option-price">' + (strong ? 'Choix retenu' : 'Suggestion proposée — cliquez pour valider') + '</div>';
           if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
           html += '</button>';
-          if (!strong) html += '<button class="filmeai-validate-button" data-action="validate" data-index="' + index + '">Valider cette proposition</button>';
           html += '</div>';
         } else if (baseChoices.length) {
           html += '<div class="filmeai-options">';

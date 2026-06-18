@@ -613,12 +613,11 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
             ) : leaveToFilmeKeys[cardKey] ? (
               <>
                 <p className="font-semibold text-gray-900">L’équipe Filme me fera une proposition</p>
-                <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention humaine demandée</p>
+                <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention Filme demandée</p>
               </>
             ) : (
               <>
-                <p className="font-semibold text-gray-900">Correspondance catalogue à vérifier</p>
-                <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention humaine requise</p>
+                <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention Filme demandée</p>
               </>
             )}
           </div>
@@ -648,14 +647,6 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                 <span className={`mt-0.5 block text-[11px] ${isStrong ? 'text-white/70' : 'text-gray-500'}`}>
                   {isStrong ? 'Choix retenu' : 'Suggestion proposée — cliquer pour valider'}
                 </span>
-              </button>
-            )}
-            {selectedProduct && !isStrong && (
-              <button
-                onClick={() => choosePreviewProduct(selectedProduct, cardKey)}
-                className="block w-full rounded-lg border border-gray-300 bg-gray-100 px-2 py-1.5 text-left font-semibold text-gray-700 hover:border-gray-900 hover:bg-gray-900 hover:text-white"
-              >
-                Valider cette proposition
               </button>
             )}
             {!selectedProduct && uniqueChoices.map(choice => (
