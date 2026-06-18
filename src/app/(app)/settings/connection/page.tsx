@@ -56,7 +56,7 @@ export default function SettingsConnectionPage() {
     setSyncing(true)
     setSyncResult(null)
     try {
-      const res = await fetch('/api/sync-catalog', { method: 'POST' })
+      const res = await fetch('/api/sync-catalog-trigger', { method: 'POST' })
       const data = await res.json() as { upserted?: number; error?: string }
       if (res.ok) {
         setSyncResult({ ok: true, message: `${data.upserted ?? '?'} articles synchronisés avec succès.` })
