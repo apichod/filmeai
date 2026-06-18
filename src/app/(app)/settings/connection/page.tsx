@@ -86,8 +86,13 @@ export default function SettingsConnectionPage() {
             setSyncPct(payload.pct as number)
             setSyncLabel(payload.label as string)
           } else if (eventName === 'done') {
-            const upserted = payload.upserted as number | undefined
-            setSyncResult({ ok: true, message: `${upserted ?? '?'} articles synchronisés avec succès.` })
+            const pg = payload.product_groups as number | undefined
+            const bu = payload.bundles as number | undefined
+            const parts = []
+            if (pg !== undefined) parts.push(`${pg} produit${pg > 1 ? 's' : ''}`)
+            if (bu !== undefined) parts.push(`${bu} bundle${bu > 1 ? 's' : ''}`)
+            const detail = parts.length ? ` (${parts.join(', ')})` : ''
+            setSyncResult({ ok: true, message: `Catalogue synchronisé${detail}.` })
             await loadCatalog()
           } else if (eventName === 'error') {
             setSyncResult({ ok: false, message: (payload.message as string) ?? 'Erreur inconnue.' })
