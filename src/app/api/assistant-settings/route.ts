@@ -140,6 +140,8 @@ export async function PATCH(req: NextRequest) {
         .single()
 
       if (error) return json({ error: error.message }, { status: 500 })
+      // Log activity (best-effort)
+      void supabase.from('activity_log').insert({ organization_id: orgId, action: 'Réglages assistant modifiés' })
       return json({ settings: data })
     }
 

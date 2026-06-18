@@ -60,6 +60,14 @@ export async function POST(req: Request) {
         } else {
           sse(controller, 'progress', { pct: 100, label: 'Synchronisation terminée ✓' })
           sse(controller, 'done', data)
+          // Log activity (best-effort)
+          try {
+            await fetch(`${origin}/api/activity`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'Catalogue synchronisé' }),
+            })
+          } catch { /* silently ignore */ }
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
