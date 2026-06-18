@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 
-type Settings = { allowed_domains: string[] }
+type Settings = { allowed_domains: string[]; organization_id?: string }
 type CmsTab = 'html' | 'wordpress' | 'shopify' | 'wix' | 'webflow' | 'squarespace' | 'other'
 
 const CMS_TABS: { key: CmsTab; label: string }[] = [
@@ -62,6 +62,7 @@ const CMS_INSTRUCTIONS: Record<CmsTab, string[]> = {
 
 export default function AssistantIntegrationPage() {
   const [domains, setDomains] = useState<string[]>([])
+  const [orgId, setOrgId] = useState<string | null>(null)
   const [domainInput, setDomainInput] = useState('')
   const [cmsTab, setCmsTab] = useState<CmsTab>('html')
   const [copied, setCopied] = useState(false)
@@ -73,13 +74,13 @@ export default function AssistantIntegrationPage() {
       .then(r => r.json())
       .then((d: { settings?: Settings }) => {
         if (d.settings?.allowed_domains) setDomains(d.settings.allowed_domains)
+        if (d.settings?.organization_id) setOrgId(d.settings.organization_id)
       })
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  // Derive public key from org (static for now)
-  const publicKey = 'fai_pk_live_filme_xxxxxxxx'
+  const publicKey = orgId ?? '…'
   const snippet = `<script src="https://cdn.filmeai.fr/widget.js" data-key="${publicKey}" async></script>`
 
   function copySnippet() {
