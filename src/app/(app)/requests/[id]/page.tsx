@@ -64,7 +64,7 @@ function money(value: number | null | undefined) {
 }
 
 function statusLabel(status: string | null | undefined) {
-  if (status === 'closed') return 'Fermée'
+  if (status === 'closed') return 'Archivée'
   if (status === 'accepted') return 'Acceptée'
   if (status === 'sent') return 'Envoyée'
   return 'En attente de validation'

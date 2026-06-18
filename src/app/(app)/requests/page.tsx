@@ -51,7 +51,7 @@ function itemsSummary(items: QuoteItem[] | null | undefined): string {
 }
 
 function statusLabel(status: string | null | undefined): string {
-  if (status === 'closed') return 'Fermée'
+  if (status === 'closed') return 'Archivée'
   if (status === 'accepted') return 'Acceptée'
   if (status === 'sent') return 'Envoyée'
   return 'En attente de validation'
@@ -118,7 +118,7 @@ export default function RequestsPage() {
               onClick={() => setStatusFilter('closed')}
               className={`px-3 py-1.5 rounded-md ${statusFilter === 'closed' ? 'bg-white text-gray-900 shadow-sm' : ''}`}
             >
-              Fermées
+              Archivées
             </button>
             <button
               onClick={() => setStatusFilter('all')}
@@ -135,7 +135,7 @@ export default function RequestsPage() {
         >
           <option value="all">Tous les statuts</option>
           <option value="open">Ouvertes</option>
-          <option value="closed">Fermées</option>
+          <option value="closed">Archivées</option>
         </select>
       </div>
 
