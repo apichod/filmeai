@@ -38,14 +38,27 @@ type QuoteItem = {
   deposit?: number | null
 }
 
+type CustomerType = 'person' | 'company'
+
 type Customer = {
+  type?: CustomerType
   name: string
   email?: string
   phone?: string
+  addressLine1?: string
+  addressLine2?: string
+  postalCode?: string
+  city?: string
+  country?: string
   booqableId?: string
 }
 
 type JsonObject = Record<string, unknown>
+
+type CreatedCustomer = {
+  id: string
+  warning?: string | null
+}
 
 type BooqableCustomerResponse = {
   customer?: { id: string }
@@ -209,6 +222,142 @@ async function postJson<T>(url: string, body: unknown, headers: Record<string, s
   })
 
   return await readJson(res, context) as T
+}
+
+function cleanOptional(value: string | undefined | null): string | undefined {
+  const clean = String(value || '').trim()
+  return clean ? clean : undefined
+}
+
+function booqableCustomerTypeCandidates(customer: Customer): string[] {
+  return customer.type === 'company' ? ['company', 'business'] : ['individual', 'person']
+}
+
+function hasCustomerDetails(customer: Customer): boolean {
+  return Boolean(
+    customer.type ||
+    cleanOptional(customer.addressLine1) ||
+    cleanOptional(customer.addressLine2) ||
+    cleanOptional(customer.postalCode) ||
+    cleanOptional(customer.city) ||
+    cleanOptional(customer.country)
+  )
+}
+
+function baseCustomerAttributes(customer: Customer): JsonObject {
+  return {
+    name: customer.name,
+    ...(cleanOptional(customer.email) ? { email: cleanOptional(customer.email) } : {}),
+    ...(cleanOptional(customer.phone) ? { phone: cleanOptional(customer.phone) } : {}),
+  }
+}
+
+function customerAddressText(customer: Customer): string | undefined {
+  const cityLine = [cleanOptional(customer.postalCode), cleanOptional(customer.city)].filter(Boolean).join(' ')
+  return [
+    cleanOptional(customer.addressLine1),
+    cleanOptional(customer.addressLine2),
+    cityLine || undefined,
+    cleanOptional(customer.country),
+  ].filter(Boolean).join('\n') || undefined
+}
+
+function customerCreateAttempts(customer: Customer): { label: string; body: { customer: JsonObject }; enriched: boolean }[] {
+  const base = baseCustomerAttributes(customer)
+  const customerTypes = booqableCustomerTypeCandidates(customer)
+  const addressLine1 = cleanOptional(customer.addressLine1)
+  const addressLine2 = cleanOptional(customer.addressLine2)
+  const postalCode = cleanOptional(customer.postalCode)
+  const city = cleanOptional(customer.city)
+  const country = cleanOptional(customer.country)
+  const addressText = customerAddressText(customer)
+
+  const attempts = [
+    ...customerTypes.map(customerType => ({
+      label: `Customer creation with customer_type/address_line/${customerType}`,
+      enriched: true,
+      body: {
+        customer: {
+          ...base,
+          customer_type: customerType,
+          ...(addressLine1 ? { address_line_1: addressLine1 } : {}),
+          ...(addressLine2 ? { address_line_2: addressLine2 } : {}),
+          ...(postalCode ? { postal_code: postalCode } : {}),
+          ...(city ? { city } : {}),
+          ...(country ? { country } : {}),
+        },
+      },
+    })),
+    ...customerTypes.map(customerType => ({
+      label: `Customer creation with customer_type/address1/${customerType}`,
+      enriched: true,
+      body: {
+        customer: {
+          ...base,
+          customer_type: customerType,
+          ...(addressLine1 ? { address1: addressLine1 } : {}),
+          ...(addressLine2 ? { address2: addressLine2 } : {}),
+          ...(postalCode ? { zipcode: postalCode } : {}),
+          ...(city ? { city } : {}),
+          ...(country ? { country } : {}),
+        },
+      },
+    })),
+    ...customerTypes.map(customerType => ({
+      label: `Customer creation with legal_type/address/${customerType}`,
+      enriched: true,
+      body: {
+        customer: {
+          ...base,
+          legal_type: customerType,
+          ...(addressText ? { address: addressText } : {}),
+        },
+      },
+    })),
+    {
+      label: 'Customer creation base',
+      enriched: false,
+      body: { customer: base },
+    },
+  ]
+
+  const seen = new Set<string>()
+  return attempts.filter(attempt => {
+    const key = JSON.stringify(attempt.body)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function createBooqableCustomer(v1: string, key: string | undefined, customer: Customer): Promise<CreatedCustomer> {
+  const attempts = customerCreateAttempts(customer)
+  const errors: string[] = []
+
+  for (const attempt of attempts) {
+    try {
+      const custData = await postJson<BooqableCustomerResponse>(
+        `${v1}/customers?api_key=${key}`,
+        attempt.body,
+        { 'Content-Type': 'application/json' },
+        attempt.label
+      )
+
+      const id = custData.customer?.id ?? ''
+      if (!id) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
+
+      return {
+        id,
+        warning: !attempt.enriched && hasCustomerDetails(customer)
+          ? 'Client créé, mais Booqable a refusé certains champs type/adresse. Le devis est créé ; vérifie la fiche client dans Booqable.'
+          : null,
+      }
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  throw new Error(`Customer creation failed: ${errors.join(' | ')}`)
 }
 
 function resourceId(resource: unknown): string | null {
@@ -778,25 +927,14 @@ export async function POST(req: NextRequest) {
 
     // 1. Use existing customer or create new one.
     let customerId: string
+    let customerWarning: string | null = null
 
     if (customer.booqableId) {
       customerId = customer.booqableId
     } else {
-      const custData = await postJson<BooqableCustomerResponse>(
-        `${v1}/customers?api_key=${key}`,
-        {
-          customer: {
-            name: customer.name,
-            ...(customer.email ? { email: customer.email } : {}),
-            ...(customer.phone ? { phone: customer.phone } : {}),
-          },
-        },
-        { 'Content-Type': 'application/json' },
-        'Customer creation'
-      )
-
-      customerId = custData.customer?.id ?? ''
-      if (!customerId) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
+      const createdCustomer = await createBooqableCustomer(v1, key, customer)
+      customerId = createdCustomer.id
+      customerWarning = createdCustomer.warning || null
     }
 
     // 2. Create order.
@@ -861,6 +999,7 @@ export async function POST(req: NextRequest) {
       orderId,
       orderUrl,
       customerId,
+      customerWarning,
       conversationId: conv?.id || null,
     })
   } catch (err) {

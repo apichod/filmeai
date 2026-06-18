@@ -5,11 +5,19 @@ import { useRouter } from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type CustomerType = 'person' | 'company'
+
 type BooqableCustomer = {
   id: string
   name: string
   email: string | null
   phone: string | null
+  customerType?: CustomerType
+  addressLine1?: string | null
+  addressLine2?: string | null
+  postalCode?: string | null
+  city?: string | null
+  country?: string | null
 }
 
 type Product = {
@@ -219,9 +227,15 @@ export default function NewRequestPage() {
   const [step, setStep] = useState<Step>('client')
 
   // ── Client
+  const [clientType, setClientType] = useState<CustomerType>('person')
   const [clientName, setClientName] = useState('')
   const [clientEmail, setClientEmail] = useState('')
   const [clientPhone, setClientPhone] = useState('')
+  const [clientAddressLine1, setClientAddressLine1] = useState('')
+  const [clientAddressLine2, setClientAddressLine2] = useState('')
+  const [clientPostalCode, setClientPostalCode] = useState('')
+  const [clientCity, setClientCity] = useState('')
+  const [clientCountry, setClientCountry] = useState('FR')
   const [clientBooqableId, setClientBooqableId] = useState<string | null>(null)
 
   // ── Customer search
@@ -283,7 +297,7 @@ export default function NewRequestPage() {
 
   // ── Submit
   const [submitting, setSubmitting] = useState(false)
-  const [quoteResult, setQuoteResult] = useState<{ orderId: string; orderUrl: string } | null>(null)
+  const [quoteResult, setQuoteResult] = useState<{ orderId: string; orderUrl: string; customerWarning?: string | null } | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   // ── Customer search
@@ -302,10 +316,29 @@ export default function NewRequestPage() {
     }, 280)
   }
 
+  function clearSelectedCustomer() {
+    setClientBooqableId(null)
+    setClientType('person')
+    setClientName('')
+    setClientEmail('')
+    setClientPhone('')
+    setClientAddressLine1('')
+    setClientAddressLine2('')
+    setClientPostalCode('')
+    setClientCity('')
+    setClientCountry('FR')
+  }
+
   function selectExistingCustomer(c: BooqableCustomer) {
+    setClientType(c.customerType || 'person')
     setClientName(c.name)
     setClientEmail(c.email || '')
     setClientPhone(c.phone || '')
+    setClientAddressLine1(c.addressLine1 || '')
+    setClientAddressLine2(c.addressLine2 || '')
+    setClientPostalCode(c.postalCode || '')
+    setClientCity(c.city || '')
+    setClientCountry(c.country || 'FR')
     setClientBooqableId(c.id)
     setCustomerQuery('')
     setCustomerResults([])
@@ -524,9 +557,15 @@ export default function NewRequestPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customer: {
+            type: clientType,
             name: clientName,
             email: clientEmail || undefined,
             phone: clientPhone || undefined,
+            addressLine1: clientAddressLine1 || undefined,
+            addressLine2: clientAddressLine2 || undefined,
+            postalCode: clientPostalCode || undefined,
+            city: clientCity || undefined,
+            country: clientCountry || undefined,
             booqableId: clientBooqableId || undefined,
           },
           items: quoteLines.map((i, index) => ({
@@ -546,15 +585,15 @@ export default function NewRequestPage() {
         }),
       })
       const raw = await res.text()
-      let data: { orderId?: string; orderUrl?: string; error?: string }
+      let data: { orderId?: string; orderUrl?: string; error?: string; customerWarning?: string | null }
       try {
-        data = JSON.parse(raw) as { orderId?: string; orderUrl?: string; error?: string }
+        data = JSON.parse(raw) as { orderId?: string; orderUrl?: string; error?: string; customerWarning?: string | null }
       } catch {
         const preview = raw.replace(/\s+/g, ' ').slice(0, 500)
         throw new Error(`Réponse non JSON de /api/create-quote (${res.status}) : ${preview}`)
       }
       if (!res.ok || data.error) throw new Error(data.error || `Erreur HTTP ${res.status}`)
-      if (data.orderUrl) setQuoteResult({ orderId: data.orderId!, orderUrl: data.orderUrl })
+      if (data.orderUrl) setQuoteResult({ orderId: data.orderId!, orderUrl: data.orderUrl, customerWarning: data.customerWarning || null })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Erreur lors de la création du devis')
     } finally {
@@ -623,8 +662,13 @@ export default function NewRequestPage() {
                     >
                       <p className="text-sm font-medium text-gray-900">{c.name}</p>
                       <p className="text-xs text-gray-400">
-                        {[c.email, c.phone].filter(Boolean).join(' · ')}
+                        {[c.customerType === 'company' ? 'Société' : 'Particulier', c.email, c.phone].filter(Boolean).join(' · ')}
                       </p>
+                      {(c.addressLine1 || c.city) && (
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          {[c.addressLine1, c.postalCode, c.city].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -651,7 +695,7 @@ export default function NewRequestPage() {
                 <span>✓ Client Booqable sélectionné : <strong>{clientName}</strong></span>
                 <button
                   type="button"
-                  onClick={() => { setClientBooqableId(null); setClientName(''); setClientEmail(''); setClientPhone('') }}
+                  onClick={clearSelectedCustomer}
                   className="text-gray-400 hover:text-gray-700"
                 >
                   ×
@@ -659,7 +703,26 @@ export default function NewRequestPage() {
               </div>
             )}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Nom *</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Type de client</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setClientType('person'); setClientBooqableId(null) }}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${clientType === 'person' ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                >
+                  Particulier
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setClientType('company'); setClientBooqableId(null) }}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${clientType === 'company' ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                >
+                  Société
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Nom {clientType === 'company' ? 'société / contact' : 'client'} *</label>
               <input
                 type="text"
                 placeholder="Nom du client"
@@ -687,6 +750,48 @@ export default function NewRequestPage() {
                 value={clientPhone}
                 onChange={e => setClientPhone(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Adresse</label>
+              <input
+                type="text"
+                placeholder="Adresse"
+                value={clientAddressLine1}
+                onChange={e => setClientAddressLine1(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+              />
+            </div>
+            <div>
+              <input
+                type="text"
+                placeholder="Complément d’adresse"
+                value={clientAddressLine2}
+                onChange={e => setClientAddressLine2(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+              />
+            </div>
+            <div className="grid grid-cols-[120px_1fr_80px] gap-2">
+              <input
+                type="text"
+                placeholder="CP"
+                value={clientPostalCode}
+                onChange={e => setClientPostalCode(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+              />
+              <input
+                type="text"
+                placeholder="Ville"
+                value={clientCity}
+                onChange={e => setClientCity(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+              />
+              <input
+                type="text"
+                placeholder="Pays"
+                value={clientCountry}
+                onChange={e => setClientCountry(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:border-gray-800"
               />
             </div>
             <button
@@ -1018,6 +1123,11 @@ export default function NewRequestPage() {
             {quoteResult ? (
               <div className="text-center space-y-2">
                 <p className="text-sm font-medium text-green-600">✅ Devis créé dans Booqable !</p>
+                {quoteResult.customerWarning && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+                    {quoteResult.customerWarning}
+                  </p>
+                )}
                 <a
                   href={quoteResult.orderUrl}
                   target="_blank"
