@@ -26,6 +26,7 @@ async function getDefaultOrganizationId(supabase: ReturnType<typeof getSupabaseA
 
 type QuoteItem = {
   type?: 'product' | 'custom_charge' | 'section'
+  sourceType?: 'product_group' | 'bundle' | null
   productId?: string
   quantity?: number
   name?: string
@@ -63,6 +64,12 @@ type ResolvedBooqableItem =
   | { kind: 'product'; id: string }
   | { kind: 'bundle'; id: string }
   | { kind: 'none'; reason: string }
+
+type CatalogCacheRow = {
+  id: string
+  source_type: 'product_group' | 'bundle' | null
+  name?: string | null
+}
 
 function asObject(value: unknown): JsonObject | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : null
@@ -121,6 +128,7 @@ function buildStoredQuoteItems(items: QuoteItem[], days: number) {
       type,
       section: item.section || null,
       productId: item.productId || null,
+      sourceType: item.sourceType || null,
       title: quoteLineTitle(item),
       requestedName: item.requestedName || quoteLineTitle(item),
       name: item.name || quoteLineTitle(item),
@@ -206,22 +214,38 @@ function relationshipData(resource: unknown, name: string): unknown[] {
   return Array.isArray(data) ? data : data ? [data] : []
 }
 
+function productBelongsToGroup(resource: unknown, productGroupId: string): boolean {
+  const obj = asObject(resource)
+  if (!obj) return false
+
+  const directGroupId = asString(obj.product_group_id)
+  if (directGroupId === productGroupId) return true
+
+  const attrs = asObject(obj.attributes)
+  if (asString(attrs?.product_group_id) === productGroupId) return true
+
+  return relationshipData(resource, 'product_group').some(rel => resourceId(rel) === productGroupId)
+}
+
 function productIdFromPayload(payload: unknown, productGroupId?: string): string | null {
   const root = asObject(payload)
   if (!root) return null
 
   // v1 single product: { product: { id, product_group_id } }
   const product = asObject(root.product)
-  if (product) return asString(product.id)
+  if (product) {
+    if (productGroupId && asString(product.product_group_id) !== productGroupId) return null
+    return asString(product.id)
+  }
 
   // v1 products list: { products: [...] }
   const products = asArray(root.products)
   if (products.length) {
-    const exact = products.find(candidate => {
-      const obj = asObject(candidate)
-      return productGroupId && obj && asString(obj.product_group_id) === productGroupId
-    })
-    return resourceId(exact || products[0])
+    if (productGroupId) {
+      const exact = products.find(candidate => productBelongsToGroup(candidate, productGroupId))
+      return resourceId(exact)
+    }
+    return resourceId(products[0])
   }
 
   // JSON:API direct data
@@ -230,7 +254,8 @@ function productIdFromPayload(payload: unknown, productGroupId?: string): string
 
   const directProduct = dataArray.find(resource => {
     const type = resourceType(resource)
-    return type === 'products' || type === 'product'
+    if (type !== 'products' && type !== 'product') return false
+    return productGroupId ? productBelongsToGroup(resource, productGroupId) : true
   })
   if (directProduct) return resourceId(directProduct)
 
@@ -240,11 +265,14 @@ function productIdFromPayload(payload: unknown, productGroupId?: string): string
     if (relProducts.length) return resourceId(relProducts[0])
   }
 
-  // JSON:API included products
+  // JSON:API included products. If we were resolving a specific product_group,
+  // never return an arbitrary first product: that is how bundles ended up as the
+  // same default product in Booqable.
   const included = asArray(root.included)
   const includedProduct = included.find(resource => {
     const type = resourceType(resource)
-    return type === 'products' || type === 'product'
+    if (type !== 'products' && type !== 'product') return false
+    return productGroupId ? productBelongsToGroup(resource, productGroupId) : true
   })
 
   return resourceId(includedProduct)
@@ -261,6 +289,33 @@ function bundleExistsInPayload(payload: unknown): boolean {
   })
 }
 
+async function getCatalogCacheRow(id: string): Promise<CatalogCacheRow | null> {
+  try {
+    const supabase = getSupabaseAdmin()
+    const { data, error } = await supabase
+      .from('products_cache')
+      .select('id, source_type, name')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('products_cache source lookup failed:', error.message)
+      return null
+    }
+
+    return data as CatalogCacheRow | null
+  } catch (error) {
+    console.warn('products_cache source lookup exception:', error instanceof Error ? error.message : String(error))
+    return null
+  }
+}
+
+async function resolveBundleId(id: string, v4: string, v4Headers: Record<string, string>): Promise<ResolvedBooqableItem> {
+  const bundleV4 = await fetchJsonOrNull(`${v4}/bundles/${id}`, v4Headers)
+  if (bundleExistsInPayload(bundleV4)) return { kind: 'bundle', id }
+  return { kind: 'none', reason: `Bundle Booqable introuvable pour ${id}` }
+}
+
 async function resolveBooqableItem(item: QuoteItem): Promise<ResolvedBooqableItem> {
   const id = item.productId
   if (!id) return { kind: 'none', reason: 'Pas d’ID catalogue' }
@@ -270,6 +325,15 @@ async function resolveBooqableItem(item: QuoteItem): Promise<ResolvedBooqableIte
   const v1 = `https://${subdomain}.booqable.com/api/1`
   const v4 = `https://${subdomain}.booqable.com/api/4`
   const v4Headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+  const catalogRow = await getCatalogCacheRow(id)
+  const sourceType = item.sourceType || catalogRow?.source_type || null
+
+  // Les bundles indexés dans products_cache ont leur propre ID Booqable.
+  // Il ne faut surtout pas tenter de les résoudre comme product_group avant,
+  // sinon certains endpoints renvoient un produit par défaut.
+  if (sourceType === 'bundle') {
+    return await resolveBundleId(id, v4, v4Headers)
+  }
 
   // Already a plannable product id?
   const directV4Product = await fetchJsonOrNull(`${v4}/products/${id}`, v4Headers)
@@ -302,9 +366,10 @@ async function resolveBooqableItem(item: QuoteItem): Promise<ResolvedBooqableIte
   const productFromFilterV1Alt = productIdFromPayload(productsByGroupV1Alt, id)
   if (productFromFilterV1Alt) return { kind: 'product', id: productFromFilterV1Alt }
 
-  // Bundle id → book_bundle action.
-  const bundleV4 = await fetchJsonOrNull(`${v4}/bundles/${id}`, v4Headers)
-  if (bundleExistsInPayload(bundleV4)) return { kind: 'bundle', id }
+  // Dernier recours : l'ID était peut-être un bundle qui n'existait pas encore
+  // dans products_cache avec source_type=bundle.
+  const bundle = await resolveBundleId(id, v4, v4Headers)
+  if (bundle.kind === 'bundle') return bundle
 
   return { kind: 'none', reason: `Impossible de résoudre l’ID Booqable ${id} en product ou bundle` }
 }
