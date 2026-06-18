@@ -183,6 +183,7 @@ type QuoteMatch = {
 
 type ChatSessionData = {
   selectedProductIds: string[]
+  quoteMatches?: QuoteMatch[]
   conversationId: string | null
   quoteMode?: 'immediate' | 'manual' | null
 }
@@ -223,6 +224,16 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setTimeout(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
     }, 50)
+  }
+
+  function insertInputNewline(textarea: HTMLTextAreaElement) {
+    const start = textarea.selectionStart || 0
+    const end = textarea.selectionEnd || 0
+    const next = input.slice(0, start) + '\n' + input.slice(end)
+    setInput(next)
+    window.requestAnimationFrame(() => {
+      inputRef.current?.setSelectionRange(start + 1, start + 1)
+    })
   }
 
   function reset() {
@@ -329,14 +340,14 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               const selectedIds = localQuoteMatches
                 .filter(item => item.matched && item.confidence >= 0.5)
                 .map(item => item.matched!.id)
-              setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds }))
+              setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds, quoteMatches: localQuoteMatches }))
               scrollBottom()
             } else if (evt.type === 'quote_matches' && evt.items) {
               localQuoteMatches = evt.items as QuoteMatch[]
               const selectedIds = localQuoteMatches
                 .filter(item => item.matched && item.confidence >= 0.5)
                 .map(item => item.matched!.id)
-              setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds }))
+              setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds, quoteMatches: localQuoteMatches }))
               setStreamQuoteMatches(localQuoteMatches)
             } else if (evt.type === 'conversation_saved' && evt.conversationId) {
               setSessionData(prev => ({ ...prev, conversationId: evt.conversationId as string }))
@@ -468,11 +479,65 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     })
   }
 
+  function selectedProductForMatch(item: QuoteMatch, cardKey: string): Product | null {
+    if (leaveToFilmeKeys[cardKey]) return null
+    return selectedPreviewProducts[cardKey] || (item.matched && item.confidence >= 0.5 ? item.matched : null)
+  }
+
+  function quoteMatchesUnresolvedCount(items: QuoteMatch[], prefix: string) {
+    return items.filter((item, idx) => !selectedProductForMatch(item, `${prefix}-${idx}`)).length
+  }
+
+  function confirmQuoteMatches(items: QuoteMatch[], prefix: string) {
+    const unresolved = quoteMatchesUnresolvedCount(items, prefix)
+    const nextLeaveToFilme: Record<string, boolean> = {}
+    const selectedIds: string[] = []
+
+    items.forEach((item, idx) => {
+      const key = `${prefix}-${idx}`
+      const selectedProduct = selectedProductForMatch(item, key)
+      if (selectedProduct) {
+        selectedIds.push(selectedProduct.id)
+      } else {
+        nextLeaveToFilme[key] = true
+      }
+    })
+
+    if (Object.keys(nextLeaveToFilme).length > 0) {
+      setLeaveToFilmeKeys(prev => ({ ...prev, ...nextLeaveToFilme }))
+    }
+    setSessionData(prev => ({ ...prev, selectedProductIds: Array.from(new Set(selectedIds)), quoteMatches: items }))
+
+    void send(unresolved > 0
+      ? 'Je confirme ma liste. Laissez l’équipe Filme me faire une proposition pour les lignes introuvables.'
+      : 'Je confirme ma liste.')
+  }
+
+  function renderQuoteConfirmBox(items: QuoteMatch[], prefix: string) {
+    const unresolved = quoteMatchesUnresolvedCount(items, prefix)
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-2.5 shadow-sm">
+        <p className="mb-2 text-[11px] leading-snug text-gray-500">
+          {unresolved > 0
+            ? `${unresolved} ligne${unresolved > 1 ? 's' : ''} sans correspondance validée : l’équipe Filme pourra faire une proposition.`
+            : 'Toutes les lignes ont une proposition catalogue. Vous pouvez encore modifier ou supprimer chaque bloc.'}
+        </p>
+        <button
+          type="button"
+          onClick={() => confirmQuoteMatches(items, prefix)}
+          disabled={loading}
+          className="w-full rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Confirmer ma liste
+        </button>
+      </div>
+    )
+  }
+
   function renderQuoteMatchCard(item: QuoteMatch, cardKey: string) {
     if (removedPreviewKeys[cardKey]) return null
 
-    const autoProduct = item.matched && item.confidence >= 0.5 ? item.matched : null
-    const selectedProduct = leaveToFilmeKeys[cardKey] ? null : selectedPreviewProducts[cardKey] || autoProduct
+    const selectedProduct = selectedProductForMatch(item, cardKey)
     const isStrong = Boolean(selectedProduct && !leaveToFilmeKeys[cardKey] && (item.confidence >= 0.8 || selectedPreviewProducts[cardKey]))
     const editing = Boolean(editingPreviewKeys[cardKey])
     const manualOpen = Boolean(manualOpenKeys[cardKey])
@@ -766,6 +831,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               {msg.quoteMatches && msg.quoteMatches.length > 0 && (
                 <div className="space-y-2">
                   {msg.quoteMatches.map((item, idx) => renderQuoteMatchCard(item, `final-${msg.id}-${idx}`))}
+                  {renderQuoteConfirmBox(msg.quoteMatches, `final-${msg.id}`)}
                 </div>
               )}
             </div>
@@ -778,12 +844,16 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               {streamText ? (
                 <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-3 py-2 text-xs text-gray-800 leading-relaxed shadow-sm whitespace-pre-wrap">
                   {renderContent(streamText)}
-                  <span className="inline-block w-1.5 h-3 bg-gray-400 ml-0.5 animate-pulse rounded-sm" />
+                  <span className="ml-1 inline-flex items-center gap-1 align-middle">
+                    {[0, 150, 300].map(d => (
+                      <span key={d} className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-gray-800" style={{ animationDelay: `${d}ms` }} />
+                    ))}
+                  </span>
                 </div>
               ) : (
-                <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-3 py-2 shadow-sm flex gap-1 items-center">
+                <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2.5 shadow-sm">
                   {[0, 150, 300].map(d => (
-                    <span key={d} className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                    <span key={d} className="h-2.5 w-2.5 animate-bounce rounded-full bg-gray-900" style={{ animationDelay: `${d}ms` }} />
                   ))}
                 </div>
               )}
@@ -807,7 +877,18 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(input) } }}
+              onKeyDown={e => {
+                if (e.key !== 'Enter') return
+                if (e.metaKey || e.ctrlKey) {
+                  e.preventDefault()
+                  insertInputNewline(e.currentTarget)
+                  return
+                }
+                if (!e.shiftKey) {
+                  e.preventDefault()
+                  void send(input)
+                }
+              }}
               placeholder="Écrivez votre message…"
               rows={2}
               disabled={loading}
@@ -825,7 +906,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               </svg>
             </button>
           </div>
-          <p className="mt-1.5 text-[10px] leading-none text-gray-400">Entrée : retour ligne · ⌘/Ctrl + Entrée : envoyer</p>
+          <p className="mt-1.5 text-[10px] leading-none text-gray-400">⌘/Ctrl + Entrée : retour ligne · Entrée : envoyer</p>
         </div>
       )}
 

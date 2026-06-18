@@ -43,6 +43,7 @@ type SessionData = {
   startsAt?: string | null
   stopsAt?: string | null
   selectedProductIds?: string[]
+  quoteMatches?: unknown[]
   conversationId?: string | null
   quoteMode?: 'immediate' | 'manual' | null
 }
@@ -130,26 +131,126 @@ function extractPhone(text: string): string | null {
   return text.match(/(?:\+33|0)\s*[1-9](?:[\s.-]*\d{2}){4}/)?.[0]?.replace(/\s+/g, ' ') || null
 }
 
+const FRENCH_MONTHS: Record<string, number> = {
+  janvier: 1, janv: 1,
+  fevrier: 2, février: 2, fev: 2, fév: 2,
+  mars: 3,
+  avril: 4, avr: 4,
+  mai: 5,
+  juin: 6,
+  juillet: 7, juil: 7,
+  aout: 8, août: 8,
+  septembre: 9, sept: 9,
+  octobre: 10, oct: 10,
+  novembre: 11, nov: 11,
+  decembre: 12, décembre: 12, dec: 12, déc: 12,
+}
+
+const FRENCH_MONTH_PATTERN = 'janvier|janv|février|fevrier|fév|fev|mars|avril|avr|mai|juin|juillet|juil|août|aout|septembre|sept|octobre|oct|novembre|nov|décembre|decembre|déc|dec'
+
+function monthNumber(value: string | undefined | null): number | null {
+  if (!value) return null
+  const key = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+  return FRENCH_MONTHS[key] || null
+}
+
+function isoDateAtNine(day: number, month: number, year?: number): string | null {
+  const currentYear = new Date().getFullYear()
+  const safeYear = year || currentYear
+  if (!day || !month || month > 12 || day > 31) return null
+  return new Date(Date.UTC(safeYear, month - 1, day, 9, 0, 0)).toISOString()
+}
+
 function parseFrenchDate(value: string): string | null {
   const match = value.match(/(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?/)
   if (!match) return null
 
   const day = Number(match[1])
   const month = Number(match[2])
-  const currentYear = new Date().getFullYear()
-  let year = match[3] ? Number(match[3]) : currentYear
-  if (year < 100) year += 2000
-  if (!day || !month || month > 12) return null
+  let year = match[3] ? Number(match[3]) : undefined
+  if (year && year < 100) year += 2000
 
-  return new Date(Date.UTC(year, month - 1, day, 9, 0, 0)).toISOString()
+  return isoDateAtNine(day, month, year)
+}
+
+function extractNaturalDateRange(text: string): { startsAt: string | null; stopsAt: string | null } {
+  const monthPattern = FRENCH_MONTH_PATTERN
+  const connector = '(?:au|à|a|jusqu(?:\'|’)au|jusqu(?:\'|’)à|jusqu(?:\'|’)a|-)'
+
+  // “du 21 au 26 juin”, “21-26 juin”
+  const sharedMonth = new RegExp(`(?:du\\s+)?(\\d{1,2})\\s*${connector}\\s*(\\d{1,2})\\s*(${monthPattern})(?:\\s+(\\d{4}))?`, 'i')
+  const sharedMatch = text.match(sharedMonth)
+  if (sharedMatch) {
+    const month = monthNumber(sharedMatch[3])
+    const year = sharedMatch[4] ? Number(sharedMatch[4]) : undefined
+    return {
+      startsAt: month ? isoDateAtNine(Number(sharedMatch[1]), month, year) : null,
+      stopsAt: month ? isoDateAtNine(Number(sharedMatch[2]), month, year) : null,
+    }
+  }
+
+  // “du 21 juin au 26 juin”
+  const explicitMonths = new RegExp(`(?:du\\s+)?(\\d{1,2})\\s*(${monthPattern})\\s*${connector}\\s*(\\d{1,2})\\s*(${monthPattern})(?:\\s+(\\d{4}))?`, 'i')
+  const explicitMatch = text.match(explicitMonths)
+  if (explicitMatch) {
+    const startMonth = monthNumber(explicitMatch[2])
+    const stopMonth = monthNumber(explicitMatch[4])
+    const year = explicitMatch[5] ? Number(explicitMatch[5]) : undefined
+    return {
+      startsAt: startMonth ? isoDateAtNine(Number(explicitMatch[1]), startMonth, year) : null,
+      stopsAt: stopMonth ? isoDateAtNine(Number(explicitMatch[3]), stopMonth, year) : null,
+    }
+  }
+
+  return { startsAt: null, stopsAt: null }
 }
 
 function extractDates(text: string): { startsAt: string | null; stopsAt: string | null } {
   const matches = text.match(/\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?/g) || []
-  return {
-    startsAt: matches[0] ? parseFrenchDate(matches[0]) : null,
-    stopsAt: matches[1] ? parseFrenchDate(matches[1]) : null,
+  if (matches.length > 0) {
+    return {
+      startsAt: matches[0] ? parseFrenchDate(matches[0]) : null,
+      stopsAt: matches[1] ? parseFrenchDate(matches[1]) : null,
+    }
   }
+
+  return extractNaturalDateRange(text)
+}
+
+function isDateOnlyResponse(text: string): boolean {
+  const dates = extractDates(text)
+  if (!dates.startsAt && !dates.stopsAt) return false
+
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+
+  const productish = /\b(?:sony|canon|arri|aputure|profoto|smallhd|teradek|dzofilm|camera|camera|objectif|moniteur|trepied|filtre|micro|lumiere|pack|kit|rf|fx\d+|c50|c70|c80|c300|c400|b10x?|d2|prohead|atem|sachtler|magliner|x\s*\d+|\d+\s*x)\b/.test(normalized)
+  if (productish) return false
+
+  return normalized.length <= 80
+}
+
+function hasQuoteDraft(sessionData: SessionData): boolean {
+  return Boolean(
+    (sessionData.selectedProductIds && sessionData.selectedProductIds.length > 0) ||
+    (sessionData.quoteMatches && sessionData.quoteMatches.length > 0)
+  )
+}
+
+function formatDateRangeForUser(startsAt?: string | null, stopsAt?: string | null): string {
+  const formatter = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' })
+  const start = startsAt ? formatter.format(new Date(startsAt)) : null
+  const stop = stopsAt ? formatter.format(new Date(stopsAt)) : null
+  if (start && stop) return `du ${start} au ${stop}`
+  if (start) return `à partir du ${start}`
+  if (stop) return `jusqu’au ${stop}`
+  return 'sur ces dates'
 }
 
 function inferSessionData(messages: OpenAI.Chat.ChatCompletionMessageParam[], sessionData: SessionData): SessionData {
@@ -173,12 +274,15 @@ function inferSessionData(messages: OpenAI.Chat.ChatCompletionMessageParam[], se
     startsAt: sessionData.startsAt || dates.startsAt,
     stopsAt: sessionData.stopsAt || dates.stopsAt,
     selectedProductIds: sessionData.selectedProductIds || [],
+    quoteMatches: sessionData.quoteMatches || [],
     conversationId: sessionData.conversationId || null,
     quoteMode: sessionData.quoteMode || null,
   }
 }
 
 function looksLikeQuoteList(text: string, conversationText = '', forceQuoteMode = false): boolean {
+  if (isDateOnlyResponse(text)) return false
+
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
   const quantityHits = text.match(/(?:^|\n|\s)(?:x|×)?\d+\s*(?:x|×)?\s+[A-Za-zÀ-ÖØ-öø-ÿ0-9]/gi)?.length || 0
   const sectionHits = text.match(/^[A-Za-zÀ-ÖØ-öø-ÿ /&+-]{3,}:\s*$/gm)?.length || 0
@@ -513,6 +617,7 @@ export async function POST(req: NextRequest) {
     const previousUserText = getPreviousUserText(incomingMessages)
     const conversationText = incomingMessages.map(textFromMessage).join('\n')
     const forceQuoteMode = sessionData.quoteMode === 'immediate'
+    const lastIsDateOnly = Boolean(lastUserText && isDateOnlyResponse(lastUserText))
     const lastLooksLikeQuoteList = Boolean(lastUserText && looksLikeQuoteList(lastUserText, conversationText, forceQuoteMode))
     const previousLooksLikeQuoteList = Boolean(previousUserText && looksLikeQuoteList(previousUserText, conversationText, forceQuoteMode))
     const quoteRequestText = lastLooksLikeQuoteList
@@ -551,8 +656,13 @@ export async function POST(req: NextRequest) {
         let booqableOrderUrl: string | null = null
 
         try {
-          // ── Mode liste matériel / workflow devis ───────────────────────────
-          if (quoteRequestText) {
+          // ── Dates seules après matching catalogue : on complète le brouillon,
+          // sans relancer l'extraction produit.
+          if (lastIsDateOnly && hasQuoteDraft(sessionData)) {
+            const responseText = `Parfait, j’ai noté les dates ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}. Je garde la liste produit déjà préparée.\n\nQuand tout vous convient, écrivez “je confirme” pour créer le devis dans Booqable.`
+            fullResponse += responseText
+            send({ type: 'delta', content: responseText })
+          } else if (quoteRequestText) {
             requestContext = quoteRequestText
             const intro = 'Je regarde ce qui est disponible dans notre catalogue !'
             fullResponse += intro

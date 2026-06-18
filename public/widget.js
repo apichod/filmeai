@@ -73,8 +73,8 @@
       border-bottom-right-radius: 4px;
     }
     .filmeai-msg strong { font-weight: 600; }
-    .filmeai-typing { display: flex; gap: 4px; padding: 12px 14px; align-items: center; }
-    .filmeai-dot { width: 7px; height: 7px; border-radius: 50%; background: #aaa; animation: filmeai-bounce 1.2s infinite; }
+    .filmeai-typing { display: flex; gap: 7px; padding: 13px 15px; align-items: center; }
+    .filmeai-dot { width: 9px; height: 9px; border-radius: 50%; background: #111827; animation: filmeai-bounce 1s infinite; }
     .filmeai-dot:nth-child(2) { animation-delay: 0.2s; }
     .filmeai-dot:nth-child(3) { animation-delay: 0.4s; }
     @keyframes filmeai-bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
@@ -134,7 +134,10 @@
     .filmeai-option-btn.selected { border-color:#111; background:#111; color:white; }
     .filmeai-option-price { color:#6b7280; font-size:11px; }
     .filmeai-option-btn.selected .filmeai-option-price { color:rgba(255,255,255,.68); }
-    .filmeai-confirm-hint { font-size:12px; color:#6b7280; padding:8px 2px 0; }
+    .filmeai-confirm-box { margin-top: 2px; padding: 10px; border: 1px solid #e5e7eb; background: #fff; border-radius: 12px; }
+    .filmeai-confirm-hint { font-size:12px; color:#6b7280; line-height:1.35; margin-bottom:8px; }
+    .filmeai-confirm-button { width:100%; border:none; border-radius:10px; padding:10px 12px; background:#111827; color:white; cursor:pointer; font-size:13px; font-weight:700; }
+    .filmeai-confirm-button:hover { background:#000; }
     @media (max-width: 400px) {
       #filmeai-panel { width: calc(100vw - 24px); right: 12px; bottom: 84px; }
     }
@@ -158,7 +161,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
           </button>
         </div>
-        <div id="filmeai-input-help">Entrée : retour ligne · ⌘/Ctrl + Entrée : envoyer</div>
+        <div id="filmeai-input-help">⌘/Ctrl + Entrée : retour ligne · Entrée : envoyer</div>
       </div>
     </div>
     <button id="filmeai-bubble" title="Assistant FilmeAI">
@@ -225,6 +228,15 @@
   bubble.addEventListener('click', toggle);
   closeBtn.addEventListener('click', toggle);
 
+  function insertTextareaNewline(textarea) {
+    var start = textarea.selectionStart || 0;
+    var end = textarea.selectionEnd || 0;
+    var value = textarea.value || '';
+    textarea.value = value.slice(0, start) + '\n' + value.slice(end);
+    textarea.selectionStart = textarea.selectionEnd = start + 1;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   // ── Input handling ─────────────────────────────────────────────────────────
   input.addEventListener('input', function () {
     sendBtn.disabled = !input.value.trim() || isLoading;
@@ -232,7 +244,15 @@
     input.style.height = Math.min(input.scrollHeight, 100) + 'px';
   });
   input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key !== 'Enter') return;
+
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      insertTextareaNewline(input);
+      return;
+    }
+
+    if (!e.shiftKey) {
       e.preventDefault();
       if (!sendBtn.disabled) send();
     }
@@ -302,6 +322,13 @@
     streamResponse();
   }
 
+  function sendText(text) {
+    if (isLoading) return;
+    input.value = text;
+    sendBtn.disabled = !input.value.trim();
+    send();
+  }
+
   function extractSessionData(text) {
     if (/^faire un devis$/i.test(text.trim())) {
       sessionData.quoteMode = 'immediate';
@@ -315,12 +342,10 @@
     var phoneMatch = text.match(/(?:\+33|0)\s*[1-9](?:[\s.-]*\d{2}){4}/);
     if (phoneMatch) sessionData.customerPhone = phoneMatch[0];
 
-    // Date detection (DD/MM/YYYY or similar)
-    var dateMatches = text.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g);
-    if (dateMatches && dateMatches.length >= 1) {
-      sessionData.startsAt = parseDate(dateMatches[0]);
-      if (dateMatches.length >= 2) sessionData.stopsAt = parseDate(dateMatches[1]);
-    }
+    // Date detection: 21/06, 21/06/2026, “du 21 au 26 juin”…
+    var parsedDates = extractDateRange(text);
+    if (parsedDates.startsAt) sessionData.startsAt = parsedDates.startsAt;
+    if (parsedDates.stopsAt) sessionData.stopsAt = parsedDates.stopsAt;
 
     // Name detection: if first bot message was asking for name and user replied
     if (!sessionData.customerName && messages.length <= 3 && text.length < 50 && !emailMatch) {
@@ -542,15 +567,40 @@
       wrap.appendChild(card);
     });
 
-    var hint = document.createElement('div');
-    hint.className = 'filmeai-confirm-hint';
-    hint.textContent = 'Quand la liste vous convient, écrivez “je confirme” pour créer le devis.';
-    wrap.appendChild(hint);
+    var unresolvedCount = items.filter(function(item) { return !item.selectedProductId || item.leaveToFilme; }).length;
+    var confirmBox = document.createElement('div');
+    confirmBox.className = 'filmeai-confirm-box';
+    confirmBox.innerHTML = '<div class="filmeai-confirm-hint">' +
+      (unresolvedCount > 0
+        ? unresolvedCount + ' ligne' + (unresolvedCount > 1 ? 's' : '') + ' sans correspondance validée : l’équipe Filme pourra faire une proposition.'
+        : 'Toutes les lignes ont une proposition catalogue. Vous pouvez encore modifier ou supprimer chaque bloc.') +
+      '</div><button type="button" class="filmeai-confirm-button" data-action="confirm-list">Confirmer ma liste</button>';
+    wrap.appendChild(confirmBox);
 
     wrap.addEventListener('click', function(e) {
       var target = e.target.closest('[data-action]');
       if (!target) return;
       var action = target.getAttribute('data-action');
+
+      if (action === 'confirm-list') {
+        var missing = 0;
+        (sessionData.quoteMatches || []).forEach(function(match) {
+          if (!match.selectedProductId || match.leaveToFilme) {
+            missing += 1;
+            match.selectedProductId = null;
+            match.userResolved = true;
+            match.leaveToFilme = true;
+            match.editing = false;
+          }
+        });
+        updateSelectedProductIds();
+        renderQuoteMatches();
+        sendText(missing > 0
+          ? 'Je confirme ma liste. Laissez l’équipe Filme me faire une proposition pour les lignes introuvables.'
+          : 'Je confirme ma liste.');
+        return;
+      }
+
       var index = parseInt(target.getAttribute('data-index'), 10);
       var item = sessionData.quoteMatches[index];
       if (!item) return;
@@ -600,14 +650,71 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  var FILMEAI_MONTHS = {
+    janvier: 1, janv: 1, fevrier: 2, février: 2, fev: 2, fév: 2, mars: 3, avril: 4, avr: 4,
+    mai: 5, juin: 6, juillet: 7, juil: 7, aout: 8, août: 8, septembre: 9, sept: 9,
+    octobre: 10, oct: 10, novembre: 11, nov: 11, decembre: 12, décembre: 12, dec: 12, déc: 12
+  };
+  var FILMEAI_MONTH_PATTERN = 'janvier|janv|février|fevrier|fév|fev|mars|avril|avr|mai|juin|juillet|juil|août|aout|septembre|sept|octobre|oct|novembre|nov|décembre|decembre|déc|dec';
+
+  function monthNumber(value) {
+    if (!value) return null;
+    var key = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    return FILMEAI_MONTHS[key] || null;
+  }
+
+  function dateIso(day, month, year) {
+    var safeYear = year || new Date().getFullYear();
+    if (!day || !month || month > 12 || day > 31) return null;
+    return new Date(Date.UTC(safeYear, month - 1, day, 9, 0, 0)).toISOString();
+  }
+
   function parseDate(str) {
     var parts = str.split(/[\/\-]/);
-    if (parts.length === 3) {
-      var day = parseInt(parts[0]), month = parseInt(parts[1]) - 1, year = parseInt(parts[2]);
+    if (parts.length >= 2) {
+      var day = parseInt(parts[0], 10);
+      var month = parseInt(parts[1], 10);
+      var year = parts.length >= 3 ? parseInt(parts[2], 10) : new Date().getFullYear();
       if (year < 100) year += 2000;
-      return new Date(year, month, day).toISOString();
+      return dateIso(day, month, year);
     }
     return null;
+  }
+
+  function extractDateRange(text) {
+    var numeric = text.match(/\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?/g) || [];
+    if (numeric.length) {
+      return {
+        startsAt: numeric[0] ? parseDate(numeric[0]) : null,
+        stopsAt: numeric[1] ? parseDate(numeric[1]) : null
+      };
+    }
+
+    var connector = "(?:au|à|a|jusqu(?:'|’)au|jusqu(?:'|’)à|jusqu(?:'|’)a|-)";
+    var shared = new RegExp('(?:du\\s+)?(\\d{1,2})\\s*' + connector + '\\s*(\\d{1,2})\\s*(' + FILMEAI_MONTH_PATTERN + ')(?:\\s+(\\d{4}))?', 'i');
+    var sharedMatch = text.match(shared);
+    if (sharedMatch) {
+      var month = monthNumber(sharedMatch[3]);
+      var year = sharedMatch[4] ? parseInt(sharedMatch[4], 10) : undefined;
+      return {
+        startsAt: month ? dateIso(parseInt(sharedMatch[1], 10), month, year) : null,
+        stopsAt: month ? dateIso(parseInt(sharedMatch[2], 10), month, year) : null
+      };
+    }
+
+    var explicit = new RegExp('(?:du\\s+)?(\\d{1,2})\\s*(' + FILMEAI_MONTH_PATTERN + ')\\s*' + connector + '\\s*(\\d{1,2})\\s*(' + FILMEAI_MONTH_PATTERN + ')(?:\\s+(\\d{4}))?', 'i');
+    var explicitMatch = text.match(explicit);
+    if (explicitMatch) {
+      var startMonth = monthNumber(explicitMatch[2]);
+      var stopMonth = monthNumber(explicitMatch[4]);
+      var explicitYear = explicitMatch[5] ? parseInt(explicitMatch[5], 10) : undefined;
+      return {
+        startsAt: startMonth ? dateIso(parseInt(explicitMatch[1], 10), startMonth, explicitYear) : null,
+        stopsAt: stopMonth ? dateIso(parseInt(explicitMatch[3], 10), stopMonth, explicitYear) : null
+      };
+    }
+
+    return { startsAt: null, stopsAt: null };
   }
 
   // ── Stream response from API ──────────────────────────────────────────────
