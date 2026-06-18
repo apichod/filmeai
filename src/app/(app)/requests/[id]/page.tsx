@@ -216,7 +216,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
             disabled={saving}
             className="border border-gray-200 bg-white rounded-lg px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
           >
-            Fermer la demande
+            Archiver la demande
           </button>
           <button
             onClick={() => router.push('/requests')}
@@ -351,7 +351,6 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
               </>
             ) : (
               <>
-                <button onClick={() => setEditing(true)} className="w-full bg-gray-950 text-white rounded-lg py-2.5 text-sm font-semibold">Modifier la demande</button>
                 {request.booqable_order_url && (
                   <a href={request.booqable_order_url} target="_blank" rel="noopener noreferrer" className="block w-full text-center border border-gray-200 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50">Ouvrir la commande dans Booqable</a>
                 )}
