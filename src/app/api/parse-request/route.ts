@@ -108,8 +108,21 @@ function requestWantsPack(item: ExtractedItem): boolean {
 }
 
 function productLooksLikePack(product: Product): boolean {
-  const text = normalizeText(`${product.name} ${product.description || ''}`)
-  return /\b(pack|kit|serie|série|set|duo)\b/.test(text)
+  // Important : on se base surtout sur le NOM. Les descriptions contiennent souvent
+  // "Packs apparentés", ce qui faisait remonter des accessoires type cage/rig
+  // comme si c'étaient des packs.
+  const name = normalizeText(product.name)
+  return Boolean(product.is_bundle) || /\b(pack|kit|serie|série|set|duo)\b/.test(name)
+}
+
+function requestWantsCameraBody(item: ExtractedItem): boolean {
+  const text = normalizeText(`${item.raw} ${item.query}`)
+  return /\b(camera|caméra|cine|ciné|cinema|cinéma)\b/.test(text) || /\bfx[369]0?\b/.test(text)
+}
+
+function productLooksLikeAccessoryOnly(product: Product): boolean {
+  const name = normalizeText(product.name)
+  return /\b(cage|rig|poignee|poignée|handle|plate|support|adaptateur|cable|câble|battery plate|baseplate)\b/.test(name)
 }
 
 function importantModelTokens(item: ExtractedItem): string[] {
@@ -149,8 +162,13 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
   // Business rule: if the client asks for a pack/kit/series, prefer the pack over
   // the naked product when the model family is otherwise equivalent.
   if (requestWantsPack(item)) {
-    if (productLooksLikePack(product)) score += 1.15
-    else score -= 0.75
+    if (productLooksLikePack(product)) score += 2.25
+    else score -= 1.25
+  }
+
+  // “Sony FX6 pack caméra” means camera/pack, not an accessory compatible with FX6.
+  if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) {
+    score -= 2.4
   }
 
   // Hard-ish penalties: if a model/reference is present in the request but absent from the candidate,
@@ -501,6 +519,7 @@ Règles strictes :
 - Si aucun candidat ne correspond exactement ou clairement, retourne product_id:null.
 - Ne choisis jamais un produit qui partage seulement un mot vague.
 - Si la demande contient "pack", "kit", "série", "ciné/cinema", "reportage", "standard", "essentiel" ou équivalent, privilégie TOUJOURS un candidat pack/kit/série plutôt que le produit seul, à modèle équivalent.
+- Si la demande concerne une caméra ou un pack caméra (ex: "Sony FX6 pack caméra"), ne sélectionne jamais une cage, un rig, un support, une poignée, un câble ou un adaptateur, même si le nom contient FX6.
 - Les références modèle sont sacrées : fx6 doit matcher FX6, 70-200 doit matcher 70-200, black promist 82mm doit matcher Black Pro-Mist 82mm.
 - "x5" ou "5x" est une quantité, jamais le produit Insta360 X5 sauf si le client a explicitement demandé Insta360 X5.
 - Donne confidence entre 0 et 1. Sous 0.50, utilise product_id:null. Entre 0.50 et 0.67, tu peux proposer le meilleur candidat mais explique que la correspondance est à vérifier.
@@ -549,15 +568,19 @@ export async function POST(req: NextRequest) {
         ? set.candidates.find(candidate => candidate.id === selection.product_id) || null
         : null
       const deterministic = deterministicAutoSelect(set)
-      const packPreferred = Boolean(
-        deterministic?.product &&
-        requestWantsPack(set.item) &&
-        productLooksLikePack(deterministic.product)
-      )
-      const selected = packPreferred ? deterministic?.product || null : aiSelected || deterministic?.product || null
-      const confidence = packPreferred && deterministic
-        ? Math.min(0.95, Math.max(0.84, deterministic.score / 2.6))
+      const preferredPack = requestWantsPack(set.item)
+        ? set.candidates
+          .map(product => ({ product, score: deterministicScore(product, set.item) }))
+          .filter(({ product, score }) => productLooksLikePack(product) && score >= 0.8)
+          .sort((a, b) => b.score - a.score)[0] || null
+        : null
+      const safeAiSelected = aiSelected && requestWantsCameraBody(set.item) && productLooksLikeAccessoryOnly(aiSelected)
+        ? null
         : aiSelected
+      const selected = preferredPack?.product || safeAiSelected || deterministic?.product || null
+      const confidence = preferredPack
+        ? Math.min(0.95, Math.max(0.84, preferredPack.score / 2.6))
+        : safeAiSelected
         ? selection?.confidence || 0.85
         : deterministic
           ? Math.min(0.95, Math.max(0.72, deterministic.score / 2.6))
@@ -571,7 +594,7 @@ export async function POST(req: NextRequest) {
         matched: selected,
         confidence,
         reason: selected
-          ? (packPreferred ? 'Pack/kit privilégié car demandé par le client' : aiSelected ? selection?.reason || null : 'Correspondance catalogue forte par nom/référence')
+          ? (preferredPack ? 'Pack/kit privilégié car demandé par le client' : safeAiSelected ? selection?.reason || null : 'Correspondance catalogue forte par nom/référence')
           : selection?.reason || 'Aucune correspondance catalogue assez fiable',
         alternatives: set.candidates
           .filter(candidate => candidate.id !== selected?.id)

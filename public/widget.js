@@ -329,15 +329,10 @@
   }
 
   function displayProductName(product) {
-    var name = String((product && product.name) || 'Produit à confirmer');
-    var price = product && product.price_per_day;
-    if (price === 0 || price === '0') {
-      name = name
-        .replace(/\bFX([369])0\b/g, 'FX$1')
-        .replace(/\b(RX\s*750)0\b/gi, '$1')
-        .replace(/\b(RX\s*1500)0\b/gi, '$1');
-    }
-    return name;
+    return String((product && product.name) || 'Produit à confirmer')
+      .replace(/\bFX([369])0\b/g, 'FX$1')
+      .replace(/\b(RX\s*750)0\b/gi, '$1')
+      .replace(/\b(RX\s*1500)0\b/gi, '$1');
   }
 
   function searchCatalogForMatch(index, query) {
@@ -415,7 +410,8 @@
         html += '<div class="filmeai-option-price">Produit catalogue — prix après dates</div>';
         if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
       } else if (item.leaveToFilme) {
-        html += '<div class="filmeai-selected-name">L’équipe Filme le trouvera pour moi</div>';
+        html += '<div class="filmeai-selected-name">L’équipe Filme me fera une proposition</div>';
+        html += '<div class="filmeai-human-required">Intervention humaine demandée</div>';
       } else {
         html += '<div class="filmeai-selected-name">Correspondance catalogue à vérifier</div>';
         html += '<div class="filmeai-human-required">Intervention humaine requise</div>';
@@ -450,7 +446,7 @@
         }
 
         html += '<div class="filmeai-edit-choices">';
-        html += '<button class="filmeai-option-btn ' + (item.manualSearchOpen ? 'selected' : '') + '" data-action="manual" data-index="' + index + '">Faire une recherche manuelle…</button>';
+        html += '<button class="filmeai-option-btn" data-action="manual" data-index="' + index + '">Faire une recherche manuelle…</button>';
         html += '<button class="filmeai-option-btn ' + (item.leaveToFilme ? 'selected' : '') + '" data-action="filme" data-index="' + index + '">Laisser Filme me faire une proposition</button>';
         html += '</div>';
 
@@ -486,7 +482,6 @@
       var index = parseInt(target.getAttribute('data-index'), 10);
       var item = sessionData.quoteMatches[index];
       if (!item) return;
-      var triggerManualSearch = false;
 
       if (action === 'remove') {
         sessionData.quoteMatches.splice(index, 1);
@@ -504,17 +499,20 @@
         item.editing = false;
       } else if (action === 'manual') {
         item.manualSearchOpen = !item.manualSearchOpen;
-        if (item.manualSearchOpen && !item.manualQuery) item.manualQuery = item.requestedName || item.searchQuery || '';
         if (item.manualSearchOpen) {
-          item.manualLoading = true;
-          triggerManualSearch = true;
+          item.manualQuery = '';
+          item.manualResults = [];
+          item.manualLoading = false;
         }
       }
 
       updateSelectedProductIds();
       renderQuoteMatches();
-      if (triggerManualSearch) {
-        window.setTimeout(function() { searchCatalogForMatch(index, item.manualQuery || ''); }, 0);
+      if (action === 'manual' && item.manualSearchOpen) {
+        window.setTimeout(function() {
+          var manualInput = messagesEl.querySelector('.filmeai-manual-input[data-index="' + index + '"]');
+          if (manualInput) manualInput.focus();
+        }, 0);
       }
     });
 

@@ -33,12 +33,28 @@ function queryWantsPack(value: string): boolean {
 }
 
 function productLooksLikePack(product: CatalogProduct): boolean {
-  return /\b(pack|kit|serie|série|set|duo)\b/.test(normalizeText(`${product.name} ${product.description || ''}`))
+  // Ne pas utiliser la description ici : beaucoup de fiches produit listent des
+  // "packs apparentés" et ça classait des accessoires avant les vrais packs.
+  return /\b(pack|kit|serie|série|set|duo)\b/.test(normalizeText(product.name))
+}
+
+function queryWantsCameraBody(value: string): boolean {
+  const text = normalizeText(value)
+  return /\b(camera|caméra|cine|ciné|cinema|cinéma)\b/.test(text) || /\bfx[369]0?\b/.test(text)
+}
+
+function productLooksLikeAccessoryOnly(product: CatalogProduct): boolean {
+  return /\b(cage|rig|poignee|poignée|handle|plate|support|adaptateur|cable|câble|battery plate|baseplate)\b/.test(normalizeText(product.name))
 }
 
 function sortCatalogResults(products: CatalogProduct[], query: string): CatalogProduct[] {
   const wantsPack = queryWantsPack(query)
+  const wantsCamera = queryWantsCameraBody(query)
   return [...products].sort((a, b) => {
+    if (wantsCamera) {
+      const accessoryDelta = Number(productLooksLikeAccessoryOnly(a)) - Number(productLooksLikeAccessoryOnly(b))
+      if (accessoryDelta !== 0) return accessoryDelta
+    }
     if (wantsPack) {
       const packDelta = Number(productLooksLikePack(b)) - Number(productLooksLikePack(a))
       if (packDelta !== 0) return packDelta

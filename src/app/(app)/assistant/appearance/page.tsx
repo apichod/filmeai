@@ -351,14 +351,16 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   }, [loading, messages, sessionData])
 
   function displayProductName(product: Product) {
-    let name = product.name
-    if (product.price_per_day === 0) {
-      name = name
-        .replace(/\bFX([369])0\b/g, 'FX$1')
-        .replace(/\b(RX\s*750)0\b/gi, '$1')
-        .replace(/\b(RX\s*1500)0\b/gi, '$1')
-    }
-    return name
+    return product.name
+      // Sécurité UI : React peut rendre un 0 quand une condition utilise length.
+      // On nettoie aussi ici pour éviter les noms visuels type "FX60" / "RX 7500".
+      .replace(/\bFX([369])0\b/g, 'FX$1')
+      .replace(/\b(RX\s*750)0\b/gi, '$1')
+      .replace(/\b(RX\s*1500)0\b/gi, '$1')
+  }
+
+  function hasBundleLabel(product?: Product | null) {
+    return Boolean(product?.is_bundle || (product?.bundle_items?.length || 0) > 0)
   }
 
   function choosePreviewProduct(product: Product, cardKey?: string) {
@@ -370,6 +372,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
       setSelectedPreviewProducts(prev => ({ ...prev, [cardKey]: product }))
       setLeaveToFilmeKeys(prev => ({ ...prev, [cardKey]: false }))
       setEditingPreviewKeys(prev => ({ ...prev, [cardKey]: false }))
+      setManualOpenKeys(prev => ({ ...prev, [cardKey]: false }))
     }
   }
 
@@ -389,19 +392,25 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setEditingPreviewKeys(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  function leavePreviewToFilme(key: string) {
+  function leavePreviewToFilme(key: string, product?: Product | null) {
     setLeaveToFilmeKeys(prev => ({ ...prev, [key]: true }))
     setEditingPreviewKeys(prev => ({ ...prev, [key]: false }))
-    const selected = selectedPreviewProducts[key]
-    if (selected) removePreviewProduct(selected.id)
+    setManualOpenKeys(prev => ({ ...prev, [key]: false }))
+    setSelectedPreviewProducts(prev => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+    if (product) removePreviewProduct(product.id)
   }
 
-  function toggleManualSearch(key: string, defaultQuery: string) {
+  function toggleManualSearch(key: string) {
     setManualOpenKeys(prev => {
       const nextOpen = !prev[key]
-      if (nextOpen && !manualQueries[key]) {
-        setManualQueries(q => ({ ...q, [key]: defaultQuery }))
-        searchPreviewCatalog(key, defaultQuery)
+      if (nextOpen) {
+        setManualQueries(q => ({ ...q, [key]: '' }))
+        setManualResults(r => ({ ...r, [key]: [] }))
+        setManualLoadingKeys(l => ({ ...l, [key]: false }))
       }
       return { ...prev, [key]: nextOpen }
     })
@@ -441,7 +450,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     if (removedPreviewKeys[cardKey]) return null
 
     const autoProduct = item.matched && item.confidence >= 0.8 ? item.matched : null
-    const selectedProduct = selectedPreviewProducts[cardKey] || autoProduct
+    const selectedProduct = leaveToFilmeKeys[cardKey] ? null : selectedPreviewProducts[cardKey] || autoProduct
     const isResolved = Boolean(selectedProduct && !leaveToFilmeKeys[cardKey])
     const editing = Boolean(editingPreviewKeys[cardKey])
     const manualOpen = Boolean(manualOpenKeys[cardKey])
@@ -461,14 +470,17 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               <>
                 <p className="font-semibold text-gray-900">
                   {displayProductName(selectedProduct)}
-                  {(selectedProduct.is_bundle || selectedProduct.bundle_items?.length) && <span className="ml-1 rounded-full bg-black px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                  {hasBundleLabel(selectedProduct) && <span className="ml-1 rounded-full bg-black px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
                 </p>
                 {selectedProduct.bundle_items && selectedProduct.bundle_items.length > 0 && (
                   <p className="mt-0.5 text-[11px] text-gray-500">Contenu : {selectedProduct.bundle_items.slice(0, 4).join(', ')}{selectedProduct.bundle_items.length > 4 ? '…' : ''}</p>
                 )}
               </>
             ) : leaveToFilmeKeys[cardKey] ? (
-              <p className="font-semibold text-gray-900">L’équipe Filme me fera une proposition</p>
+              <>
+                <p className="font-semibold text-gray-900">L’équipe Filme me fera une proposition</p>
+                <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention humaine demandée</p>
+              </>
             ) : (
               <>
                 <p className="font-semibold text-gray-900">Correspondance catalogue à vérifier</p>
@@ -487,21 +499,22 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
             {selectedProduct && (
               <button className="block w-full rounded-lg border border-black bg-black px-2 py-1.5 text-left text-white">
                 {displayProductName(selectedProduct)}
-                {(selectedProduct.is_bundle || selectedProduct.bundle_items?.length) && <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                {hasBundleLabel(selectedProduct) && <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
               </button>
             )}
             {!selectedProduct && uniqueChoices.map(choice => (
               <button key={choice.id} onClick={() => choosePreviewProduct(choice, cardKey)} className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-800">
                 {displayProductName(choice)}
-                {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                {hasBundleLabel(choice) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
               </button>
             ))}
-            <button onClick={() => toggleManualSearch(cardKey, item.requestedName || '')} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${manualOpen ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-700'}`}>
+            <button onClick={() => toggleManualSearch(cardKey)} className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-700 hover:border-gray-900">
               Faire une recherche manuelle…
             </button>
             {manualOpen && (
               <div className="space-y-1 rounded-lg border border-gray-200 bg-white p-1.5">
                 <input
+                  autoFocus
                   value={manualQueries[cardKey] || ''}
                   onChange={e => searchPreviewCatalog(cardKey, e.target.value)}
                   placeholder="Rechercher dans le catalogue Filme…"
@@ -511,12 +524,12 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                 {manualChoices.map(choice => (
                   <button key={choice.id} onClick={() => choosePreviewProduct(choice, cardKey)} className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-800 hover:border-gray-900">
                     {displayProductName(choice)}
-                    {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                    {hasBundleLabel(choice) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
                   </button>
                 ))}
               </div>
             )}
-            <button onClick={() => leavePreviewToFilme(cardKey)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${leaveToFilmeKeys[cardKey] ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-600'}`}>
+            <button onClick={() => leavePreviewToFilme(cardKey, selectedProduct)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${leaveToFilmeKeys[cardKey] ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-600'}`}>
               Laisser Filme me faire une proposition
             </button>
           </div>
