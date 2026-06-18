@@ -17,6 +17,7 @@ type CatalogItem = {
   deposit_as_decimal?: string
   photo_url?: string
   archived?: boolean
+  show_in_store?: boolean
   source_type: 'product_group' | 'bundle'
   bundle_names?: string[]
   bundle_item_names?: string[]
@@ -130,6 +131,7 @@ async function fetchAllBooqableProductGroups(): Promise<CatalogItem[]> {
       deposit_as_decimal: asString(group.deposit_as_decimal),
       photo_url: asString(group.photo_url),
       archived: asBoolean(group.archived) || false,
+      show_in_store: asBoolean(group.show_in_store) ?? true,
       source_type: 'product_group' as const,
     })).filter(item => item.id))
 
@@ -192,6 +194,7 @@ async function fetchAllBooqableBundles(): Promise<CatalogItem[]> {
         centsToDecimalString(firstNumber(attrs, ['deposit_in_cents'])),
       photo_url: firstString(attrs, ['photo_url', 'photo_large_url', 'large_url', 'image_url']),
       archived: asBoolean(attrs.archived) || false,
+      show_in_store: asBoolean(attrs.show_in_store) ?? true,
       source_type: 'bundle' as const,
     }
   }).filter(item => item.id)
@@ -307,10 +310,12 @@ export async function POST(req: NextRequest) {
     ])
 
     const allRaw = attachBundleContext(productGroups, bundles, bundleItems)
-    const active = allRaw.filter(item => !item.archived)
+    const active = allRaw.filter(item => !item.archived && item.show_in_store !== false)
 
+    const hiddenCount = allRaw.filter(item => !item.archived && item.show_in_store === false).length
     console.log(
-      `Found ${productGroups.length} product_groups, ${bundles.length} bundles, ${bundleItems.length} bundle_items (${active.length} active indexed rows)`
+      `Found ${productGroups.length} product_groups, ${bundles.length} bundles, ${bundleItems.length} bundle_items` +
+      ` → ${active.length} active + visible indexed (${hiddenCount} masqués dans le store ignorés)`
     )
 
     const enrichedTexts = active.map(buildEnrichedText)
@@ -357,6 +362,7 @@ export async function POST(req: NextRequest) {
       bundle_items: bundleItems.length,
       total: allRaw.length,
       active: active.length,
+      hidden_in_store: hiddenCount,
       upserted,
     })
   } catch (err) {
