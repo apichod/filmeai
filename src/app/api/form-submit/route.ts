@@ -120,6 +120,35 @@ const BUCKET = 'form-attachments'
 const MAX_BYTES = 20 * 1024 * 1024
 const MAX_REQUEST_BYTES = MAX_BYTES + 512 * 1024
 
+async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
+  const secret = process.env.TURNSTILE_SECRET_KEY
+
+  // En local uniquement, on évite de bloquer si la clé n'est pas configurée.
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') return false
+    console.warn('TURNSTILE_SECRET_KEY missing — Turnstile bypassed in local dev only.')
+    return true
+  }
+
+  if (!token) return false
+
+  const body = new URLSearchParams()
+  body.set('secret', secret)
+  body.set('response', token)
+  if (ip && ip !== 'unknown') body.set('remoteip', ip)
+
+  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  })
+
+  if (!res.ok) return false
+
+  const data = await res.json() as { success?: boolean }
+  return data.success === true
+}
+
 async function uploadFile(
   supabase: ReturnType<typeof getSupabase>,
   file: File,
@@ -180,12 +209,18 @@ export async function POST(req: NextRequest) {
     const phone    = (formData.get('phone') as string ?? '').trim().slice(0, 50)
     const message  = (formData.get('message') as string ?? '').trim().slice(0, 5000)
     const honeypot = (formData.get('website') as string ?? '').trim() // champ piège
+    const turnstileToken = (formData.get('cf-turnstile-response') as string ?? '').trim()
     const file     = formData.get('file') as File | null
 
     // ── Sécurité 4 : honeypot — les bots remplissent ce champ caché ──────────
     if (honeypot) {
       // Simule un succès pour ne pas alerter le bot
       return json(req, { ok: true })
+    }
+
+    const turnstileOk = await verifyTurnstile(turnstileToken, ip)
+    if (!turnstileOk) {
+      return json(req, { error: 'Vérification anti-spam échouée. Rechargez la page puis réessayez.' }, 400)
     }
 
     if (!key || !name || !email || !message) {

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import Script from 'next/script'
 
 type Status = 'idle' | 'sending' | 'success' | 'error'
 
@@ -10,6 +11,7 @@ const MAX_BYTES = MAX_MB * 1024 * 1024
 export default function FormPage() {
   const params = useParams()
   const key = params.key as string
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -59,6 +61,12 @@ export default function FormPage() {
 
   return (
     <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif', padding: '32px 24px', maxWidth: 560, margin: '0 auto', color: '#111' }}>
+      {turnstileSiteKey && (
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          strategy="afterInteractive"
+        />
+      )}
 
       {status === 'success' ? (
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
@@ -153,6 +161,19 @@ export default function FormPage() {
             {status === 'error' && (
               <p style={{ margin: 0, fontSize: 13, color: '#dc2626', padding: '10px 12px', background: '#fef2f2', borderRadius: 8 }}>
                 {errorMsg}
+              </p>
+            )}
+
+            {turnstileSiteKey ? (
+              <div
+                className="cf-turnstile"
+                data-sitekey={turnstileSiteKey}
+                data-theme="light"
+                style={{ minHeight: 65 }}
+              />
+            ) : (
+              <p style={{ margin: 0, fontSize: 12, color: '#dc2626' }}>
+                Protection anti-spam non configurée.
               </p>
             )}
 
