@@ -67,7 +67,7 @@ function statusLabel(status: string | null | undefined) {
   if (status === 'closed') return 'Archivée'
   if (status === 'accepted') return 'Acceptée'
   if (status === 'sent') return 'Envoyée'
-  return 'En attente de validation'
+  return 'Envoyée'
 }
 
 function statusClass(status: string | null | undefined) {
