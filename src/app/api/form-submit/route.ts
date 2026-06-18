@@ -123,10 +123,9 @@ const MAX_REQUEST_BYTES = MAX_BYTES + 512 * 1024
 async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
   const secret = process.env.TURNSTILE_SECRET_KEY
 
-  // En local uniquement, on évite de bloquer si la clé n'est pas configurée.
+  // Si la clé n'est pas configurée, on bypasse (honeypot + rate limit restent actifs)
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') return false
-    console.warn('TURNSTILE_SECRET_KEY missing — Turnstile bypassed in local dev only.')
+    console.warn('TURNSTILE_SECRET_KEY non configurée — vérification Turnstile désactivée.')
     return true
   }
 
@@ -203,14 +202,19 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData()
 
-    const key      = (formData.get('key') as string ?? '').trim()
-    const name     = (formData.get('name') as string ?? '').trim().slice(0, 200)
-    const email    = (formData.get('email') as string ?? '').trim().slice(0, 200)
-    const phone    = (formData.get('phone') as string ?? '').trim().slice(0, 50)
-    const message  = (formData.get('message') as string ?? '').trim().slice(0, 5000)
-    const honeypot = (formData.get('website') as string ?? '').trim() // champ piège
+    const key        = (formData.get('key') as string ?? '').trim()
+    const firstName  = (formData.get('first_name') as string ?? '').trim().slice(0, 200)
+    const email      = (formData.get('email') as string ?? '').trim().slice(0, 200)
+    const phone      = (formData.get('phone') as string ?? '').trim().slice(0, 50)
+    const company    = (formData.get('company') as string ?? '').trim().slice(0, 200)
+    const startDate  = (formData.get('start_date') as string ?? '').trim().slice(0, 20)
+    const endDate    = (formData.get('end_date') as string ?? '').trim().slice(0, 20)
+    const message    = (formData.get('message') as string ?? '').trim().slice(0, 5000)
+    const honeypot   = (formData.get('website') as string ?? '').trim()
     const turnstileToken = (formData.get('cf-turnstile-response') as string ?? '').trim()
-    const file     = formData.get('file') as File | null
+    const file       = formData.get('file') as File | null
+
+    const name = firstName // alias pour la suite
 
     // ── Sécurité 4 : honeypot — les bots remplissent ce champ caché ──────────
     if (honeypot) {
@@ -223,12 +227,12 @@ export async function POST(req: NextRequest) {
       return json(req, { error: 'Vérification anti-spam échouée. Rechargez la page puis réessayez.' }, 400)
     }
 
-    if (!key || !name || !email || !message) {
+    if (!key || !name || !message) {
       return json(req, { error: 'Champs obligatoires manquants.' }, 400)
     }
 
-    // Validation email basique
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    // Validation email si fourni
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return json(req, { error: 'Adresse e-mail invalide.' }, 400)
     }
 
@@ -236,17 +240,25 @@ export async function POST(req: NextRequest) {
     const orgId = await getOrgId(supabase, key)
     if (!orgId) return json(req, { error: 'Clé invalide.' }, 400)
 
+    // Contexte enrichi avec dates et société
+    const contextParts = [message]
+    if (startDate || endDate) contextParts.push(`\nDates : ${startDate || '?'} → ${endDate || '?'}`)
+    if (company) contextParts.push(`Société : ${company}`)
+    const fullContext = contextParts.join('\n')
+
     // ── 1. Créer la conversation ───────────────────────────────────────────
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
       .insert({
         organization_id: orgId,
         contact_name: name,
-        contact_email: email,
+        contact_email: email || null,
         contact_phone: phone || null,
         status: 'open',
         source: 'form',
-        request_context: message,
+        request_context: fullContext,
+        ...(startDate ? { starts_at: startDate } : {}),
+        ...(endDate ? { stops_at: endDate } : {}),
       })
       .select('id')
       .single()
@@ -262,7 +274,7 @@ export async function POST(req: NextRequest) {
     await supabase.from('messages').insert({
       conversation_id: conv.id,
       role: 'user',
-      content: message + (fileUrl ? `\n\n📎 [${file!.name}](${fileUrl})` : ''),
+      content: fullContext + (fileUrl ? `\n\n📎 [${file!.name}](${fileUrl})` : ''),
     })
 
     void supabase.from('activity_log').insert({
@@ -290,11 +302,15 @@ export async function POST(req: NextRequest) {
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
           <h2 style="margin:0 0 16px;font-size:18px">Nouvelle demande de devis sur liste</h2>
           <table style="width:100%;border-collapse:collapse;font-size:14px">
-            <tr><td style="padding:8px 0;color:#666;width:120px">Nom</td><td style="padding:8px 0;font-weight:600">${esc(name)}</td></tr>
-            <tr><td style="padding:8px 0;color:#666">E-mail</td><td style="padding:8px 0"><a href="mailto:${esc(email)}">${esc(email)}</a></td></tr>
-            <tr><td style="padding:8px 0;color:#666">Téléphone</td><td style="padding:8px 0">${esc(phone) || '—'}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;width:130px">Prénom</td><td style="padding:8px 0;font-weight:600">${esc(name)}</td></tr>
+            ${email ? `<tr><td style="padding:8px 0;color:#666">E-mail</td><td style="padding:8px 0"><a href="mailto:${esc(email)}">${esc(email)}</a></td></tr>` : ''}
+            ${phone ? `<tr><td style="padding:8px 0;color:#666">Téléphone</td><td style="padding:8px 0">${esc(phone)}</td></tr>` : ''}
+            ${company ? `<tr><td style="padding:8px 0;color:#666">Société</td><td style="padding:8px 0">${esc(company)}</td></tr>` : ''}
+            ${startDate ? `<tr><td style="padding:8px 0;color:#666">Récupération</td><td style="padding:8px 0">${esc(startDate)}</td></tr>` : ''}
+            ${endDate ? `<tr><td style="padding:8px 0;color:#666">Restitution</td><td style="padding:8px 0">${esc(endDate)}</td></tr>` : ''}
           </table>
-          <div style="margin-top:16px;padding:16px;background:#f9f9f9;border-radius:8px;font-size:14px;line-height:1.6;white-space:pre-wrap">${esc(message)}</div>
+          <p style="margin:16px 0 6px;font-size:13px;font-weight:600;color:#333">Liste de matériel</p>
+          <div style="padding:16px;background:#f9f9f9;border-radius:8px;font-size:14px;line-height:1.6;white-space:pre-wrap">${esc(message)}</div>
           ${fileUrl ? `
           <div style="margin-top:12px;padding:12px 16px;background:#f0f9ff;border-radius:8px;font-size:13px">
             📎 <strong>${esc(file!.name)}</strong> — <a href="${esc(fileUrl)}" style="color:#0070f3">Télécharger →</a>

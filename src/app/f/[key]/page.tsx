@@ -1,7 +1,6 @@
 'use client'
 import { useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import Script from 'next/script'
 
 type Status = 'idle' | 'sending' | 'success' | 'error'
 
@@ -11,11 +10,13 @@ const MAX_BYTES = MAX_MB * 1024 * 1024
 export default function FormPage() {
   const params = useParams()
   const key = params.key as string
-  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
 
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [company, setCompany] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [message, setMessage] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState('')
@@ -41,9 +42,17 @@ export default function FormPage() {
     setStatus('sending')
     setErrorMsg('')
     try {
-      const fd = new FormData(e.currentTarget as HTMLFormElement)
-      fd.set('key', key)
-      if (!file) fd.delete('file')
+      const fd = new FormData()
+      fd.append('key', key)
+      fd.append('first_name', firstName)
+      fd.append('email', email)
+      fd.append('phone', phone)
+      fd.append('company', company)
+      fd.append('start_date', startDate)
+      fd.append('end_date', endDate)
+      fd.append('message', message)
+      fd.append('website', '') // honeypot
+      if (file) fd.append('file', file)
 
       const res = await fetch('/api/form-submit', { method: 'POST', body: fd })
       const data = await res.json() as { ok?: boolean; error?: string }
@@ -59,153 +68,140 @@ export default function FormPage() {
     }
   }
 
-  return (
-    <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif', padding: '32px 24px', maxWidth: 560, margin: '0 auto', color: '#111' }}>
-      {turnstileSiteKey && (
-        <Script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-          strategy="afterInteractive"
-        />
-      )}
-
-      {status === 'success' ? (
-        <div style={{ textAlign: 'center', padding: '48px 0' }}>
-          <div style={{ fontSize: 40, marginBottom: 16 }}>✓</div>
-          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600 }}>Demande envoyée !</h2>
-          <p style={{ margin: 0, color: '#666', fontSize: 14 }}>
-            Nous avons bien reçu votre demande de devis et vous recontacterons dans les plus brefs délais.
+  if (status === 'success') {
+    return (
+      <div style={pageStyle}>
+        <div style={{ textAlign: 'center', padding: '64px 0' }}>
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+          </div>
+          <h2 style={{ margin: '0 0 10px', fontSize: 20, fontWeight: 700 }}>Demande envoyée !</h2>
+          <p style={{ margin: 0, color: '#555', fontSize: 14, lineHeight: 1.6 }}>
+            Nous avons bien reçu votre demande et vous recontacterons dans les plus brefs délais.
           </p>
         </div>
-      ) : (
-        <>
-          <div style={{ marginBottom: 28 }}>
-            <h1 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700 }}>Devis sur liste</h1>
-            <p style={{ margin: 0, color: '#555', fontSize: 14, lineHeight: 1.5 }}>
-              Votre liste contient des équipements conséquents ? Envoyez-la nous et nous vous fournirons un devis compétitif dans les plus brefs délais.
-            </p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={pageStyle}>
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700 }}>Devis sur liste</h1>
+        <p style={{ margin: 0, color: '#555', fontSize: 14, lineHeight: 1.6 }}>
+          Collez votre liste de matériel, indiquez vos dates et vos coordonnées : notre équipe revient vers vous avec un devis.
+        </p>
+      </div>
+
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Liste matériel */}
+        <div>
+          <label style={labelStyle}>Votre liste de matériel *</label>
+          <textarea required value={message} onChange={e => setMessage(e.target.value)}
+            rows={6} style={{ ...inputStyle, resize: 'vertical' }}
+            placeholder={"Un article par ligne, ex. :\n2x Canon C300\n3 trépieds\nMicro HF"} />
+        </div>
+
+        {/* Fichier joint */}
+        <div>
+          <input ref={fileRef} type="file" onChange={handleFile} style={{ display: 'none' }}
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.zip" />
+          <button type="button" onClick={() => fileRef.current?.click()}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#2563eb', fontSize: 14, textDecoration: 'underline' }}>
+            {file ? `📎 ${file.name} (${(file.size / 1024).toFixed(0)} Ko)` : 'Joindre un fichier (PDF, TXT, CSV)'}
+          </button>
+          {file && (
+            <button type="button" onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = '' }}
+              style={{ marginLeft: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 13 }}>×</button>
+          )}
+          {fileError && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#dc2626' }}>{fileError}</p>}
+          {!fileError && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#9ca3af' }}>Jusqu&apos;à {MAX_MB} Mo.</p>}
+        </div>
+
+        {/* Dates */}
+        <div>
+          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#888', textTransform: 'uppercase' }}>Dates de location</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Récupération *</label>
+              <input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Restitution *</label>
+              <input required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} />
+            </div>
           </div>
+        </div>
 
-          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Honeypot — invisible pour les humains, les bots le remplissent */}
-            <input name="website" type="text" tabIndex={-1} autoComplete="off"
-              style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0 }} />
-            <input name="key" type="hidden" value={key} />
-
+        {/* Coordonnées */}
+        <div>
+          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#888', textTransform: 'uppercase' }}>Vos coordonnées</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
-              <label style={labelStyle}>Prénom et Nom *</label>
-              <input name="name" required value={name} onChange={e => setName(e.target.value)}
-                style={inputStyle} placeholder="Jean Dupont" />
+              <label style={labelStyle}>Prénom *</label>
+              <input required value={firstName} onChange={e => setFirstName(e.target.value)}
+                style={inputStyle} placeholder="Camille" />
             </div>
-
             <div>
-              <label style={labelStyle}>E-mail *</label>
-              <input name="email" required type="email" value={email} onChange={e => setEmail(e.target.value)}
-                style={inputStyle} placeholder="jean@exemple.fr" />
+              <label style={labelStyle}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                style={inputStyle} placeholder="camille@exemple.com" />
             </div>
-
             <div>
               <label style={labelStyle}>Téléphone</label>
-              <input name="phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                style={inputStyle} placeholder="+33 6 00 00 00 00" />
+              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                style={inputStyle} placeholder="06 12 34 56 78" />
             </div>
-
-            {/* Fichier */}
             <div>
-              <label style={labelStyle}>Joindre un fichier <span style={{ fontWeight: 400, color: '#888' }}>(facultatif)</span></label>
-              <div
-                style={{
-                  border: '1px solid #d1d5db',
-                  borderRadius: 8,
-                  padding: '10px 12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  background: '#fff',
-                  cursor: 'pointer',
-                }}
-                onClick={() => fileRef.current?.click()}
-              >
-                <span style={{
-                  fontSize: 12, fontWeight: 500,
-                  background: '#f3f4f6', border: '1px solid #d1d5db',
-                  borderRadius: 6, padding: '4px 10px', whiteSpace: 'nowrap',
-                }}>
-                  Choisir un fichier
-                </span>
-                <span style={{ fontSize: 13, color: file ? '#111' : '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {file ? `${file.name} (${(file.size / 1024).toFixed(0)} Ko)` : 'Aucun fichier choisi'}
-                </span>
-                {file && (
-                  <button type="button" onClick={e => { e.stopPropagation(); setFile(null); if (fileRef.current) fileRef.current.value = '' }}
-                    style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16, lineHeight: 1 }}>
-                    ×
-                  </button>
-                )}
-              </div>
-              <input ref={fileRef} name="file" type="file" onChange={handleFile}
-                style={{ display: 'none' }}
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.zip" />
-              {fileError
-                ? <p style={{ margin: '4px 0 0', fontSize: 12, color: '#dc2626' }}>{fileError}</p>
-                : <p style={{ margin: '4px 0 0', fontSize: 12, color: '#9ca3af' }}>Vous pouvez ajouter un fichier jusqu&apos;à {MAX_MB} Mo.</p>
-              }
+              <label style={labelStyle}>Société</label>
+              <input value={company} onChange={e => setCompany(e.target.value)}
+                style={inputStyle} placeholder="Nom de votre société" />
             </div>
+          </div>
+        </div>
 
-            <div>
-              <label style={labelStyle}>Votre liste / message *</label>
-              <textarea name="message" required value={message} onChange={e => setMessage(e.target.value)}
-                rows={6} style={{ ...inputStyle, resize: 'vertical' }}
-                placeholder={"Sony FX3 × 1\nObjectif 24-70mm f/2.8 × 1\nTrépied vidéo × 1\n\nDates : du 20 au 22 juillet 2026"} />
-            </div>
+        {status === 'error' && (
+          <p style={{ margin: 0, fontSize: 13, color: '#dc2626', padding: '10px 12px', background: '#fef2f2', borderRadius: 8 }}>
+            {errorMsg}
+          </p>
+        )}
 
-            {status === 'error' && (
-              <p style={{ margin: 0, fontSize: 13, color: '#dc2626', padding: '10px 12px', background: '#fef2f2', borderRadius: 8 }}>
-                {errorMsg}
-              </p>
-            )}
+        <button type="submit" disabled={status === 'sending'} style={btnStyle(status === 'sending')}>
+          {status === 'sending' ? 'Envoi en cours…' : 'Envoyer ma demande'}
+        </button>
 
-            {turnstileSiteKey ? (
-              <div
-                className="cf-turnstile"
-                data-sitekey={turnstileSiteKey}
-                data-theme="light"
-                style={{ minHeight: 65 }}
-              />
-            ) : (
-              <p style={{ margin: 0, fontSize: 12, color: '#dc2626' }}>
-                Protection anti-spam non configurée.
-              </p>
-            )}
-
-            <button type="submit" disabled={status === 'sending'} style={btnStyle(status === 'sending')}>
-              {status === 'sending' ? 'Envoi en cours…' : 'Envoyer ma demande'}
-            </button>
-
-            <p style={{ margin: 0, fontSize: 11, color: '#999', textAlign: 'center' }}>
-              Les champs marqués * sont obligatoires.
-            </p>
-          </form>
-        </>
-      )}
+        <p style={{ margin: 0, fontSize: 11, color: '#999', textAlign: 'center' }}>
+          Les champs marqués * sont obligatoires.
+        </p>
+      </form>
     </div>
   )
 }
 
+const pageStyle: React.CSSProperties = {
+  fontFamily: 'system-ui, -apple-system, sans-serif',
+  padding: '32px 24px',
+  maxWidth: 560,
+  margin: '0 auto',
+  color: '#111',
+}
+
 const labelStyle: React.CSSProperties = {
-  display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#333',
+  display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#111',
 }
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', fontSize: 14,
-  border: '1px solid #d1d5db', borderRadius: 8, outline: 'none',
+  width: '100%', padding: '12px 14px', fontSize: 14,
+  border: '1px solid #e5e7eb', borderRadius: 10, outline: 'none',
   boxSizing: 'border-box', fontFamily: 'inherit', color: '#111', background: '#fff',
 }
 
 function btnStyle(disabled: boolean): React.CSSProperties {
   return {
-    padding: '12px', fontSize: 14, fontWeight: 600,
-    background: disabled ? '#555' : '#000', color: '#fff',
-    border: 'none', borderRadius: 8,
-    cursor: disabled ? 'not-allowed' : 'pointer', transition: 'background 0.2s',
+    padding: '14px', fontSize: 15, fontWeight: 600,
+    background: disabled ? '#555' : '#2563eb', color: '#fff',
+    border: 'none', borderRadius: 12,
+    cursor: disabled ? 'not-allowed' : 'pointer',
   }
 }

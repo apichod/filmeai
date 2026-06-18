@@ -200,7 +200,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [sessionData, setSessionData] = useState<{ selectedProductIds: string[]; conversationId: string | null }>({ selectedProductIds: [], conversationId: null })
   const [showDevisChoice, setShowDevisChoice] = useState(false)
   const [showDevisForm, setShowDevisForm] = useState(false)
-  const [devisForm, setDevisForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [devisForm, setDevisForm] = useState({ firstName: '', email: '', phone: '', company: '', startDate: '', endDate: '', message: '' })
   const [devisFormStatus, setDevisFormStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
   const [devisFormError, setDevisFormError] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -234,7 +234,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setSessionData({ selectedProductIds: [], conversationId: null })
     setShowDevisChoice(false)
     setShowDevisForm(false)
-    setDevisForm({ name: '', email: '', phone: '', message: '' })
+    setDevisForm({ firstName: '', email: '', phone: '', company: '', startDate: '', endDate: '', message: '' })
     setDevisFormStatus('idle')
     setDevisFormError('')
   }
@@ -631,9 +631,12 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                 try {
                   const fd = new FormData()
                   fd.append('key', s.organization_id ?? '')
-                  fd.append('name', devisForm.name)
+                  fd.append('first_name', devisForm.firstName)
                   fd.append('email', devisForm.email)
                   fd.append('phone', devisForm.phone)
+                  fd.append('company', devisForm.company)
+                  fd.append('start_date', devisForm.startDate)
+                  fd.append('end_date', devisForm.endDate)
                   fd.append('message', devisForm.message)
                   fd.append('website', '')
                   const res = await fetch('/api/form-submit', { method: 'POST', body: fd })
@@ -642,26 +645,53 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                   else setDevisFormStatus('success')
                 } catch { setDevisFormError('Erreur réseau.'); setDevisFormStatus('error') }
               }}
-              className="space-y-3"
+              className="space-y-2.5"
             >
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2 mb-2">
                 <button type="button" onClick={() => setShowDevisForm(false)} className="text-gray-400 hover:text-gray-600">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
                 </button>
                 <p className="text-xs font-semibold text-gray-900">Envoyer ma liste</p>
               </div>
-              {(['name','email','phone'] as const).map(field => (
-                <input key={field} required={field !== 'phone'} type={field === 'email' ? 'email' : 'text'}
-                  value={devisForm[field]} onChange={e => setDevisForm(p => ({ ...p, [field]: e.target.value }))}
-                  placeholder={field === 'name' ? 'Prénom et Nom *' : field === 'email' ? 'E-mail *' : 'Téléphone'}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400"
-                />
-              ))}
+
+              {/* Liste */}
               <textarea required value={devisForm.message} rows={4}
                 onChange={e => setDevisForm(p => ({ ...p, message: e.target.value }))}
-                placeholder={"Sony FX3 × 1\nObjectif 24-70mm × 1\n\nDates : du 20 au 22 juillet"}
+                placeholder={"Un article par ligne :\n2x Canon C300\n3 trépieds"}
                 className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400 resize-none"
               />
+
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-[10px] text-gray-500 mb-1">Récupération *</p>
+                  <input required type="date" value={devisForm.startDate}
+                    onChange={e => setDevisForm(p => ({ ...p, startDate: e.target.value }))}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-gray-900" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-500 mb-1">Restitution *</p>
+                  <input required type="date" value={devisForm.endDate}
+                    onChange={e => setDevisForm(p => ({ ...p, endDate: e.target.value }))}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-gray-900" />
+                </div>
+              </div>
+
+              {/* Coordonnées */}
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider pt-1">Vos coordonnées</p>
+              <input required value={devisForm.firstName} onChange={e => setDevisForm(p => ({ ...p, firstName: e.target.value }))}
+                placeholder="Prénom *"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400" />
+              <input type="email" value={devisForm.email} onChange={e => setDevisForm(p => ({ ...p, email: e.target.value }))}
+                placeholder="Email"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400" />
+              <input type="tel" value={devisForm.phone} onChange={e => setDevisForm(p => ({ ...p, phone: e.target.value }))}
+                placeholder="Téléphone"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400" />
+              <input value={devisForm.company} onChange={e => setDevisForm(p => ({ ...p, company: e.target.value }))}
+                placeholder="Société"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400" />
+
               {devisFormStatus === 'error' && <p className="text-[11px] text-red-500">{devisFormError}</p>}
               <button type="submit" disabled={devisFormStatus === 'sending'}
                 className="w-full py-2.5 rounded-xl text-xs font-semibold text-white transition-opacity disabled:opacity-50"
