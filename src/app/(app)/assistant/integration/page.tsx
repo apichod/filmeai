@@ -82,6 +82,15 @@ export default function AssistantIntegrationPage() {
 
   const publicKey = orgId ?? '…'
   const snippet = `<script src="https://cdn.filmeai.fr/widget.js" data-key="${publicKey}" async></script>`
+  const formUrl = `https://filmeai.vercel.app/f/${publicKey}`
+  const formSnippet = `<iframe src="${formUrl}" width="100%" height="600" frameborder="0" style="border:none;border-radius:12px"></iframe>`
+
+  const [copiedForm, setCopiedForm] = useState(false)
+  function copyFormSnippet() {
+    navigator.clipboard.writeText(formSnippet)
+    setCopiedForm(true)
+    setTimeout(() => setCopiedForm(false), 2000)
+  }
 
   function copySnippet() {
     navigator.clipboard.writeText(snippet)
@@ -217,6 +226,45 @@ export default function AssistantIntegrationPage() {
         className="bg-black text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50">
         {saved ? 'Sauvegardé ✓' : saving ? 'Sauvegarde…' : 'Sauvegarder'}
       </button>
+
+      {/* ── Formulaire devis sur liste ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Formulaire devis sur liste</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Un formulaire simple à intégrer sur votre site. Les demandes arrivent dans l&apos;Inbox et sont envoyées par email à{' '}
+            <span className="font-mono">{process.env.NEXT_PUBLIC_NOTIFY_EMAIL ?? 'location@filme.fr'}</span>.
+          </p>
+        </div>
+
+        <div className="flex gap-3">
+          <a
+            href={formUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors"
+          >
+            Aperçu →
+          </a>
+        </div>
+
+        <div className="relative">
+          <pre className="bg-gray-950 text-gray-100 rounded-xl p-4 text-xs font-mono overflow-x-auto pr-20 leading-relaxed whitespace-pre-wrap break-all">
+            {formSnippet}
+          </pre>
+          <button
+            onClick={copyFormSnippet}
+            className="absolute right-3 top-3 flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+          >
+            {copiedForm ? (
+              <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Copié</>
+            ) : (
+              <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>Copier</>
+            )}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500">Collez ce code à l&apos;endroit où vous souhaitez afficher le formulaire sur votre site.</p>
+      </div>
     </div>
   )
 }
