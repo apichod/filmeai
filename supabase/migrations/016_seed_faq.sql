@@ -1,0 +1,37 @@
+-- Inject Filme FAQ (run after 015_knowledge.sql)
+-- Uses a subquery to get the first organization_id automatically
+DO $$
+DECLARE org UUID;
+BEGIN
+  SELECT id INTO org FROM public.organizations ORDER BY created_at LIMIT 1;
+  IF org IS NULL THEN RAISE EXCEPTION 'No organization found'; END IF;
+
+  INSERT INTO public.faq_items (organization_id, question, answer, synced, position) VALUES
+  (org, 'La livraison inclut-elle la récupération du matériel ?', 'Non. Si vous souhaitez que le matériel soit également récupéré à la fin de la location, vous devez commander le retour séparément.', true, 1),
+  (org, 'Est-il possible de récupérer ou rendre le matériel en dehors des horaires d''ouverture ?', 'Oui, sur rendez-vous en dehors des horaires habituels (soir, samedi, dimanche), à Montreuil ou au Pré Saint-Gervais. Une participation forfaitaire de 50 € HT est facturée pour les commandes inférieures à 500 € HT.', true, 2),
+  (org, 'Comment retirer le matériel en personne ?', 'Le retrait se fait au 2 rue Marcelin Berthelot, 93100 Montreuil (métro Croix de Chavaux), du lundi au vendredi de 9 h à 18 h 30, sur rendez-vous uniquement ou avec une commande préalablement payée.', true, 3),
+  (org, 'Comment contacter Filme pour une demande urgente ?', 'En cas d''urgence, vous pouvez joindre Filme par SMS ou téléphone au 07 57 83 07 07, ou par email à location@filme.fr pendant les horaires d''ouverture (lundi–vendredi, 9 h–18 h 30).', true, 4),
+  (org, 'Dans quelle zone Filme peut-il livrer ?', 'Filme livre sur Paris et la petite couronne. Pour les distances au-delà de 15 km depuis Montreuil, un devis est disponible sur demande à location@filme.fr.', true, 5),
+  (org, 'Est-ce qu''un remboursement est possible en cas de force majeure ?', 'En cas de force majeure, un remboursement direct n''est pas prévu, mais une réduction sur la location suivante peut être envisagée.', true, 6),
+  (org, 'Y a-t-il des remises pour les locations de plusieurs jours ?', 'Oui, des remises dégressives s''appliquent : 10 % de remise pour 3 à 7 jours, 35 % pour 8 à 21 jours, et 50 % pour 4 semaines et plus.', true, 7),
+  (org, 'Comment bloquer la caution ?', 'La caution peut être bloquée soit par empreinte bancaire via la carte ayant servi au paiement, soit par chèque. Elle doit être constituée au plus tard au moment de la récupération du matériel.', true, 8),
+  (org, 'Que se passe-t-il si je n''ai pas payé ma commande 24 h avant le début de la location ?', 'La commande est automatiquement annulée sans frais si elle n''est pas payée 24 h avant le début de la location.', true, 9),
+  (org, 'Quels documents dois-je fournir pour ouvrir un compte au nom de ma société ?', 'Pour une société, il faut fournir : la pièce d''identité du gérant, la pièce d''identité de la personne ouvrant le compte (si ce n''est pas le gérant), un extrait Kbis de moins de trois mois, et le lien du site web ou du réseau social principal de l''entreprise (LinkedIn…).', true, 10),
+  (org, 'Quand la caution est-elle restituée ?', 'La caution est rendue à la fin de la location, après le contrôle technique du matériel. Elle peut être conservée en partie ou en totalité en cas de réparations nécessaires ou de matériel manquant.', true, 11),
+  (org, 'Quel est le montant de la caution ?', 'La caution correspond à 35 % de la valeur d''achat du matériel loué. Le montant exact est indiqué sur votre commande.', true, 12),
+  (org, 'Que se passe-t-il si je n''ai pas de caution au moment de récupérer le matériel ?', 'Sans caution valide au moment de la livraison, la commande est annulée le jour du début de la location et 100 % du montant de la location vous est facturé en pénalité.', true, 13),
+  (org, 'Quels documents faut-il fournir pour une association ?', 'Pour une association, il faut fournir : la pièce d''identité du président et du trésorier, la pièce d''identité de la personne ouvrant le compte (si ce n''est pas le président ni le trésorier), la parution de l''association au Journal Officiel, et le lien du site web ou du réseau social principal de l''association.', true, 14),
+  (org, 'Quelle est la durée d''une journée de location ?', 'Une journée de location correspond à 24 heures : départ possible la veille à partir de 14 h, retour le lendemain avant 13 h. Tous les prix sont affichés HT.', true, 15),
+  (org, 'Quelles sont les pénalités si j''annule une commande déjà payée ?', 'Les pénalités dépendent du délai d''annulation : 25 % du montant de la location si vous annulez entre 3 et 2 jours avant le début, 50 % si vous annulez la veille, et 100 % si vous annulez le jour même du début de la location.', true, 16),
+  (org, 'Y a-t-il des situations non couvertes par l''assurance de Filme ?', 'Oui. Les exclusions habituelles s''appliquent. Par exemple, un matériel laissé sans surveillance dans une voiture ou hors de votre vue dans un train et qui se fait voler n''est pas couvert : l''intégralité du dédommagement serait à votre charge.', true, 17),
+  (org, 'Comment les week-ends sont-ils comptabilisés dans la durée de location ?', 'Lors d''une commande en ligne, les week-ends comptent pour 1,5 jour au lieu de 2 jours.', true, 18),
+  (org, 'Quels documents dois-je fournir en tant que particulier ?', 'En tant que particulier, vous devez fournir : une pièce d''identité (carte d''identité, passeport ou permis), un justificatif de domicile de moins de trois mois (facture EDF/GAZ ou téléphone), et le lien d''un réseau social personnel attestant d''une pratique audiovisuelle (Instagram, Facebook…).', true, 19),
+  (org, 'Quelle assurance est proposée par défaut avec ma location ?', 'Par défaut, Filme propose une assurance multirisque avec renonciation à recours, au prix de 8 % du montant HT de la location. En cas de sinistre ou de vol résultant d''un comportement responsable, l''assurance prend en charge les dommages sans se retourner contre vous.', true, 20),
+  (org, 'Comment se passe le paiement de la location ?', 'Le paiement s''effectue par carte bancaire, via le lien de paiement envoyé à l''adresse email de votre compte client après validation de la commande.', true, 21),
+  (org, 'Quel est le tarif de livraison ?', 'La livraison est facturée 40 € HT jusqu''à 5 km de Montreuil (2 rue Marcelin Berthelot), 50 € HT entre 5 et 15 km. Au-delà de 15 km, le tarif est sur devis à demander à location@filme.fr. La livraison en véhicule utilitaire commence à 80 € HT.', true, 22),
+  (org, 'Comment passer une commande chez Filme ?', 'Toute demande de location se fait en ligne sur www.filme.fr. Vous sélectionnez le matériel souhaité, les dates de début et de fin, puis vous soumettez votre demande via votre compte client. Une fois la commande validée, vous recevez un email de confirmation avec un lien de paiement.', true, 23),
+  (org, 'Puis-je utiliser ma propre assurance à la place de celle de Filme ?', 'Oui. Vous pouvez choisir d''utiliser votre Responsabilité Civile ou assurance professionnelle en sélectionnant cette option lors de la validation de votre panier. Dans ce cas, vous n''êtes pas facturé des 8 %, mais en cas de sinistre, l''assurance de Filme se retournera contre vous (et donc contre votre assurance).', true, 24),
+  (org, 'Faut-il créer un compte pour louer du matériel ?', 'Oui, un compte client est obligatoire pour louer sur www.filme.fr. L''inscription est gratuite et déclenche une procédure de vérification d''identité. Votre compte est activé après validation des documents fournis.', true, 25);
+
+  RAISE NOTICE 'FAQ injected for org %', org;
+END $$;

@@ -94,6 +94,15 @@ export default function AssistantKnowledgePage() {
   const [newA, setNewA] = useState('')
   const [faqSaving, setFaqSaving] = useState(false)
 
+  /* ── Generate from site state ── */
+  type GeneratedPair = { question: string; answer: string; selected: boolean }
+  const [showGenerate, setShowGenerate] = useState(false)
+  const [generateUrl, setGenerateUrl] = useState('https://www.filme.fr')
+  const [generateLoading, setGenerateLoading] = useState(false)
+  const [generateError, setGenerateError] = useState('')
+  const [generated, setGenerated] = useState<GeneratedPair[]>([])
+  const [importingGenerated, setImportingGenerated] = useState(false)
+
   /* ── URLs state ── */
   const [urls, setUrls] = useState<KnowledgeUrl[]>([])
   const [urlsLoading, setUrlsLoading] = useState(true)
@@ -175,6 +184,45 @@ export default function AssistantKnowledgePage() {
       const data = await res.json() as { item?: FaqItem }
       if (data.item) { setFaq(p => [...p, data.item!]); setNewQ(''); setNewA(''); setShowAdd(false) }
     } finally { setFaqSaving(false) }
+  }
+
+  async function runGenerate() {
+    if (!generateUrl.trim()) return
+    setGenerateLoading(true)
+    setGenerateError('')
+    setGenerated([])
+    try {
+      const res = await fetch('/api/generate-faq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: generateUrl }),
+      })
+      const data = await res.json() as { faqs?: { question: string; answer: string }[]; error?: string }
+      if (!res.ok || data.error) { setGenerateError(data.error ?? 'Erreur'); return }
+      setGenerated((data.faqs ?? []).map(f => ({ ...f, selected: true })))
+    } catch { setGenerateError('Erreur réseau.') }
+    finally { setGenerateLoading(false) }
+  }
+
+  async function importGenerated() {
+    const toImport = generated.filter(g => g.selected)
+    if (!toImport.length) return
+    setImportingGenerated(true)
+    try {
+      const results = await Promise.all(
+        toImport.map(g =>
+          fetch('/api/faq', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: g.question, answer: g.answer }),
+          }).then(r => r.json() as Promise<{ item?: FaqItem }>)
+        )
+      )
+      const newItems = results.flatMap(r => r.item ? [r.item] : [])
+      setFaq(p => [...p, ...newItems])
+      setShowGenerate(false)
+      setGenerated([])
+    } finally { setImportingGenerated(false) }
   }
 
   function startEdit(item: FaqItem) {
@@ -337,6 +385,93 @@ export default function AssistantKnowledgePage() {
   return (
     <div className="space-y-5">
 
+      {/* ══ Modal IA Générer depuis mon site ══ */}
+      {showGenerate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <IconSparkle className="w-4 h-4 text-gray-600" />
+                <p className="text-sm font-semibold text-gray-900">Générer depuis mon site</p>
+              </div>
+              <button onClick={() => setShowGenerate(false)} className="text-gray-400 hover:text-gray-700">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* URL input */}
+            <div className="px-6 py-4 border-b border-gray-100">
+              <p className="text-xs text-gray-500 mb-2">Entrez l&apos;URL d&apos;une page de votre site (FAQ, CGV, À propos…)</p>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={generateUrl}
+                  onChange={e => setGenerateUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void runGenerate() }}
+                  placeholder="https://www.filme.fr"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+                <button
+                  onClick={() => void runGenerate()}
+                  disabled={generateLoading || !generateUrl.trim()}
+                  className="flex items-center gap-1.5 bg-gray-900 text-white text-xs rounded-lg px-4 py-2 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                >
+                  {generateLoading ? (
+                    <><svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9" /></svg>Génération…</>
+                  ) : (
+                    <><IconSparkle className="w-3.5 h-3.5" />Générer</>
+                  )}
+                </button>
+              </div>
+              {generateError && <p className="text-xs text-red-500 mt-2">{generateError}</p>}
+            </div>
+
+            {/* Results */}
+            {generated.length > 0 && (
+              <>
+                <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+                  {generated.map((g, i) => (
+                    <label key={i} className="flex items-start gap-3 px-6 py-3 hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={g.selected}
+                        onChange={e => setGenerated(p => p.map((x, j) => j === i ? { ...x, selected: e.target.checked } : x))}
+                        className="mt-1 rounded border-gray-300 accent-gray-900"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900">{g.question}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{g.answer}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between px-6 py-3 border-t border-gray-100">
+                  <p className="text-xs text-gray-500">{generated.filter(g => g.selected).length} sélectionnées sur {generated.length}</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setGenerated(p => p.map(g => ({ ...g, selected: true })))} className="text-xs text-gray-500 hover:text-gray-900">Tout sélectionner</button>
+                    <button
+                      onClick={() => void importGenerated()}
+                      disabled={importingGenerated || generated.filter(g => g.selected).length === 0}
+                      className="bg-gray-900 text-white text-xs rounded-lg px-4 py-1.5 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                    >
+                      {importingGenerated ? 'Import…' : 'Importer la sélection'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {!generateLoading && generated.length === 0 && !generateError && (
+              <div className="px-6 py-10 text-center text-xs text-gray-400">
+                Entrez une URL et cliquez sur Générer pour obtenir des suggestions de FAQ.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+
       {/* ── Header ── */}
       <div>
         <h1 className="text-base font-semibold text-gray-900">Base de connaissances</h1>
@@ -372,7 +507,7 @@ export default function AssistantKnowledgePage() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => {}}
+                onClick={() => { setShowGenerate(true); setGenerated([]); setGenerateError('') }}
                 className="flex items-center gap-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors"
               >
                 <IconSparkle className="w-3.5 h-3.5" />
