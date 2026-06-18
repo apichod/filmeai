@@ -179,6 +179,9 @@ type QuoteMatch = {
   matched: Product | null
   confidence: number
   alternatives: Product[]
+  selectedProductId?: string | null
+  leaveToFilme?: boolean
+  userResolved?: boolean
 }
 
 type ChatSessionData = {
@@ -513,24 +516,43 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     const nextLeaveToFilme: Record<string, boolean> = {}
     const selectedIds: string[] = []
 
-    items.forEach((item, idx) => {
+    const normalizedItems = items.map((item, idx) => {
       const key = `${prefix}-${idx}`
       const selectedProduct = selectedProductForMatch(item, key)
       if (selectedProduct && isPreviewMatchValidated(item, key)) {
         selectedIds.push(selectedProduct.id)
+        return {
+          ...item,
+          matched: selectedProduct,
+          confidence: Math.max(item.confidence || 0, 0.8),
+          selectedProductId: selectedProduct.id,
+          leaveToFilme: false,
+          userResolved: true,
+        }
       } else {
         nextLeaveToFilme[key] = true
+        return {
+          ...item,
+          selectedProductId: null,
+          leaveToFilme: true,
+          userResolved: true,
+        }
       }
     })
 
     if (Object.keys(nextLeaveToFilme).length > 0) {
       setLeaveToFilmeKeys(prev => ({ ...prev, ...nextLeaveToFilme }))
     }
-    setSessionData(prev => ({ ...prev, selectedProductIds: Array.from(new Set(selectedIds)), quoteMatches: items }))
+    const nextSessionData = {
+      ...sessionData,
+      selectedProductIds: Array.from(new Set(selectedIds)),
+      quoteMatches: normalizedItems,
+    }
+    setSessionData(nextSessionData)
 
     void send(unresolved > 0
       ? 'Je confirme ma liste. Laissez l’équipe Filme me faire une proposition pour les lignes introuvables.'
-      : 'Je confirme ma liste.')
+      : 'Je confirme ma liste.', nextSessionData)
   }
 
   function renderQuoteConfirmBox(items: QuoteMatch[], prefix: string) {

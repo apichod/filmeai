@@ -177,6 +177,14 @@ function parseFrenchDate(value: string): string | null {
   return isoDateAtNine(day, month, year)
 }
 
+function isLikelyFilterDensity(value: string): boolean {
+  const match = value.trim().match(/^(\d{1,2})\s*\/\s*(\d{1,2})$/)
+  if (!match) return false
+  const numerator = Number(match[1])
+  const denominator = Number(match[2])
+  return numerator >= 1 && numerator <= 4 && [4, 8, 16].includes(denominator)
+}
+
 function extractNaturalDateRange(text: string): { startsAt: string | null; stopsAt: string | null } {
   const monthPattern = FRENCH_MONTH_PATTERN
   const connector = '(?:au|à|a|jusqu(?:\'|’)au|jusqu(?:\'|’)à|jusqu(?:\'|’)a|-)'
@@ -210,7 +218,14 @@ function extractNaturalDateRange(text: string): { startsAt: string | null; stops
 }
 
 function extractDates(text: string): { startsAt: string | null; stopsAt: string | null } {
+  const natural = extractNaturalDateRange(text)
+  if (natural.startsAt || natural.stopsAt) return natural
+
   const matches = text.match(/\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?/g) || []
+  if (matches.length === 1 && isLikelyFilterDensity(matches[0]) && !/\b(?:date|dates|du|au|debut|début|fin|location|essai|rendu|retrait|retour|depart|départ)\b/i.test(text)) {
+    return { startsAt: null, stopsAt: null }
+  }
+
   if (matches.length > 0) {
     return {
       startsAt: matches[0] ? parseFrenchDate(matches[0]) : null,
@@ -218,7 +233,7 @@ function extractDates(text: string): { startsAt: string | null; stopsAt: string 
     }
   }
 
-  return extractNaturalDateRange(text)
+  return { startsAt: null, stopsAt: null }
 }
 
 function isDateOnlyResponse(text: string): boolean {
@@ -241,6 +256,29 @@ function hasQuoteDraft(sessionData: SessionData): boolean {
     (sessionData.selectedProductIds && sessionData.selectedProductIds.length > 0) ||
     (sessionData.quoteMatches && sessionData.quoteMatches.length > 0)
   )
+}
+
+function textHasDateSignal(text: string): boolean {
+  const numericDates = text.match(/\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?/g) || []
+  return new RegExp(`\\b(${FRENCH_MONTH_PATTERN})\\b`, 'i').test(text) ||
+    /\b(?:date|dates|du|au|debut|début|fin|location|essai|rendu|retrait|retour|depart|départ)\b/i.test(text) ||
+    numericDates.length >= 2 ||
+    (numericDates.length === 1 && !isLikelyFilterDensity(numericDates[0]))
+}
+
+function extractRelevantDates(messages: OpenAI.Chat.ChatCompletionMessageParam[]): { startsAt: string | null; stopsAt: string | null } {
+  const userTexts = messages
+    .filter(message => message.role === 'user')
+    .map(textFromMessage)
+    .reverse()
+
+  for (const text of userTexts) {
+    if (!textHasDateSignal(text)) continue
+    const dates = extractDates(text)
+    if (dates.startsAt || dates.stopsAt) return dates
+  }
+
+  return { startsAt: null, stopsAt: null }
 }
 
 function countUnresolvedQuoteMatches(value?: unknown[]): number {
@@ -268,7 +306,7 @@ function formatDateRangeForUser(startsAt?: string | null, stopsAt?: string | nul
 function inferSessionData(messages: OpenAI.Chat.ChatCompletionMessageParam[], sessionData: SessionData): SessionData {
   const fullText = messages.map(textFromMessage).join('\n')
   const firstUserText = messages.find(message => message.role === 'user')
-  const dates = extractDates(fullText)
+  const dates = extractRelevantDates(messages)
 
   const inferredName = sessionData.customerName || (
     firstUserText &&
@@ -283,8 +321,8 @@ function inferSessionData(messages: OpenAI.Chat.ChatCompletionMessageParam[], se
     customerName: inferredName || sessionData.customerName || null,
     customerEmail: sessionData.customerEmail || extractEmail(fullText),
     customerPhone: sessionData.customerPhone || extractPhone(fullText),
-    startsAt: sessionData.startsAt || dates.startsAt,
-    stopsAt: sessionData.stopsAt || dates.stopsAt,
+    startsAt: dates.startsAt || sessionData.startsAt || null,
+    stopsAt: dates.stopsAt || sessionData.stopsAt || null,
     selectedProductIds: sessionData.selectedProductIds || [],
     quoteMatches: sessionData.quoteMatches || [],
     conversationId: sessionData.conversationId || null,
@@ -683,7 +721,7 @@ export async function POST(req: NextRequest) {
           // ── Dates seules après matching catalogue : on complète le brouillon,
           // sans relancer l'extraction produit.
           if (lastIsDateOnly && hasQuoteDraft(sessionData)) {
-            const responseText = `Parfait, j’ai noté les dates ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}. Je garde la liste produit déjà préparée.\n\nQuand tout vous convient, écrivez “je confirme” pour créer le devis dans Booqable.`
+            const responseText = `Parfait, j’ai noté les dates ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}. Je garde la liste produit déjà préparée.\n\nProchaine étape : vérification des disponibilités et des prix avant préparation du devis.`
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
           } else if (isListConfirmation(lastUserText) && hasQuoteDraft(sessionData)) {
@@ -692,7 +730,7 @@ export async function POST(req: NextRequest) {
               ? `\nJ’ai bien noté que ${unresolvedCount} ligne${unresolvedCount > 1 ? 's' : ''} seront laissées à l’équipe Filme pour proposition manuelle.`
               : ''
             const responseText = sessionData.startsAt && sessionData.stopsAt
-              ? `Parfait, votre liste est confirmée ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}.${unresolvedText}\n\nJe ne crée pas encore le devis automatiquement : prochaine étape, vérification des disponibilités/prix. Quand tout est prêt, confirmez explicitement « je confirme le devis ».`
+              ? `Parfait, votre liste est confirmée ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}.${unresolvedText}\n\nProchaine étape : vérification des disponibilités et des prix avant préparation du devis.`
               : `Parfait, votre liste est confirmée.${unresolvedText}\n\nIndiquez maintenant vos dates de location pour vérifier les disponibilités et préparer le devis.`
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
@@ -812,7 +850,7 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
             // ── Step 4: Create Booqable quote if confirmed ───────────────────
             if (fullResponse.includes('[CREATE_QUOTE]') && sessionData.customerEmail) {
               if (!isExplicitQuoteConfirmation(lastUserText)) {
-                const needsExplicitConfirmation = "\n\nJ’ai bien noté cette précision. Je ne crée pas encore le devis : confirmez explicitement la liste validée quand elle vous convient, par exemple « je confirme le devis »."
+                const needsExplicitConfirmation = "\n\nJ’ai bien noté cette précision. Je ne prépare pas encore le devis : confirmez explicitement la liste validée quand elle vous convient."
                 fullResponse += needsExplicitConfirmation
                 send({ type: 'delta', content: needsExplicitConfirmation })
               } else if (!sessionData.selectedProductIds || sessionData.selectedProductIds.length === 0) {
@@ -820,7 +858,7 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
                 fullResponse += needsSelection
                 send({ type: 'delta', content: needsSelection })
               } else if (!sessionData.startsAt || !sessionData.stopsAt) {
-                const needsDates = "\n\nJe ne crée pas encore le devis : il me manque les dates de location. Indiquez par exemple « du 21 au 26 juin », puis confirmez le devis."
+                const needsDates = "\n\nJe ne prépare pas encore le devis : il me manque les dates de location. Indiquez par exemple « du 21 au 26 juin » pour vérifier les disponibilités."
                 fullResponse += needsDates
                 send({ type: 'delta', content: needsDates })
               } else {
@@ -867,7 +905,7 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
                 booqableOrderUrl = `https://filme.booqable.com/orders/${orderId}`
                 send({ type: 'quote_created', orderId, customerId, quoteUrl: booqableOrderUrl })
 
-                const createdText = `\n\n✅ **Devis créé !** Vous recevrez une confirmation à **${sessionData.customerEmail}**.\n[Voir le devis →](${booqableOrderUrl})`
+                const createdText = `\n\n✅ **Demande de devis enregistrée !** Vous recevrez une confirmation à **${sessionData.customerEmail}**.`
                 fullResponse += createdText
                 send({ type: 'delta', content: createdText })
                 } catch (err) {

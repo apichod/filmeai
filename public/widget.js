@@ -354,9 +354,12 @@
     if (phoneMatch) sessionData.customerPhone = phoneMatch[0];
 
     // Date detection: 21/06, 21/06/2026, “du 21 au 26 juin”…
-    var parsedDates = extractDateRange(text);
-    if (parsedDates.startsAt) sessionData.startsAt = parsedDates.startsAt;
-    if (parsedDates.stopsAt) sessionData.stopsAt = parsedDates.stopsAt;
+    // On évite volontairement les densités type “1/4” pour les filtres.
+    if (textHasDateSignal(text)) {
+      var parsedDates = extractDateRange(text);
+      if (parsedDates.startsAt) sessionData.startsAt = parsedDates.startsAt;
+      if (parsedDates.stopsAt) sessionData.stopsAt = parsedDates.stopsAt;
+    }
 
     // Name detection: if first bot message was asking for name and user replied
     if (!sessionData.customerName && messages.length <= 3 && text.length < 50 && !emailMatch) {
@@ -621,6 +624,15 @@
             match.userResolved = true;
             match.leaveToFilme = true;
             match.editing = false;
+          } else {
+            var selectedProduct = findChoice(match, match.selectedProductId) || match.matched;
+            if (selectedProduct) {
+              match.matched = selectedProduct;
+              match.confidence = Math.max(Number(match.confidence || 0), 0.8);
+            }
+            match.userResolved = true;
+            match.leaveToFilme = false;
+            match.editing = false;
           }
         });
         updateSelectedProductIds();
@@ -718,15 +730,24 @@
     return null;
   }
 
-  function extractDateRange(text) {
-    var numeric = text.match(/\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?/g) || [];
-    if (numeric.length) {
-      return {
-        startsAt: numeric[0] ? parseDate(numeric[0]) : null,
-        stopsAt: numeric[1] ? parseDate(numeric[1]) : null
-      };
-    }
+  function isLikelyFilterDensity(value) {
+    var match = String(value || '').trim().match(/^(\d{1,2})\s*\/\s*(\d{1,2})$/);
+    if (!match) return false;
+    var numerator = parseInt(match[1], 10);
+    var denominator = parseInt(match[2], 10);
+    return numerator >= 1 && numerator <= 4 && [4, 8, 16].indexOf(denominator) !== -1;
+  }
 
+  function textHasDateSignal(text) {
+    var numeric = String(text || '').match(/\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?/g) || [];
+    var monthRe = new RegExp('\\b(' + FILMEAI_MONTH_PATTERN + ')\\b', 'i');
+    return monthRe.test(text) ||
+      /\b(?:date|dates|du|au|debut|début|fin|location|essai|rendu|retrait|retour|depart|départ)\b/i.test(text) ||
+      numeric.length >= 2 ||
+      (numeric.length === 1 && !isLikelyFilterDensity(numeric[0]));
+  }
+
+  function extractDateRange(text) {
     var connector = "(?:au|à|a|jusqu(?:'|’)au|jusqu(?:'|’)à|jusqu(?:'|’)a|-)";
     var shared = new RegExp('(?:du\\s+)?(\\d{1,2})\\s*' + connector + '\\s*(\\d{1,2})\\s*(' + FILMEAI_MONTH_PATTERN + ')(?:\\s+(\\d{4}))?', 'i');
     var sharedMatch = text.match(shared);
@@ -748,6 +769,17 @@
       return {
         startsAt: startMonth ? dateIso(parseInt(explicitMatch[1], 10), startMonth, explicitYear) : null,
         stopsAt: stopMonth ? dateIso(parseInt(explicitMatch[3], 10), stopMonth, explicitYear) : null
+      };
+    }
+
+    var numeric = text.match(/\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?/g) || [];
+    if (numeric.length) {
+      if (numeric.length === 1 && isLikelyFilterDensity(numeric[0]) && !/\b(?:date|dates|du|au|debut|début|fin|location|essai|rendu|retrait|retour|depart|départ)\b/i.test(text)) {
+        return { startsAt: null, stopsAt: null };
+      }
+      return {
+        startsAt: numeric[0] ? parseDate(numeric[0]) : null,
+        stopsAt: numeric[1] ? parseDate(numeric[1]) : null
       };
     }
 
