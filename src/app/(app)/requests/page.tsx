@@ -68,6 +68,8 @@ export default function RequestsPage() {
   const [requests, setRequests] = useState<RequestRow[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'open' | 'closed' | 'all'>('open')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkArchiving, setBulkArchiving] = useState(false)
 
   useEffect(() => {
     fetch('/api/conversations')
@@ -86,21 +88,85 @@ export default function RequestsPage() {
     return requests.filter(r => r.quote_status !== 'closed')
   }, [requests, statusFilter])
 
+  // Reset selection when filter changes
+  useEffect(() => { setSelected(new Set()) }, [statusFilter])
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
+      return next
+    })
+  }
+
+  function toggleAll() {
+    if (selected.size === filtered.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filtered.map(r => r.id)))
+    }
+  }
+
+  async function archiveSelected() {
+    if (!selected.size) return
+    if (!confirm(`Archiver ${selected.size} demande${selected.size > 1 ? 's' : ''} ?`)) return
+    setBulkArchiving(true)
+    try {
+      await Promise.all(
+        Array.from(selected).map(id =>
+          fetch(`/api/conversations/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quote_status: 'closed' }),
+          })
+        )
+      )
+      setRequests(prev => prev.map(r => selected.has(r.id) ? { ...r, quote_status: 'closed' } : r))
+      setSelected(new Set())
+    } finally {
+      setBulkArchiving(false)
+    }
+  }
+
+  const allSelected = filtered.length > 0 && selected.size === filtered.length
+  const someSelected = selected.size > 0
+
   return (
     <div className="space-y-5">
+
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Demandes &amp; devis</h1>
           <p className="text-sm text-gray-500 mt-1">Les demandes qualifiées et devis générés par votre assistant.</p>
         </div>
-        <Link
-          href="/requests/new"
-          className="bg-gray-950 text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors"
-        >
-          + Nouvelle demande
-        </Link>
+        <div className="flex items-center gap-2">
+          {someSelected && (
+            <>
+              <span className="text-sm text-gray-500">{selected.size} sélectionnée{selected.size > 1 ? 's' : ''}</span>
+              <button
+                onClick={() => void archiveSelected()}
+                disabled={bulkArchiving}
+                className="flex items-center gap-1.5 text-sm text-white bg-gray-900 hover:bg-gray-700 disabled:opacity-50 px-3 py-2 rounded-lg transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M10 12v4m4-4v4" />
+                </svg>
+                {bulkArchiving ? 'Archivage…' : 'Archiver'}
+              </button>
+              <button onClick={() => setSelected(new Set())} className="text-sm text-gray-500 hover:text-gray-900">Annuler</button>
+            </>
+          )}
+          <Link
+            href="/requests/new"
+            className="bg-gray-950 text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            + Nouvelle demande
+          </Link>
+        </div>
       </div>
 
+      {/* Filters */}
       <div className="flex items-center justify-between gap-3">
         <div className="space-y-3">
           <div className="inline-flex rounded-lg bg-gray-100 p-1 text-sm font-medium text-gray-500">
@@ -143,6 +209,16 @@ export default function RequestsPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-xs text-gray-500 border-b border-gray-200 bg-white">
+              <th className="px-4 py-3 w-8">
+                {!loading && filtered.length > 0 && (
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    className="rounded border-gray-300 accent-gray-900 cursor-pointer"
+                  />
+                )}
+              </th>
               <th className="text-left px-4 py-3 font-semibold">Client</th>
               <th className="text-left px-4 py-3 font-semibold">Articles</th>
               <th className="text-left px-4 py-3 font-semibold">Location</th>
@@ -156,6 +232,7 @@ export default function RequestsPage() {
             {loading ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <tr key={i}>
+                  <td className="px-4 py-4" />
                   <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded animate-pulse w-24" /></td>
                   <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded animate-pulse w-80" /></td>
                   <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded animate-pulse w-40" /></td>
@@ -167,24 +244,35 @@ export default function RequestsPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-14 text-center text-sm text-gray-400">
+                <td colSpan={8} className="px-4 py-14 text-center text-sm text-gray-400">
                   Aucun devis pour le moment.
                 </td>
               </tr>
             ) : (
               filtered.map(row => (
-                <tr key={row.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => { window.location.href = `/requests/${row.id}` }}>
-                  <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{displayName(row)}</td>
-                  <td className="px-4 py-3 text-gray-500 max-w-[420px] truncate">{itemsSummary(row.quote_items)}</td>
-                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(row.starts_at)} → {formatDate(row.stops_at)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">{formatMoney(row.quote_total)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                <tr
+                  key={row.id}
+                  className={`hover:bg-gray-50 transition-colors cursor-pointer ${selected.has(row.id) ? 'bg-blue-50/40' : ''}`}
+                >
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(row.id)}
+                      onChange={() => toggleSelect(row.id)}
+                      className="rounded border-gray-300 accent-gray-900 cursor-pointer"
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap" onClick={() => { window.location.href = `/requests/${row.id}` }}>{displayName(row)}</td>
+                  <td className="px-4 py-3 text-gray-500 max-w-[420px] truncate" onClick={() => { window.location.href = `/requests/${row.id}` }}>{itemsSummary(row.quote_items)}</td>
+                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap" onClick={() => { window.location.href = `/requests/${row.id}` }}>{formatDate(row.starts_at)} → {formatDate(row.stops_at)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap" onClick={() => { window.location.href = `/requests/${row.id}` }}>{formatMoney(row.quote_total)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap" onClick={() => { window.location.href = `/requests/${row.id}` }}>
                     <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass(row.quote_status)}`}>
                       {statusLabel(row.quote_status)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(row.created_at)}</td>
-                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(row.expires_at)}</td>
+                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap" onClick={() => { window.location.href = `/requests/${row.id}` }}>{formatDate(row.created_at)}</td>
+                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap" onClick={() => { window.location.href = `/requests/${row.id}` }}>{formatDate(row.expires_at)}</td>
                 </tr>
               ))
             )}
