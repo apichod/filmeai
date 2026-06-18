@@ -146,7 +146,7 @@ export default function FormPage() {
           <label style={labelStyle}>Votre liste de matériel *</label>
           <textarea required value={message} onChange={e => setMessage(e.target.value)}
             rows={7} style={{ ...inputStyle, resize: 'vertical' }}
-            placeholder={"Un article par ligne, ex. :\n2x Sony FX6\n1x Canon RF 24-70\n3x trépieds\nMicro HF"} />
+            placeholder={"Un article par ligne, ex. :\n2x Sony FX6\n1x Sony FE 24-70mm\n3x trépieds\nMicro HF"} />
         </div>
 
         {/* Fichier joint */}

@@ -708,7 +708,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               </div>
               <textarea required value={devisForm.message} rows={4}
                 onChange={e => setDevisForm(p => ({ ...p, message: e.target.value }))}
-                placeholder={"Votre liste de matériel *\n2x Sony FX6\n1x Canon RF 24-70\n3x trépieds"}
+                placeholder={"Votre liste de matériel *\n2x Sony FX6\n1x Sony FE 24-70mm\n3x trépieds"}
                 className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400 resize-none"
               />
               <TurnstileField onVerify={handleDevisTurnstile} compact className="scale-90 origin-left" />
