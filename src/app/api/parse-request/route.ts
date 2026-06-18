@@ -102,6 +102,16 @@ function queryHasAllTokens(product: Product, tokens: string[]): boolean {
   return tokens.every(token => haystack.includes(normalizeText(token)))
 }
 
+function requestWantsPack(item: ExtractedItem): boolean {
+  const text = normalizeText(`${item.raw} ${item.query}`)
+  return /\b(pack|kit|serie|série|set|duo|cine|ciné|cinema|cinéma|reportage|standard|essentiel|multicam)\b/.test(text)
+}
+
+function productLooksLikePack(product: Product): boolean {
+  const text = normalizeText(`${product.name} ${product.description || ''}`)
+  return /\b(pack|kit|serie|série|set|duo)\b/.test(text)
+}
+
 function importantModelTokens(item: ExtractedItem): string[] {
   const text = normalizeText(`${item.raw} ${item.query}`)
   const tokens = significantTokens(text)
@@ -135,6 +145,13 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
 
   const matchedImportant = important.filter(token => haystack.includes(normalizeText(token))).length
   if (important.length) score += (matchedImportant / important.length) * 1.4
+
+  // Business rule: if the client asks for a pack/kit/series, prefer the pack over
+  // the naked product when the model family is otherwise equivalent.
+  if (requestWantsPack(item)) {
+    if (productLooksLikePack(product)) score += 1.15
+    else score -= 0.75
+  }
 
   // Hard-ish penalties: if a model/reference is present in the request but absent from the candidate,
   // the candidate is usually dangerous. This prevents “x5 fx6” → “Insta360 X5”, etc.
@@ -483,6 +500,7 @@ async function rerankAll(candidateSets: CandidateSet[]): Promise<RerankSelection
 Règles strictes :
 - Si aucun candidat ne correspond exactement ou clairement, retourne product_id:null.
 - Ne choisis jamais un produit qui partage seulement un mot vague.
+- Si la demande contient "pack", "kit", "série", "ciné/cinema", "reportage", "standard", "essentiel" ou équivalent, privilégie TOUJOURS un candidat pack/kit/série plutôt que le produit seul, à modèle équivalent.
 - Les références modèle sont sacrées : fx6 doit matcher FX6, 70-200 doit matcher 70-200, black promist 82mm doit matcher Black Pro-Mist 82mm.
 - "x5" ou "5x" est une quantité, jamais le produit Insta360 X5 sauf si le client a explicitement demandé Insta360 X5.
 - Donne confidence entre 0 et 1. Sous 0.50, utilise product_id:null. Entre 0.50 et 0.67, tu peux proposer le meilleur candidat mais explique que la correspondance est à vérifier.
@@ -531,8 +549,15 @@ export async function POST(req: NextRequest) {
         ? set.candidates.find(candidate => candidate.id === selection.product_id) || null
         : null
       const deterministic = deterministicAutoSelect(set)
-      const selected = aiSelected || deterministic?.product || null
-      const confidence = aiSelected
+      const packPreferred = Boolean(
+        deterministic?.product &&
+        requestWantsPack(set.item) &&
+        productLooksLikePack(deterministic.product)
+      )
+      const selected = packPreferred ? deterministic?.product || null : aiSelected || deterministic?.product || null
+      const confidence = packPreferred && deterministic
+        ? Math.min(0.95, Math.max(0.84, deterministic.score / 2.6))
+        : aiSelected
         ? selection?.confidence || 0.85
         : deterministic
           ? Math.min(0.95, Math.max(0.72, deterministic.score / 2.6))
@@ -546,7 +571,7 @@ export async function POST(req: NextRequest) {
         matched: selected,
         confidence,
         reason: selected
-          ? (aiSelected ? selection?.reason || null : 'Correspondance catalogue forte par nom/référence')
+          ? (packPreferred ? 'Pack/kit privilégié car demandé par le client' : aiSelected ? selection?.reason || null : 'Correspondance catalogue forte par nom/référence')
           : selection?.reason || 'Aucune correspondance catalogue assez fiable',
         alternatives: set.candidates
           .filter(candidate => candidate.id !== selected?.id)

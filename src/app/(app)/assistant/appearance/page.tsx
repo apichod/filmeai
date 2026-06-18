@@ -189,9 +189,17 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [pendingProducts, setPendingProducts] = useState<Product[]>([])
   const [streamQuoteMatches, setStreamQuoteMatches] = useState<QuoteMatch[]>([])
   const [editingPreviewKeys, setEditingPreviewKeys] = useState<Record<string, boolean>>({})
+  const [selectedPreviewProducts, setSelectedPreviewProducts] = useState<Record<string, Product>>({})
+  const [leaveToFilmeKeys, setLeaveToFilmeKeys] = useState<Record<string, boolean>>({})
+  const [manualOpenKeys, setManualOpenKeys] = useState<Record<string, boolean>>({})
+  const [manualQueries, setManualQueries] = useState<Record<string, string>>({})
+  const [manualResults, setManualResults] = useState<Record<string, Product[]>>({})
+  const [manualLoadingKeys, setManualLoadingKeys] = useState<Record<string, boolean>>({})
+  const [removedPreviewKeys, setRemovedPreviewKeys] = useState<Record<string, boolean>>({})
   const [sessionData, setSessionData] = useState<{ selectedProductIds: string[]; conversationId: string | null }>({ selectedProductIds: [], conversationId: null })
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const manualSearchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const color = safeColor(s.primary_color)
 
   const chips = ['Faire un devis', 'Disponibilité ?', 'Question technique']
@@ -209,6 +217,13 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setPendingProducts([])
     setStreamQuoteMatches([])
     setEditingPreviewKeys({})
+    setSelectedPreviewProducts({})
+    setLeaveToFilmeKeys({})
+    setManualOpenKeys({})
+    setManualQueries({})
+    setManualResults({})
+    setManualLoadingKeys({})
+    setRemovedPreviewKeys({})
     setLoading(false)
     setSessionData({ selectedProductIds: [], conversationId: null })
   }
@@ -225,6 +240,13 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setPendingProducts([])
     setStreamQuoteMatches([])
     setEditingPreviewKeys({})
+    setSelectedPreviewProducts({})
+    setLeaveToFilmeKeys({})
+    setManualOpenKeys({})
+    setManualQueries({})
+    setManualResults({})
+    setManualLoadingKeys({})
+    setRemovedPreviewKeys({})
     scrollBottom()
 
     const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
@@ -328,11 +350,27 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     }
   }, [loading, messages, sessionData])
 
-  function choosePreviewProduct(productId: string) {
+  function displayProductName(product: Product) {
+    let name = product.name
+    if (product.price_per_day === 0) {
+      name = name
+        .replace(/\bFX([369])0\b/g, 'FX$1')
+        .replace(/\b(RX\s*750)0\b/gi, '$1')
+        .replace(/\b(RX\s*1500)0\b/gi, '$1')
+    }
+    return name
+  }
+
+  function choosePreviewProduct(product: Product, cardKey?: string) {
     setSessionData(prev => ({
       ...prev,
-      selectedProductIds: Array.from(new Set([...prev.selectedProductIds, productId])),
+      selectedProductIds: Array.from(new Set([...prev.selectedProductIds, product.id])),
     }))
+    if (cardKey) {
+      setSelectedPreviewProducts(prev => ({ ...prev, [cardKey]: product }))
+      setLeaveToFilmeKeys(prev => ({ ...prev, [cardKey]: false }))
+      setEditingPreviewKeys(prev => ({ ...prev, [cardKey]: false }))
+    }
   }
 
   function removePreviewProduct(productId: string) {
@@ -342,8 +380,52 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     }))
   }
 
+  function removePreviewCard(key: string, product?: Product | null) {
+    if (product) removePreviewProduct(product.id)
+    setRemovedPreviewKeys(prev => ({ ...prev, [key]: true }))
+  }
+
   function togglePreviewEdit(key: string) {
     setEditingPreviewKeys(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  function leavePreviewToFilme(key: string) {
+    setLeaveToFilmeKeys(prev => ({ ...prev, [key]: true }))
+    setEditingPreviewKeys(prev => ({ ...prev, [key]: false }))
+    const selected = selectedPreviewProducts[key]
+    if (selected) removePreviewProduct(selected.id)
+  }
+
+  function toggleManualSearch(key: string, defaultQuery: string) {
+    setManualOpenKeys(prev => {
+      const nextOpen = !prev[key]
+      if (nextOpen && !manualQueries[key]) {
+        setManualQueries(q => ({ ...q, [key]: defaultQuery }))
+        searchPreviewCatalog(key, defaultQuery)
+      }
+      return { ...prev, [key]: nextOpen }
+    })
+  }
+
+  function searchPreviewCatalog(key: string, query: string) {
+    setManualQueries(prev => ({ ...prev, [key]: query }))
+    if (manualSearchTimers.current[key]) clearTimeout(manualSearchTimers.current[key])
+    if (query.trim().length < 2) {
+      setManualResults(prev => ({ ...prev, [key]: [] }))
+      setManualLoadingKeys(prev => ({ ...prev, [key]: false }))
+      return
+    }
+
+    setManualLoadingKeys(prev => ({ ...prev, [key]: true }))
+    manualSearchTimers.current[key] = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/catalog-search?q=${encodeURIComponent(query.trim())}`)
+        const data = res.ok ? await res.json() as Product[] : []
+        setManualResults(prev => ({ ...prev, [key]: Array.isArray(data) ? data.slice(0, 5) : [] }))
+      } finally {
+        setManualLoadingKeys(prev => ({ ...prev, [key]: false }))
+      }
+    }, 280)
   }
 
   function renderContent(content: string) {
@@ -353,6 +435,94 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
       }
       return <span key={i}>{part}</span>
     })
+  }
+
+  function renderQuoteMatchCard(item: QuoteMatch, cardKey: string) {
+    if (removedPreviewKeys[cardKey]) return null
+
+    const autoProduct = item.matched && item.confidence >= 0.8 ? item.matched : null
+    const selectedProduct = selectedPreviewProducts[cardKey] || autoProduct
+    const isResolved = Boolean(selectedProduct && !leaveToFilmeKeys[cardKey])
+    const editing = Boolean(editingPreviewKeys[cardKey])
+    const manualOpen = Boolean(manualOpenKeys[cardKey])
+    const choices = [item.matched, ...(item.alternatives || [])].filter(Boolean) as Product[]
+    const uniqueChoices = choices
+      .filter((p, i, arr) => arr.findIndex(x => x.id === p.id || x.name.trim().toLowerCase() === p.name.trim().toLowerCase()) === i)
+      .slice(0, 3)
+    const manualChoices = manualResults[cardKey] || []
+    const cardIsGreen = isResolved
+
+    return (
+      <div key={cardKey} className={`rounded-xl border p-2.5 text-xs shadow-sm ${cardIsGreen ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[11px] text-gray-500">{item.section ? `${item.section} · ` : ''}{item.quantity}× demandé : {item.requestedName}</p>
+            {selectedProduct ? (
+              <>
+                <p className="font-semibold text-gray-900">
+                  {displayProductName(selectedProduct)}
+                  {(selectedProduct.is_bundle || selectedProduct.bundle_items?.length) && <span className="ml-1 rounded-full bg-black px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                </p>
+                {selectedProduct.bundle_items && selectedProduct.bundle_items.length > 0 && (
+                  <p className="mt-0.5 text-[11px] text-gray-500">Contenu : {selectedProduct.bundle_items.slice(0, 4).join(', ')}{selectedProduct.bundle_items.length > 4 ? '…' : ''}</p>
+                )}
+              </>
+            ) : leaveToFilmeKeys[cardKey] ? (
+              <p className="font-semibold text-gray-900">L’équipe Filme me fera une proposition</p>
+            ) : (
+              <>
+                <p className="font-semibold text-gray-900">Correspondance catalogue à vérifier</p>
+                <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention humaine requise</p>
+              </>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <button onClick={() => removePreviewCard(cardKey, selectedProduct)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
+            <button onClick={() => togglePreviewEdit(cardKey)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900" title="Modifier">✎</button>
+          </div>
+        </div>
+
+        {editing && (
+          <div className="mt-2 space-y-1">
+            {selectedProduct && (
+              <button className="block w-full rounded-lg border border-black bg-black px-2 py-1.5 text-left text-white">
+                {displayProductName(selectedProduct)}
+                {(selectedProduct.is_bundle || selectedProduct.bundle_items?.length) && <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+              </button>
+            )}
+            {!selectedProduct && uniqueChoices.map(choice => (
+              <button key={choice.id} onClick={() => choosePreviewProduct(choice, cardKey)} className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-800">
+                {displayProductName(choice)}
+                {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+              </button>
+            ))}
+            <button onClick={() => toggleManualSearch(cardKey, item.requestedName || '')} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${manualOpen ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-700'}`}>
+              Faire une recherche manuelle…
+            </button>
+            {manualOpen && (
+              <div className="space-y-1 rounded-lg border border-gray-200 bg-white p-1.5">
+                <input
+                  value={manualQueries[cardKey] || ''}
+                  onChange={e => searchPreviewCatalog(cardKey, e.target.value)}
+                  placeholder="Rechercher dans le catalogue Filme…"
+                  className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-gray-900"
+                />
+                {manualLoadingKeys[cardKey] && <p className="px-1 text-[11px] text-gray-400">Recherche…</p>}
+                {manualChoices.map(choice => (
+                  <button key={choice.id} onClick={() => choosePreviewProduct(choice, cardKey)} className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-800 hover:border-gray-900">
+                    {displayProductName(choice)}
+                    {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => leavePreviewToFilme(cardKey)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${leaveToFilmeKeys[cardKey] ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-600'}`}>
+              Laisser Filme me faire une proposition
+            </button>
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -422,58 +592,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               )}
               {msg.quoteMatches && msg.quoteMatches.length > 0 && (
                 <div className="space-y-2">
-                  {msg.quoteMatches.map((item, idx) => {
-                    const strong = Boolean(item.matched && item.confidence >= 0.8)
-                    const choices = [item.matched, ...(item.alternatives || [])].filter(Boolean) as Product[]
-                    const uniqueChoices = choices
-                      .filter((p, i, arr) => arr.findIndex(x => x.id === p.id || x.name.trim().toLowerCase() === p.name.trim().toLowerCase()) === i)
-                      .slice(0, 3)
-                    const cardKey = `final-${msg.id}-${idx}`
-                    const editing = Boolean(editingPreviewKeys[cardKey])
-                    return (
-                      <div key={`${item.requestedName}-${idx}`} className={`rounded-xl border p-2.5 text-xs shadow-sm ${strong ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-[11px] text-gray-500">{item.section ? `${item.section} · ` : ''}{item.quantity}× demandé : {item.requestedName}</p>
-                            {item.matched && strong ? (
-                              <>
-                                <p className="font-semibold text-gray-900">
-                                  {item.matched.name}
-                                  {(item.matched.is_bundle || item.matched.bundle_items?.length) && <span className="ml-1 rounded-full bg-black px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
-                                </p>
-                                {item.matched.bundle_items && item.matched.bundle_items.length > 0 && (
-                                  <p className="mt-0.5 text-[11px] text-gray-500">Contenu : {item.matched.bundle_items.slice(0, 4).join(', ')}{item.matched.bundle_items.length > 4 ? '…' : ''}</p>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                <p className="font-semibold text-gray-900">Correspondance catalogue à vérifier</p>
-                                <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention humaine requise</p>
-                              </>
-                            )}
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            {item.matched && strong && sessionData.selectedProductIds.includes(item.matched.id) && (
-                              <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
-                            )}
-                            <button onClick={() => togglePreviewEdit(cardKey)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900" title="Modifier">✎</button>
-                          </div>
-                        </div>
-                        {editing && (
-                          <div className="mt-2 space-y-1">
-                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-700">Faire une recherche manuelle…</button>
-                            {uniqueChoices.map(choice => (
-                              <button key={choice.id} onClick={() => choosePreviewProduct(choice.id)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${sessionData.selectedProductIds.includes(choice.id) ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-800'}`}>
-                                {choice.name}
-                                {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
-                              </button>
-                            ))}
-                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-600">Laisser Filme me faire une proposition</button>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {msg.quoteMatches.map((item, idx) => renderQuoteMatchCard(item, `final-${msg.id}-${idx}`))}
                 </div>
               )}
             </div>
@@ -500,58 +619,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               )}
               {streamQuoteMatches.length > 0 && (
                 <div className="mt-2 space-y-2">
-                  {streamQuoteMatches.map((item, idx) => {
-                    const strong = Boolean(item.matched && item.confidence >= 0.8)
-                    const choices = [item.matched, ...(item.alternatives || [])].filter(Boolean) as Product[]
-                    const uniqueChoices = choices
-                      .filter((p, i, arr) => arr.findIndex(x => x.id === p.id || x.name.trim().toLowerCase() === p.name.trim().toLowerCase()) === i)
-                      .slice(0, 3)
-                    const cardKey = `stream-${idx}`
-                    const editing = Boolean(editingPreviewKeys[cardKey])
-                    return (
-                      <div key={`stream-${item.requestedName}-${idx}`} className={`rounded-xl border p-2.5 text-xs shadow-sm ${strong ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-[11px] text-gray-500">{item.section ? `${item.section} · ` : ''}{item.quantity}× demandé : {item.requestedName}</p>
-                            {item.matched && strong ? (
-                              <>
-                                <p className="font-semibold text-gray-900">
-                                  {item.matched.name}
-                                  {(item.matched.is_bundle || item.matched.bundle_items?.length) && <span className="ml-1 rounded-full bg-black px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
-                                </p>
-                                {item.matched.bundle_items && item.matched.bundle_items.length > 0 && (
-                                  <p className="mt-0.5 text-[11px] text-gray-500">Contenu : {item.matched.bundle_items.slice(0, 4).join(', ')}{item.matched.bundle_items.length > 4 ? '…' : ''}</p>
-                                )}
-                              </>
-                            ) : (
-                              <p className="font-semibold text-gray-900">Correspondance catalogue à vérifier</p>
-                            )}
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            {item.matched && strong && sessionData.selectedProductIds.includes(item.matched.id) && (
-                              <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
-                            )}
-                            <button onClick={() => togglePreviewEdit(cardKey)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900" title="Modifier">✎</button>
-                          </div>
-                        </div>
-                        {!strong && (
-                          <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention humaine requise</p>
-                        )}
-                        {editing && (
-                          <div className="mt-2 space-y-1">
-                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-700">Faire une recherche manuelle…</button>
-                            {uniqueChoices.map(choice => (
-                              <button key={choice.id} onClick={() => choosePreviewProduct(choice.id)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${sessionData.selectedProductIds.includes(choice.id) ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-800'}`}>
-                                {choice.name}
-                                {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
-                              </button>
-                            ))}
-                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-600">Laisser Filme me faire une proposition</button>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {streamQuoteMatches.map((item, idx) => renderQuoteMatchCard(item, `stream-${idx}`))}
                 </div>
               )}
             </div>

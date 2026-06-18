@@ -328,6 +328,18 @@
     return candidateChoices(item).filter(function(product) { return product.id === productId; })[0] || null;
   }
 
+  function displayProductName(product) {
+    var name = String((product && product.name) || 'Produit à confirmer');
+    var price = product && product.price_per_day;
+    if (price === 0 || price === '0') {
+      name = name
+        .replace(/\bFX([369])0\b/g, 'FX$1')
+        .replace(/\b(RX\s*750)0\b/gi, '$1')
+        .replace(/\b(RX\s*1500)0\b/gi, '$1');
+    }
+    return name;
+  }
+
   function searchCatalogForMatch(index, query) {
     var item = sessionData.quoteMatches[index];
     if (!item) return;
@@ -376,7 +388,7 @@
   }
 
   function renderProductName(product) {
-    return formatMarkdown((product && product.name) || 'Produit à confirmer') + (isBundle(product) ? '<span class="filmeai-pack-label">PACK</span>' : '');
+    return formatMarkdown(displayProductName(product)) + (isBundle(product) ? '<span class="filmeai-pack-label">PACK</span>' : '');
   }
 
   function renderQuoteMatches() {
@@ -389,7 +401,7 @@
     matchListEl = wrap;
 
     items.forEach(function(item, index) {
-      var strong = item.selectedProductId && item.confidence >= 0.8;
+      var strong = item.selectedProductId && (item.confidence >= 0.8 || item.userResolved);
       var selectedProduct = item.selectedProductId ? findChoice(item, item.selectedProductId) || item.matched : null;
       var card = document.createElement('div');
       card.className = 'filmeai-match-card ' + (strong ? 'strong' : 'uncertain');
@@ -415,6 +427,28 @@
       html += '</div></div>';
 
       if (item.editing) {
+        var baseChoices = candidateChoices(item);
+        if (selectedProduct) {
+          html += '<div class="filmeai-edit-choices">';
+          html += '<button class="filmeai-option-btn selected" data-action="noop" data-index="' + index + '">';
+          html += renderProductName(selectedProduct);
+          html += '<div class="filmeai-option-price">Choix retenu</div>';
+          if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
+          html += '</button>';
+          html += '</div>';
+        } else if (baseChoices.length) {
+          html += '<div class="filmeai-options">';
+          baseChoices.forEach(function(product) {
+            var selected = item.selectedProductId === product.id;
+            html += '<button class="filmeai-option-btn ' + (selected ? 'selected' : '') + '" data-action="choose" data-index="' + index + '" data-product-id="' + product.id + '">';
+            html += renderProductName(product);
+            html += '<div class="filmeai-option-price">Produit catalogue</div>';
+            if (isBundle(product) && bundleText(product)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(product)) + '</div>';
+            html += '</button>';
+          });
+          html += '</div>';
+        }
+
         html += '<div class="filmeai-edit-choices">';
         html += '<button class="filmeai-option-btn ' + (item.manualSearchOpen ? 'selected' : '') + '" data-action="manual" data-index="' + index + '">Faire une recherche manuelle…</button>';
         html += '<button class="filmeai-option-btn ' + (item.leaveToFilme ? 'selected' : '') + '" data-action="filme" data-index="' + index + '">Laisser Filme me faire une proposition</button>';
@@ -460,10 +494,12 @@
         item.editing = !item.editing;
       } else if (action === 'choose') {
         item.selectedProductId = target.getAttribute('data-product-id');
+        item.userResolved = true;
         item.leaveToFilme = false;
         item.editing = false;
       } else if (action === 'filme') {
         item.selectedProductId = null;
+        item.userResolved = true;
         item.leaveToFilme = true;
         item.editing = false;
       } else if (action === 'manual') {

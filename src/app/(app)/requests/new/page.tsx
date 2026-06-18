@@ -926,7 +926,7 @@ export default function NewRequestPage() {
                             </p>
                             <p className="text-xs text-gray-400">
                               {item.type === 'product'
-                                ? (item.product?.price_per_day != null ? `${item.product.price_per_day}€/jour` : 'Prix sur demande')
+                                ? (item.product?.price_per_day != null && item.product.price_per_day > 0 ? `${item.product.price_per_day}€/jour` : 'Prix après dates')
                                 : 'Ligne custom Booqable — à vérifier'}
                             </p>
                             {item.confidence != null && (
