@@ -120,7 +120,7 @@
     .filmeai-product-name { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
     .filmeai-product-price { color: #555; }
     .filmeai-match-list { max-width: 96%; align-self: flex-start; display: flex; flex-direction: column; gap: 10px; }
-    .filmeai-match-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 13px; padding: 11px; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+    .filmeai-match-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 13px; padding: 11px; box-shadow: 0 1px 2px rgba(0,0,0,.03); cursor:pointer; }
     .filmeai-match-card.strong { border-color: #bbf7d0; background: #f7fee7; }
     .filmeai-match-card.uncertain { border-color: #fde68a; background: #fffbeb; }
     .filmeai-match-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
@@ -147,6 +147,8 @@
     .filmeai-confirm-hint { font-size:12px; color:#6b7280; line-height:1.35; margin-bottom:8px; }
     .filmeai-confirm-button { width:100%; border:none; border-radius:10px; padding:10px 12px; background:#111827; color:white; cursor:pointer; font-size:13px; font-weight:700; }
     .filmeai-confirm-button:hover { background:#000; }
+    .filmeai-validate-button { width:100%; border:1px solid #d1d5db; border-radius:9px; padding:8px 9px; background:#f3f4f6; color:#374151; cursor:pointer; font-size:12px; font-weight:700; margin-top:6px; }
+    .filmeai-validate-button:hover { background:#111827; border-color:#111827; color:white; }
     @media (max-width: 400px) {
       #filmeai-panel { width: calc(100vw - 24px); right: 12px; bottom: 84px; }
     }
@@ -383,10 +385,18 @@
   function updateSelectedProductIds() {
     var ids = [];
     (sessionData.quoteMatches || []).forEach(function(item) {
-      if (item.selectedProductId && ids.indexOf(item.selectedProductId) === -1) ids.push(item.selectedProductId);
+      if (isMatchValidated(item) && item.selectedProductId && ids.indexOf(item.selectedProductId) === -1) ids.push(item.selectedProductId);
     });
     sessionData.selectedProductIds = ids;
     persistSession();
+  }
+
+  function isMatchValidated(item) {
+    return Boolean(item && item.selectedProductId && !item.leaveToFilme && (Number(item.confidence || 0) >= 0.8 || item.userResolved));
+  }
+
+  function isMatchUnresolved(item) {
+    return Boolean(!item || item.leaveToFilme || !item.selectedProductId || !isMatchValidated(item));
   }
 
   function candidateChoices(item) {
@@ -501,10 +511,11 @@
     matchListEl = wrap;
 
     items.forEach(function(item, index) {
-      var strong = item.selectedProductId && (item.confidence >= 0.8 || item.userResolved);
+      var strong = isMatchValidated(item);
       var selectedProduct = item.selectedProductId ? findChoice(item, item.selectedProductId) || item.matched : null;
       var card = document.createElement('div');
       card.className = 'filmeai-match-card ' + (strong ? 'strong' : 'uncertain');
+      card.setAttribute('data-card-index', String(index));
 
       var html = '';
       html += '<div class="filmeai-match-top"><div style="min-width:0;flex:1">';
@@ -532,11 +543,12 @@
         var baseChoices = candidateChoices(item);
         if (selectedProduct) {
           html += '<div class="filmeai-edit-choices">';
-          html += '<button class="filmeai-option-btn selected" data-action="noop" data-index="' + index + '">';
+          html += '<button class="filmeai-option-btn ' + (strong ? 'selected' : '') + '" data-action="' + (strong ? 'noop' : 'validate') + '" data-index="' + index + '">';
           html += renderProductName(selectedProduct);
-          html += '<div class="filmeai-option-price">Choix retenu</div>';
+          html += '<div class="filmeai-option-price">' + (strong ? 'Choix retenu' : 'Suggestion proposée — cliquez pour valider') + '</div>';
           if (isBundle(selectedProduct) && bundleText(selectedProduct)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(selectedProduct)) + '</div>';
           html += '</button>';
+          if (!strong) html += '<button class="filmeai-validate-button" data-action="validate" data-index="' + index + '">Valider cette proposition</button>';
           html += '</div>';
         } else if (baseChoices.length) {
           html += '<div class="filmeai-options">';
@@ -576,7 +588,7 @@
       wrap.appendChild(card);
     });
 
-    var unresolvedCount = items.filter(function(item) { return !item.selectedProductId || item.leaveToFilme; }).length;
+    var unresolvedCount = items.filter(isMatchUnresolved).length;
     var confirmBox = document.createElement('div');
     confirmBox.className = 'filmeai-confirm-box';
     confirmBox.innerHTML = '<div class="filmeai-confirm-hint">' +
@@ -588,13 +600,22 @@
 
     wrap.addEventListener('click', function(e) {
       var target = e.target.closest('[data-action]');
-      if (!target) return;
+      if (!target) {
+        var card = e.target.closest('.filmeai-match-card[data-card-index]');
+        if (!card) return;
+        var cardIndex = parseInt(card.getAttribute('data-card-index'), 10);
+        var cardItem = sessionData.quoteMatches[cardIndex];
+        if (!cardItem) return;
+        cardItem.editing = !cardItem.editing;
+        renderQuoteMatches();
+        return;
+      }
       var action = target.getAttribute('data-action');
 
       if (action === 'confirm-list') {
         var missing = 0;
         (sessionData.quoteMatches || []).forEach(function(match) {
-          if (!match.selectedProductId || match.leaveToFilme) {
+          if (isMatchUnresolved(match)) {
             missing += 1;
             match.selectedProductId = null;
             match.userResolved = true;
@@ -618,6 +639,13 @@
         sessionData.quoteMatches.splice(index, 1);
       } else if (action === 'edit') {
         item.editing = !item.editing;
+      } else if (action === 'validate') {
+        if (item.selectedProductId) {
+          recordCatalogSignal(item, findChoice(item, item.selectedProductId) || item.matched);
+          item.userResolved = true;
+          item.leaveToFilme = false;
+          item.editing = false;
+        }
       } else if (action === 'choose') {
         item.selectedProductId = target.getAttribute('data-product-id');
         recordCatalogSignal(item, findChoice(item, item.selectedProductId) || item.matched);

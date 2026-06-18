@@ -351,7 +351,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               localQuoteMatches = [...localQuoteMatches, evt.item]
               setStreamQuoteMatches(localQuoteMatches)
               const selectedIds = localQuoteMatches
-                .filter(item => item.matched && item.confidence >= 0.5)
+                .filter(item => item.matched && item.confidence >= 0.8)
                 .map(item => item.matched!.id)
               setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds, quoteMatches: localQuoteMatches }))
               scrollBottom()
@@ -359,7 +359,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               setProgressInfo(null)
               localQuoteMatches = evt.items as QuoteMatch[]
               const selectedIds = localQuoteMatches
-                .filter(item => item.matched && item.confidence >= 0.5)
+                .filter(item => item.matched && item.confidence >= 0.8)
                 .map(item => item.matched!.id)
               setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds, quoteMatches: localQuoteMatches }))
               setStreamQuoteMatches(localQuoteMatches)
@@ -500,8 +500,12 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     return selectedPreviewProducts[cardKey] || (item.matched && item.confidence >= 0.5 ? item.matched : null)
   }
 
+  function isPreviewMatchValidated(item: QuoteMatch, cardKey: string) {
+    return Boolean(selectedProductForMatch(item, cardKey) && !leaveToFilmeKeys[cardKey] && (item.confidence >= 0.8 || selectedPreviewProducts[cardKey]))
+  }
+
   function quoteMatchesUnresolvedCount(items: QuoteMatch[], prefix: string) {
-    return items.filter((item, idx) => !selectedProductForMatch(item, `${prefix}-${idx}`)).length
+    return items.filter((item, idx) => !isPreviewMatchValidated(item, `${prefix}-${idx}`)).length
   }
 
   function confirmQuoteMatches(items: QuoteMatch[], prefix: string) {
@@ -512,7 +516,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     items.forEach((item, idx) => {
       const key = `${prefix}-${idx}`
       const selectedProduct = selectedProductForMatch(item, key)
-      if (selectedProduct) {
+      if (selectedProduct && isPreviewMatchValidated(item, key)) {
         selectedIds.push(selectedProduct.id)
       } else {
         nextLeaveToFilme[key] = true
@@ -554,7 +558,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     if (removedPreviewKeys[cardKey]) return null
 
     const selectedProduct = selectedProductForMatch(item, cardKey)
-    const isStrong = Boolean(selectedProduct && !leaveToFilmeKeys[cardKey] && (item.confidence >= 0.8 || selectedPreviewProducts[cardKey]))
+    const isStrong = isPreviewMatchValidated(item, cardKey)
     const editing = Boolean(editingPreviewKeys[cardKey])
     const manualOpen = Boolean(manualOpenKeys[cardKey])
     const choices = [item.matched, ...(item.alternatives || [])].filter(Boolean) as Product[]
@@ -565,7 +569,11 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     const cardIsGreen = isStrong
 
     return (
-      <div key={cardKey} className={`rounded-xl border p-2.5 text-xs shadow-sm ${cardIsGreen ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
+      <div
+        key={cardKey}
+        onClick={() => togglePreviewEdit(cardKey)}
+        className={`cursor-pointer rounded-xl border p-2.5 text-xs shadow-sm ${cardIsGreen ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}
+      >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-[11px] text-gray-500">{item.quantity}× demandé : {item.requestedName}</p>
@@ -593,17 +601,39 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
             )}
           </div>
           <div className="flex flex-col gap-1">
-            <button onClick={() => removePreviewCard(cardKey, selectedProduct)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
-            <button onClick={() => togglePreviewEdit(cardKey)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900" title="Modifier">✎</button>
+            <button onClick={e => { e.stopPropagation(); removePreviewCard(cardKey, selectedProduct) }} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
+            <button onClick={e => { e.stopPropagation(); togglePreviewEdit(cardKey) }} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900" title="Modifier">✎</button>
           </div>
         </div>
 
         {editing && (
-          <div className="mt-2 space-y-1">
+          <div className="mt-2 space-y-1" onClick={e => e.stopPropagation()}>
             {selectedProduct && (
-              <button className="block w-full rounded-lg border border-black bg-black px-2 py-1.5 text-left text-white">
+              <button
+                onClick={() => !isStrong && choosePreviewProduct(selectedProduct, cardKey)}
+                className={`block w-full rounded-lg border px-2 py-1.5 text-left ${
+                  isStrong
+                    ? 'border-black bg-black text-white'
+                    : 'border-gray-300 bg-white text-gray-800 hover:border-gray-900'
+                }`}
+              >
                 {displayProductName(selectedProduct)}
-                {hasBundleLabel(selectedProduct) && <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
+                {hasBundleLabel(selectedProduct) && (
+                  <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isStrong ? 'bg-white/20 text-white' : 'bg-gray-900 text-white'}`}>
+                    PACK
+                  </span>
+                )}
+                <span className={`mt-0.5 block text-[11px] ${isStrong ? 'text-white/70' : 'text-gray-500'}`}>
+                  {isStrong ? 'Choix retenu' : 'Suggestion proposée — cliquer pour valider'}
+                </span>
+              </button>
+            )}
+            {selectedProduct && !isStrong && (
+              <button
+                onClick={() => choosePreviewProduct(selectedProduct, cardKey)}
+                className="block w-full rounded-lg border border-gray-300 bg-gray-100 px-2 py-1.5 text-left font-semibold text-gray-700 hover:border-gray-900 hover:bg-gray-900 hover:text-white"
+              >
+                Valider cette proposition
               </button>
             )}
             {!selectedProduct && uniqueChoices.map(choice => (
