@@ -163,6 +163,7 @@
     stopsAt: savedSession.stopsAt || null,
     selectedProductIds: savedSession.selectedProductIds || [],
     conversationId: savedSession.conversationId || null,
+    quoteMode: savedSession.quoteMode || null,
     quoteMatches: savedSession.quoteMatches || []
   };
   var typingEl = null;
@@ -260,6 +261,10 @@
   }
 
   function extractSessionData(text) {
+    if (/^faire un devis$/i.test(text.trim())) {
+      sessionData.quoteMode = 'immediate';
+    }
+
     // Simple email detection
     var emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
     if (emailMatch) sessionData.customerEmail = emailMatch[0];

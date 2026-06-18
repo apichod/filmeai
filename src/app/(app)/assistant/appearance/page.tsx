@@ -180,6 +180,12 @@ type QuoteMatch = {
   alternatives: Product[]
 }
 
+type ChatSessionData = {
+  selectedProductIds: string[]
+  conversationId: string | null
+  quoteMode?: 'immediate' | 'manual' | null
+}
+
 // ── Interactive chat widget ───────────────────────────────────────────────────
 
 function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number; onClose?: () => void }) {
@@ -197,7 +203,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [manualResults, setManualResults] = useState<Record<string, Product[]>>({})
   const [manualLoadingKeys, setManualLoadingKeys] = useState<Record<string, boolean>>({})
   const [removedPreviewKeys, setRemovedPreviewKeys] = useState<Record<string, boolean>>({})
-  const [sessionData, setSessionData] = useState<{ selectedProductIds: string[]; conversationId: string | null }>({ selectedProductIds: [], conversationId: null })
+  const [sessionData, setSessionData] = useState<ChatSessionData>({ selectedProductIds: [], conversationId: null, quoteMode: null })
   const [showDevisChoice, setShowDevisChoice] = useState(false)
   const [showDevisForm, setShowDevisForm] = useState(false)
   const [devisForm, setDevisForm] = useState({ name: '', email: '', phone: '', message: '' })
@@ -231,7 +237,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setManualLoadingKeys({})
     setRemovedPreviewKeys({})
     setLoading(false)
-    setSessionData({ selectedProductIds: [], conversationId: null })
+    setSessionData({ selectedProductIds: [], conversationId: null, quoteMode: null })
     setShowDevisChoice(false)
     setShowDevisForm(false)
     setDevisForm({ name: '', email: '', phone: '', message: '' })
@@ -239,7 +245,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setDevisFormError('')
   }
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, overrideSessionData?: ChatSessionData) => {
     const t = text.trim()
     if (!t || loading) return
     setInput('')
@@ -261,12 +267,13 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     scrollBottom()
 
     const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
+    const effectiveSessionData = overrideSessionData || sessionData
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, sessionData }),
+        body: JSON.stringify({ messages: history, sessionData: effectiveSessionData }),
       })
 
       if (!res.body) throw new Error('No stream')
@@ -585,7 +592,12 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
           </div>
           {/* Option 1 — IA */}
           <button
-            onClick={() => { setShowDevisChoice(false); void send('Faire un devis') }}
+            onClick={() => {
+              const nextSessionData: ChatSessionData = { ...sessionData, quoteMode: 'immediate' }
+              setSessionData(nextSessionData)
+              setShowDevisChoice(false)
+              void send('Faire un devis', nextSessionData)
+            }}
             className="w-full text-left border-2 border-gray-900 rounded-xl p-3.5 space-y-1 hover:bg-gray-50 transition-colors"
           >
             <div className="flex items-center gap-2">
@@ -597,7 +609,10 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
           </button>
           {/* Option 2 — Formulaire */}
           <button
-            onClick={() => { setShowDevisForm(true) }}
+            onClick={() => {
+              setSessionData(prev => ({ ...prev, quoteMode: 'manual' }))
+              setShowDevisForm(true)
+            }}
             className="w-full text-left border border-gray-200 rounded-xl p-3.5 space-y-1 hover:bg-gray-50 transition-colors"
           >
             <div className="flex items-center gap-2">

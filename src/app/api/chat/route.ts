@@ -36,6 +36,7 @@ type SessionData = {
   stopsAt?: string | null
   selectedProductIds?: string[]
   conversationId?: string | null
+  quoteMode?: 'immediate' | 'manual' | null
 }
 
 type IncomingBody = {
@@ -157,10 +158,11 @@ function inferSessionData(messages: OpenAI.Chat.ChatCompletionMessageParam[], se
     stopsAt: sessionData.stopsAt || dates.stopsAt,
     selectedProductIds: sessionData.selectedProductIds || [],
     conversationId: sessionData.conversationId || null,
+    quoteMode: sessionData.quoteMode || null,
   }
 }
 
-function looksLikeQuoteList(text: string, conversationText = ''): boolean {
+function looksLikeQuoteList(text: string, conversationText = '', forceQuoteMode = false): boolean {
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
   const quantityHits = text.match(/(?:^|\n|\s)(?:x|×)?\d+\s*(?:x|×)?\s+[A-Za-zÀ-ÖØ-öø-ÿ0-9]/gi)?.length || 0
   const sectionHits = text.match(/^[A-Za-zÀ-ÖØ-öø-ÿ /&+-]{3,}:\s*$/gm)?.length || 0
@@ -171,8 +173,16 @@ function looksLikeQuoteList(text: string, conversationText = ''): boolean {
     .filter(part => /\b(?:une?|des?|c50|c70|c80|c300|c400|fx\d+|rf|24\s*[-–—]\s*70|24\s*[-–—]\s*105|70\s*[-–—]\s*200|16\s*[-–—]\s*35)\b/i.test(part))
     .length
   const assistantAskedForGear = /quel mat[eé]riel souhaitez-vous louer|collez votre liste|liste de mat[eé]riel|mat[eé]riel souhait[eé]|faire un devis/i.test(conversationText)
+  const immediateModeGearSignal = forceQuoteMode && (
+    modelHits >= 1 ||
+    quantityHits >= 1 ||
+    naturalListHits >= 2 ||
+    /\b(?:cam[eé]ra|objectif|moniteur|tr[eé]pied|filtre|micro|lumi[eè]re|pack|rf|24\s*[-–—]\s*70|24\s*[-–—]\s*105|70\s*[-–—]\s*200|16\s*[-–—]\s*35)\b/i.test(text)
+  )
 
   return (
+    immediateModeGearSignal
+  ) || (
     quantityHits >= 3
   ) || (
     quantityHits >= 2
@@ -437,8 +447,9 @@ export async function POST(req: NextRequest) {
     const lastUserText = getLastUserText(incomingMessages)
     const previousUserText = getPreviousUserText(incomingMessages)
     const conversationText = incomingMessages.map(textFromMessage).join('\n')
-    const lastLooksLikeQuoteList = Boolean(lastUserText && looksLikeQuoteList(lastUserText, conversationText))
-    const previousLooksLikeQuoteList = Boolean(previousUserText && looksLikeQuoteList(previousUserText, conversationText))
+    const forceQuoteMode = sessionData.quoteMode === 'immediate'
+    const lastLooksLikeQuoteList = Boolean(lastUserText && looksLikeQuoteList(lastUserText, conversationText, forceQuoteMode))
+    const previousLooksLikeQuoteList = Boolean(previousUserText && looksLikeQuoteList(previousUserText, conversationText, forceQuoteMode))
     const quoteRequestText = lastLooksLikeQuoteList
       ? lastUserText
       : isBrandClarification(lastUserText) && previousLooksLikeQuoteList
