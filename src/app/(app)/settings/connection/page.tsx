@@ -21,6 +21,8 @@ function BooqableLogo() {
 export default function SettingsConnectionPage() {
   const [catalog, setCatalog] = useState<CatalogStatus | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncPct, setSyncPct] = useState(0)
+  const [syncLabel, setSyncLabel] = useState('')
   const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [testResult, setTestResult] = useState<TestResult>('idle')
 
@@ -54,20 +56,50 @@ export default function SettingsConnectionPage() {
   async function syncCatalog() {
     if (syncing) return
     setSyncing(true)
+    setSyncPct(0)
+    setSyncLabel('Démarrage…')
     setSyncResult(null)
+
     try {
       const res = await fetch('/api/sync-catalog-trigger', { method: 'POST' })
-      const data = await res.json() as { upserted?: number; error?: string }
-      if (res.ok) {
-        setSyncResult({ ok: true, message: `${data.upserted ?? '?'} articles synchronisés avec succès.` })
-        await loadCatalog()
-      } else {
-        setSyncResult({ ok: false, message: data.error ?? 'Erreur lors de la synchronisation.' })
+      if (!res.body) throw new Error('Pas de stream')
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const parts = buf.split('\n\n')
+        buf = parts.pop() ?? ''
+
+        for (const part of parts) {
+          const eventMatch = part.match(/^event: (\w+)/m)
+          const dataMatch = part.match(/^data: (.+)/m)
+          if (!dataMatch) continue
+          const eventName = eventMatch?.[1] ?? 'message'
+          const payload = JSON.parse(dataMatch[1]) as Record<string, unknown>
+
+          if (eventName === 'progress') {
+            setSyncPct(payload.pct as number)
+            setSyncLabel(payload.label as string)
+          } else if (eventName === 'done') {
+            const upserted = payload.upserted as number | undefined
+            setSyncResult({ ok: true, message: `${upserted ?? '?'} articles synchronisés avec succès.` })
+            await loadCatalog()
+          } else if (eventName === 'error') {
+            setSyncResult({ ok: false, message: (payload.message as string) ?? 'Erreur inconnue.' })
+          }
+        }
       }
     } catch {
       setSyncResult({ ok: false, message: 'Erreur réseau. Réessayez.' })
     } finally {
       setSyncing(false)
+      setSyncPct(0)
+      setSyncLabel('')
     }
   }
 
@@ -161,7 +193,22 @@ export default function SettingsConnectionPage() {
           </p>
         )}
 
-        {syncResult && (
+        {syncing && (
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>{syncLabel}</span>
+              <span>{syncPct}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-black rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${syncPct}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {!syncing && syncResult && (
           <div className={`text-xs px-3 py-2 rounded-lg border ${
             syncResult.ok
               ? 'bg-green-50 text-green-700 border-green-200'
