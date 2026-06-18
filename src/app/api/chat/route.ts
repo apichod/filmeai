@@ -154,13 +154,19 @@ function inferSessionData(messages: OpenAI.Chat.ChatCompletionMessageParam[], se
   }
 }
 
-function looksLikeQuoteList(text: string): boolean {
+function looksLikeQuoteList(text: string, conversationText = ''): boolean {
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
   const quantityHits = text.match(/(?:^|\n|\s)(?:x|×)?\d+\s*(?:x|×)?\s+[A-Za-zÀ-ÖØ-öø-ÿ0-9]/gi)?.length || 0
   const sectionHits = text.match(/^[A-Za-zÀ-ÖØ-öø-ÿ /&+-]{3,}:\s*$/gm)?.length || 0
+  const productVocabularyHit = /\b(?:pack|sony|canon|arri|aputure|profoto|smallhd|moniteur|cam[eé]ra|objectif|tr[eé]pied|filtre|micro|lumi[eè]re|fx\d+|b10x?|d2|cine|sachtler|teradek|dzofilm)\b/i.test(text)
+  const assistantAskedForGear = /quel mat[eé]riel souhaitez-vous louer|collez votre liste|liste de mat[eé]riel|mat[eé]riel souhait[eé]|faire un devis/i.test(conversationText)
 
   return (
     quantityHits >= 3
+  ) || (
+    quantityHits >= 2
+  ) || (
+    quantityHits >= 1 && (productVocabularyHit || assistantAskedForGear)
   ) || (
     lines.length >= 8 && sectionHits >= 1
   ) || (
@@ -401,6 +407,7 @@ export async function POST(req: NextRequest) {
     const incomingMessages = Array.isArray(body.messages) ? body.messages : []
     const sessionData = inferSessionData(incomingMessages, body.sessionData || {})
     const lastUserText = getLastUserText(incomingMessages)
+    const conversationText = incomingMessages.map(textFromMessage).join('\n')
 
     const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -421,7 +428,7 @@ export async function POST(req: NextRequest) {
 
         try {
           // ── Mode liste matériel / workflow devis ───────────────────────────
-          if (lastUserText && looksLikeQuoteList(lastUserText)) {
+          if (lastUserText && looksLikeQuoteList(lastUserText, conversationText)) {
             requestContext = lastUserText
             const intro = 'Je regarde ce qui est disponible dans notre catalogue !'
             fullResponse += intro
