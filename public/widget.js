@@ -158,7 +158,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
           </button>
         </div>
-        <div id="filmeai-input-help">Entrée = nouvelle ligne · ⌘/Ctrl + Entrée = envoyer</div>
+        <div id="filmeai-input-help">Entrée : retour ligne · ⌘/Ctrl + Entrée : envoyer</div>
       </div>
     </div>
     <button id="filmeai-bubble" title="Assistant FilmeAI">

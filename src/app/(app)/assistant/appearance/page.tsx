@@ -824,7 +824,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               </svg>
             </button>
           </div>
-          <p className="mt-1.5 text-[10px] leading-none text-gray-400">Entrée = nouvelle ligne · ⌘/Ctrl + Entrée = envoyer</p>
+          <p className="mt-1.5 text-[10px] leading-none text-gray-400">Entrée : retour ligne · ⌘/Ctrl + Entrée : envoyer</p>
         </div>
       )}
 
