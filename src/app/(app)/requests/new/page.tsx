@@ -932,8 +932,11 @@ export default function NewRequestPage() {
                             {item.confidence != null && (
                               <MatchGauge confidence={item.confidence} type={item.type} />
                             )}
+                            {item.type === 'custom_charge' && (
+                              <p className="text-[11px] font-semibold text-amber-700 mt-0.5">Intervention humaine requise</p>
+                            )}
                             {item.type === 'custom_charge' && item.reason && (
-                              <p className="text-[11px] text-amber-700 mt-0.5 line-clamp-2">{item.reason}</p>
+                              <p className="text-[11px] text-amber-700/80 mt-0.5 line-clamp-2">{item.reason}</p>
                             )}
                           </div>
                           {/* Quantity */}

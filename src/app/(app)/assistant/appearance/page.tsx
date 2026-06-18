@@ -188,6 +188,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [streamText, setStreamText] = useState('')
   const [pendingProducts, setPendingProducts] = useState<Product[]>([])
   const [streamQuoteMatches, setStreamQuoteMatches] = useState<QuoteMatch[]>([])
+  const [editingPreviewKeys, setEditingPreviewKeys] = useState<Record<string, boolean>>({})
   const [sessionData, setSessionData] = useState<{ selectedProductIds: string[]; conversationId: string | null }>({ selectedProductIds: [], conversationId: null })
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -207,6 +208,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setStreamText('')
     setPendingProducts([])
     setStreamQuoteMatches([])
+    setEditingPreviewKeys({})
     setLoading(false)
     setSessionData({ selectedProductIds: [], conversationId: null })
   }
@@ -222,6 +224,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setStreamText('')
     setPendingProducts([])
     setStreamQuoteMatches([])
+    setEditingPreviewKeys({})
     scrollBottom()
 
     const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
@@ -325,16 +328,6 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     }
   }, [loading, messages, sessionData])
 
-  function matchPercent(value: number) {
-    return Math.max(0, Math.min(100, Math.round((value || 0) * 100)))
-  }
-
-  function matchColor(value: number) {
-    if (value >= 0.8) return '#16a34a'
-    if (value >= 0.5) return '#f59e0b'
-    return '#ef4444'
-  }
-
   function choosePreviewProduct(productId: string) {
     setSessionData(prev => ({
       ...prev,
@@ -347,6 +340,10 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
       ...prev,
       selectedProductIds: prev.selectedProductIds.filter(id => id !== productId),
     }))
+  }
+
+  function togglePreviewEdit(key: string) {
+    setEditingPreviewKeys(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
   function renderContent(content: string) {
@@ -431,14 +428,14 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                     const uniqueChoices = choices
                       .filter((p, i, arr) => arr.findIndex(x => x.id === p.id || x.name.trim().toLowerCase() === p.name.trim().toLowerCase()) === i)
                       .slice(0, 3)
-                    const pct = matchPercent(item.confidence)
-                    const bar = matchColor(item.confidence)
+                    const cardKey = `final-${msg.id}-${idx}`
+                    const editing = Boolean(editingPreviewKeys[cardKey])
                     return (
                       <div key={`${item.requestedName}-${idx}`} className={`rounded-xl border p-2.5 text-xs shadow-sm ${strong ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-[11px] text-gray-500">{item.section ? `${item.section} · ` : ''}{item.quantity}× demandé : {item.requestedName}</p>
-                            {item.matched && strong && (
+                            {item.matched && strong ? (
                               <>
                                 <p className="font-semibold text-gray-900">
                                   {item.matched.name}
@@ -448,24 +445,30 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                                   <p className="mt-0.5 text-[11px] text-gray-500">Contenu : {item.matched.bundle_items.slice(0, 4).join(', ')}{item.matched.bundle_items.length > 4 ? '…' : ''}</p>
                                 )}
                               </>
+                            ) : (
+                              <>
+                                <p className="font-semibold text-gray-900">Correspondance catalogue à vérifier</p>
+                                <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention humaine requise</p>
+                              </>
                             )}
                           </div>
-                          {item.matched && strong && sessionData.selectedProductIds.includes(item.matched.id) && (
-                            <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
-                          )}
+                          <div className="flex flex-col gap-1">
+                            {item.matched && strong && sessionData.selectedProductIds.includes(item.matched.id) && (
+                              <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
+                            )}
+                            <button onClick={() => togglePreviewEdit(cardKey)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900" title="Modifier">✎</button>
+                          </div>
                         </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ backgroundColor: bar }} title={`Match ${pct}%`} />
-                        </div>
-                        {!strong && (
+                        {editing && (
                           <div className="mt-2 space-y-1">
+                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-700">Faire une recherche manuelle…</button>
                             {uniqueChoices.map(choice => (
                               <button key={choice.id} onClick={() => choosePreviewProduct(choice.id)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${sessionData.selectedProductIds.includes(choice.id) ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-800'}`}>
                                 {choice.name}
                                 {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
                               </button>
                             ))}
-                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-600">Laisser Filme le trouver pour moi</button>
+                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-600">Laisser Filme me faire une proposition</button>
                           </div>
                         )}
                       </div>
@@ -503,8 +506,8 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                     const uniqueChoices = choices
                       .filter((p, i, arr) => arr.findIndex(x => x.id === p.id || x.name.trim().toLowerCase() === p.name.trim().toLowerCase()) === i)
                       .slice(0, 3)
-                    const pct = matchPercent(item.confidence)
-                    const bar = matchColor(item.confidence)
+                    const cardKey = `stream-${idx}`
+                    const editing = Boolean(editingPreviewKeys[cardKey])
                     return (
                       <div key={`stream-${item.requestedName}-${idx}`} className={`rounded-xl border p-2.5 text-xs shadow-sm ${strong ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
                         <div className="flex items-start justify-between gap-2">
@@ -521,25 +524,29 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
                                 )}
                               </>
                             ) : (
-                              <p className="font-semibold text-gray-900">Correspondance à choisir</p>
+                              <p className="font-semibold text-gray-900">Correspondance catalogue à vérifier</p>
                             )}
                           </div>
-                          {item.matched && strong && sessionData.selectedProductIds.includes(item.matched.id) && (
-                            <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
-                          )}
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ backgroundColor: bar }} title={`Match ${pct}%`} />
+                          <div className="flex flex-col gap-1">
+                            {item.matched && strong && sessionData.selectedProductIds.includes(item.matched.id) && (
+                              <button onClick={() => removePreviewProduct(item.matched!.id)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900">×</button>
+                            )}
+                            <button onClick={() => togglePreviewEdit(cardKey)} className="rounded-md border border-gray-200 bg-white px-1.5 text-gray-400 hover:text-gray-900" title="Modifier">✎</button>
+                          </div>
                         </div>
                         {!strong && (
+                          <p className="mt-0.5 text-[11px] font-semibold text-amber-700">Intervention humaine requise</p>
+                        )}
+                        {editing && (
                           <div className="mt-2 space-y-1">
+                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-700">Faire une recherche manuelle…</button>
                             {uniqueChoices.map(choice => (
                               <button key={choice.id} onClick={() => choosePreviewProduct(choice.id)} className={`block w-full rounded-lg border px-2 py-1.5 text-left ${sessionData.selectedProductIds.includes(choice.id) ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-gray-800'}`}>
                                 {choice.name}
                                 {(choice.is_bundle || choice.bundle_items?.length) && <span className="ml-1 rounded-full bg-gray-900 px-1.5 py-0.5 text-[9px] font-bold text-white">PACK</span>}
                               </button>
                             ))}
-                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-600">Laisser Filme le trouver pour moi</button>
+                            <button className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-left text-gray-600">Laisser Filme me faire une proposition</button>
                           </div>
                         )}
                       </div>

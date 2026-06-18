@@ -8,6 +8,10 @@
   })();
 
   var API_URL = script.getAttribute('data-api-url') || 'https://filmeai.vercel.app/api/chat';
+  var CATALOG_SEARCH_URL = script.getAttribute('data-catalog-url') || (function () {
+    try { return new URL('/api/catalog-search', API_URL).toString(); }
+    catch (e) { return 'https://filmeai.vercel.app/api/catalog-search'; }
+  })();
   var ORG_ID = script.getAttribute('data-org-id') || '';
 
   // ── Styles ─────────────────────────────────────────────────────────────────
@@ -99,10 +103,16 @@
     .filmeai-selected-name { font-size:13px; font-weight:700; color:#111827; line-height:1.35; }
     .filmeai-pack-label { display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px; background:#111827; color:#fff; font-size:9px; font-weight:700; letter-spacing:.08em; vertical-align:middle; }
     .filmeai-bundle-items { margin-top:4px; color:#6b7280; font-size:11px; line-height:1.35; }
-    .filmeai-match-dot { width:10px; height:10px; border-radius:999px; margin-top:7px; box-shadow:0 0 0 3px rgba(0,0,0,.04); flex-shrink:0; }
-    .filmeai-remove-line { width:24px; height:24px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; color:#9ca3af; cursor:pointer; flex-shrink:0; }
-    .filmeai-remove-line:hover { color:#111; border-color:#111; }
+    .filmeai-human-required { margin-top:4px; color:#b45309; font-size:11px; font-weight:700; }
+    .filmeai-card-actions { display:flex; flex-direction:column; gap:5px; flex-shrink:0; }
+    .filmeai-action-line { width:24px; height:24px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; color:#9ca3af; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:15px; line-height:1; }
+    .filmeai-action-line:hover { color:#111; border-color:#111; }
     .filmeai-options { display:flex; flex-direction:column; gap:6px; margin-top:9px; }
+    .filmeai-edit-choices { display:grid; grid-template-columns:1fr; gap:6px; margin-top:9px; }
+    .filmeai-manual-search { margin-top:7px; display:flex; flex-direction:column; gap:6px; }
+    .filmeai-manual-input { width:100%; border:1px solid #e5e7eb; border-radius:9px; padding:8px 9px; font-size:12px; outline:none; background:#fff; color:#111827; }
+    .filmeai-manual-input:focus { border-color:#111827; }
+    .filmeai-search-status { color:#6b7280; font-size:11px; }
     .filmeai-option-btn { text-align:left; border:1px solid #e5e7eb; background:white; border-radius:9px; padding:8px 9px; cursor:pointer; font-size:12px; color:#111827; line-height:1.35; }
     .filmeai-option-btn:hover { border-color:#111; }
     .filmeai-option-btn.selected { border-color:#111; background:#111; color:white; }
@@ -157,6 +167,7 @@
   };
   var typingEl = null;
   var matchListEl = null;
+  var manualSearchTimer = null;
 
   var panel = document.getElementById('filmeai-panel');
   var bubble = document.getElementById('filmeai-bubble');
@@ -200,6 +211,14 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\n/g, '<br>');
+  }
+
+  function escapeAttr(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   function showTyping() {
@@ -270,16 +289,6 @@
     } catch (e) {}
   }
 
-  function matchColor(confidence) {
-    if (confidence >= 0.8) return '#16a34a';
-    if (confidence >= 0.5) return '#f59e0b';
-    return '#ef4444';
-  }
-
-  function formatPercent(confidence) {
-    return Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)));
-  }
-
   function isBundle(product) {
     return !!(product && (product.is_bundle || /\bpack\b/i.test(product.name || '') || (product.bundle_items || []).length));
   }
@@ -303,6 +312,7 @@
     var choices = [];
     if (item.matched) choices.push(item.matched);
     (item.alternatives || []).forEach(function(product) { choices.push(product); });
+    (item.manualResults || []).forEach(function(product) { choices.push(product); });
     var seen = {};
     return choices.filter(function(product) {
       var key = product && (product.id || (product.name || '').toLowerCase());
@@ -316,6 +326,41 @@
 
   function findChoice(item, productId) {
     return candidateChoices(item).filter(function(product) { return product.id === productId; })[0] || null;
+  }
+
+  function searchCatalogForMatch(index, query) {
+    var item = sessionData.quoteMatches[index];
+    if (!item) return;
+    item.manualQuery = query;
+    item.manualLoading = false;
+    item.manualResults = [];
+
+    if (manualSearchTimer) window.clearTimeout(manualSearchTimer);
+    if (!query || query.trim().length < 2) {
+      renderQuoteMatches();
+      return;
+    }
+
+    item.manualLoading = true;
+
+    manualSearchTimer = window.setTimeout(function() {
+      fetch(CATALOG_SEARCH_URL + '?q=' + encodeURIComponent(query.trim()))
+        .then(function(res) { return res.ok ? res.json() : []; })
+        .then(function(results) {
+          var current = sessionData.quoteMatches[index];
+          if (!current) return;
+          current.manualLoading = false;
+          current.manualResults = Array.isArray(results) ? results.slice(0, 5) : [];
+          renderQuoteMatches();
+        })
+        .catch(function() {
+          var current = sessionData.quoteMatches[index];
+          if (!current) return;
+          current.manualLoading = false;
+          current.manualResults = [];
+          renderQuoteMatches();
+        });
+    }, 280);
   }
 
   function initQuoteMatches(items) {
@@ -346,9 +391,6 @@
     items.forEach(function(item, index) {
       var strong = item.selectedProductId && item.confidence >= 0.8;
       var selectedProduct = item.selectedProductId ? findChoice(item, item.selectedProductId) || item.matched : null;
-      var bestProduct = selectedProduct || item.matched;
-      var percent = formatPercent(item.confidence || 0);
-      var color = matchColor(item.confidence || 0);
       var card = document.createElement('div');
       card.className = 'filmeai-match-card ' + (strong ? 'strong' : 'uncertain');
 
@@ -363,23 +405,35 @@
       } else if (item.leaveToFilme) {
         html += '<div class="filmeai-selected-name">L’équipe Filme le trouvera pour moi</div>';
       } else {
-        html += '<div class="filmeai-selected-name">Correspondance à choisir</div>';
+        html += '<div class="filmeai-selected-name">Correspondance catalogue à vérifier</div>';
+        html += '<div class="filmeai-human-required">Intervention humaine requise</div>';
       }
 
-      html += '</div><div class="filmeai-match-dot" style="background:' + color + '" title="Match ' + percent + '%"></div><button class="filmeai-remove-line" data-action="remove" data-index="' + index + '" title="Supprimer">×</button></div>';
+      html += '</div><div class="filmeai-card-actions">';
+      html += '<button class="filmeai-action-line" data-action="remove" data-index="' + index + '" title="Supprimer">×</button>';
+      html += '<button class="filmeai-action-line" data-action="edit" data-index="' + index + '" title="Modifier">✎</button>';
+      html += '</div></div>';
 
-      if (!strong) {
-        html += '<div class="filmeai-options">';
-        candidateChoices(item).forEach(function(product) {
-          var selected = item.selectedProductId === product.id;
-          html += '<button class="filmeai-option-btn ' + (selected ? 'selected' : '') + '" data-action="choose" data-index="' + index + '" data-product-id="' + product.id + '">';
-          html += renderProductName(product);
-          html += '<div class="filmeai-option-price">Produit catalogue</div>';
-          if (isBundle(product) && bundleText(product)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(product)) + '</div>';
-          html += '</button>';
-        });
-        html += '<button class="filmeai-option-btn ' + (item.leaveToFilme ? 'selected' : '') + '" data-action="filme" data-index="' + index + '">Laisser Filme le trouver pour moi</button>';
+      if (item.editing) {
+        html += '<div class="filmeai-edit-choices">';
+        html += '<button class="filmeai-option-btn ' + (item.manualSearchOpen ? 'selected' : '') + '" data-action="manual" data-index="' + index + '">Faire une recherche manuelle…</button>';
+        html += '<button class="filmeai-option-btn ' + (item.leaveToFilme ? 'selected' : '') + '" data-action="filme" data-index="' + index + '">Laisser Filme me faire une proposition</button>';
         html += '</div>';
+
+        if (item.manualSearchOpen) {
+          html += '<div class="filmeai-manual-search">';
+          html += '<input class="filmeai-manual-input" data-action="manual-query" data-index="' + index + '" value="' + escapeAttr(item.manualQuery || '') + '" placeholder="Rechercher dans le catalogue Filme…" />';
+          if (item.manualLoading) html += '<div class="filmeai-search-status">Recherche…</div>';
+          (item.manualResults || []).forEach(function(product) {
+            var selected = item.selectedProductId === product.id;
+            html += '<button class="filmeai-option-btn ' + (selected ? 'selected' : '') + '" data-action="choose" data-index="' + index + '" data-product-id="' + product.id + '">';
+            html += renderProductName(product);
+            html += '<div class="filmeai-option-price">Produit catalogue</div>';
+            if (isBundle(product) && bundleText(product)) html += '<div class="filmeai-bundle-items">' + formatMarkdown(bundleText(product)) + '</div>';
+            html += '</button>';
+          });
+          html += '</div>';
+        }
       }
 
       card.innerHTML = html;
@@ -398,20 +452,41 @@
       var index = parseInt(target.getAttribute('data-index'), 10);
       var item = sessionData.quoteMatches[index];
       if (!item) return;
+      var triggerManualSearch = false;
 
       if (action === 'remove') {
         sessionData.quoteMatches.splice(index, 1);
+      } else if (action === 'edit') {
+        item.editing = !item.editing;
       } else if (action === 'choose') {
         item.selectedProductId = target.getAttribute('data-product-id');
         item.leaveToFilme = false;
+        item.editing = false;
       } else if (action === 'filme') {
         item.selectedProductId = null;
         item.leaveToFilme = true;
+        item.editing = false;
+      } else if (action === 'manual') {
+        item.manualSearchOpen = !item.manualSearchOpen;
+        if (item.manualSearchOpen && !item.manualQuery) item.manualQuery = item.requestedName || item.searchQuery || '';
+        if (item.manualSearchOpen) {
+          item.manualLoading = true;
+          triggerManualSearch = true;
+        }
       }
 
       updateSelectedProductIds();
-      wrap.remove();
       renderQuoteMatches();
+      if (triggerManualSearch) {
+        window.setTimeout(function() { searchCatalogForMatch(index, item.manualQuery || ''); }, 0);
+      }
+    });
+
+    wrap.addEventListener('input', function(e) {
+      var target = e.target.closest('[data-action="manual-query"]');
+      if (!target) return;
+      var index = parseInt(target.getAttribute('data-index'), 10);
+      searchCatalogForMatch(index, target.value || '');
     });
 
     messagesEl.appendChild(wrap);
