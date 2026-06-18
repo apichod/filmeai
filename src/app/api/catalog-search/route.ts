@@ -29,7 +29,7 @@ function normalizeText(value: string): string {
 }
 
 function queryWantsPack(value: string): boolean {
-  return /\b(pack|kit|serie|série|set|duo|cine|ciné|cinema|cinéma|reportage|standard|essentiel|multicam)\b/.test(normalizeText(value))
+  return /\b(pack|kit|serie|série|set|duo|reportage|standard|essentiel|multicam)\b/.test(normalizeText(value))
 }
 
 function productLooksLikePack(product: CatalogProduct): boolean {
@@ -58,9 +58,26 @@ function sortCatalogResults(products: CatalogProduct[], query: string): CatalogP
     if (wantsPack) {
       const packDelta = Number(productLooksLikePack(b)) - Number(productLooksLikePack(a))
       if (packDelta !== 0) return packDelta
+    } else {
+      const packDelta = Number(productLooksLikePack(a)) - Number(productLooksLikePack(b))
+      if (packDelta !== 0) return packDelta
     }
     return (b.similarity || 0) - (a.similarity || 0)
   })
+}
+
+function dedupeCatalogResults(products: CatalogProduct[]): CatalogProduct[] {
+  const seen = new Set<string>()
+  const result: CatalogProduct[] = []
+
+  for (const product of products) {
+    const key = normalizeText(product.name)
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(product)
+  }
+
+  return result
 }
 
 export async function GET(req: NextRequest) {
@@ -83,7 +100,7 @@ export async function GET(req: NextRequest) {
     })
 
     if (error) throw error
-    return NextResponse.json(sortCatalogResults((data || []) as CatalogProduct[], q.trim()))
+    return NextResponse.json(dedupeCatalogResults(sortCatalogResults((data || []) as CatalogProduct[], q.trim())))
   } catch {
     // Fallback to simple text search
     const { data } = await supabase
@@ -92,6 +109,6 @@ export async function GET(req: NextRequest) {
       .eq('archived', false)
       .ilike('name', `%${q}%`)
       .limit(8)
-    return NextResponse.json(sortCatalogResults((data || []) as CatalogProduct[], q.trim()))
+    return NextResponse.json(dedupeCatalogResults(sortCatalogResults((data || []) as CatalogProduct[], q.trim())))
   }
 }

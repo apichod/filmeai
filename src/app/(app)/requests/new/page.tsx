@@ -783,7 +783,7 @@ export default function NewRequestPage() {
                 rows={2}
                 className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:border-gray-800"
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault()
                     handleSend()
                   }
@@ -799,6 +799,7 @@ export default function NewRequestPage() {
                 </svg>
               </button>
             </div>
+            <p className="mt-1 text-[11px] text-gray-400">Entrée = nouvelle ligne · ⌘/Ctrl + Entrée = envoyer</p>
           </div>
         </div>
 

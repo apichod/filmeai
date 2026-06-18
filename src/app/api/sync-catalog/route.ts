@@ -131,7 +131,9 @@ async function fetchAllBooqableProductGroups(): Promise<CatalogItem[]> {
       deposit_as_decimal: asString(group.deposit_as_decimal),
       photo_url: asString(group.photo_url),
       archived: asBoolean(group.archived) || false,
-      show_in_store: asBoolean(group.show_in_store) ?? true,
+      // Catalogue IA = uniquement ce qui est publié côté store Booqable.
+      // Si show_in_store est absent ou false, on ignore le product_group.
+      show_in_store: asBoolean(group.show_in_store) === true,
       source_type: 'product_group' as const,
     })).filter(item => item.id))
 
@@ -194,7 +196,9 @@ async function fetchAllBooqableBundles(): Promise<CatalogItem[]> {
         centsToDecimalString(firstNumber(attrs, ['deposit_in_cents'])),
       photo_url: firstString(attrs, ['photo_url', 'photo_large_url', 'large_url', 'image_url']),
       archived: asBoolean(attrs.archived) || false,
-      show_in_store: asBoolean(attrs.show_in_store) ?? true,
+      // Certains bundles v4 n'exposent pas show_in_store. Quand le champ existe,
+      // on respecte strictement sa valeur ; sinon on garde le bundle indexable.
+      show_in_store: attrs.show_in_store === undefined ? true : asBoolean(attrs.show_in_store) === true,
       source_type: 'bundle' as const,
     }
   }).filter(item => item.id)

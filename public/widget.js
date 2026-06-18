@@ -193,7 +193,10 @@
     input.style.height = Math.min(input.scrollHeight, 100) + 'px';
   });
   input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sendBtn.disabled) send(); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (!sendBtn.disabled) send();
+    }
   });
   sendBtn.addEventListener('click', send);
 

@@ -213,7 +213,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [devisTurnstileToken, setDevisTurnstileToken] = useState('')
   const handleDevisTurnstile = useCallback((token: string) => setDevisTurnstileToken(token), [])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const manualSearchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const color = safeColor(s.primary_color)
 
@@ -801,14 +801,15 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
 
       {!showDevisChoice && !showDevisForm && (
         <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-center gap-2 shrink-0">
-          <input
+          <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input) } }}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(input) } }}
             placeholder="Écrivez votre message…"
+            rows={1}
             disabled={loading}
-            className="flex-1 text-xs bg-transparent outline-none text-gray-700 placeholder-gray-400 disabled:opacity-50"
+            className="max-h-20 flex-1 resize-none bg-transparent text-xs leading-5 text-gray-700 outline-none placeholder-gray-400 disabled:opacity-50"
           />
           <button
             onClick={() => void send(input)}

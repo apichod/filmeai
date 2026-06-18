@@ -103,8 +103,11 @@ function queryHasAllTokens(product: Product, tokens: string[]): boolean {
 }
 
 function requestWantsPack(item: ExtractedItem): boolean {
-  const text = normalizeText(`${item.raw} ${item.query}`)
-  return /\b(pack|kit|serie|série|set|duo|cine|ciné|cinema|cinéma|reportage|standard|essentiel|multicam)\b/.test(text)
+  // On se base sur la demande brute, pas sur la query enrichie.
+  // Exemple : "Canon C400" devient "Canon EOS C400 caméra cinéma" en query,
+  // mais "caméra cinéma" décrit le type de produit, pas une demande de pack.
+  const raw = normalizeText(item.raw)
+  return /\b(pack|kit|serie|série|set|duo|reportage|standard|essentiel|multicam)\b/.test(raw)
 }
 
 function productLooksLikePack(product: Product): boolean {
@@ -165,6 +168,9 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
   if (requestWantsPack(item)) {
     if (productLooksLikePack(product)) score += 2.25
     else score -= 1.25
+  } else if (productLooksLikePack(product)) {
+    // Si le client n'a pas demandé de pack, on préfère le produit nu à modèle égal.
+    score -= 0.95
   }
 
   // “Sony FX6 pack caméra” means camera/pack, not an accessory compatible with FX6.
@@ -240,7 +246,11 @@ function deterministicAutoSelect(set: CandidateSet): { product: Product; score: 
 
 function dedupeProducts(products: Product[]): Product[] {
   const map = new Map<string, Product>()
+  const seenNames = new Set<string>()
   for (const product of products) {
+    const nameKey = normalizeText(product.name)
+    if (seenNames.has(nameKey)) continue
+    seenNames.add(nameKey)
     if (!map.has(product.id)) map.set(product.id, product)
   }
   return Array.from(map.values())
@@ -532,7 +542,8 @@ async function rerankAll(candidateSets: CandidateSet[]): Promise<RerankSelection
 Règles strictes :
 - Si aucun candidat ne correspond exactement ou clairement, retourne product_id:null.
 - Ne choisis jamais un produit qui partage seulement un mot vague.
-- Si la demande contient "pack", "kit", "série", "ciné/cinema", "reportage", "standard", "essentiel" ou équivalent, privilégie TOUJOURS un candidat pack/kit/série plutôt que le produit seul, à modèle équivalent.
+- Si la demande contient explicitement "pack", "kit", "série", "reportage", "standard", "essentiel" ou équivalent, privilégie TOUJOURS un candidat pack/kit/série plutôt que le produit seul, à modèle équivalent.
+- Si la demande ne contient pas explicitement "pack" ou "kit", privilégie le produit simple plutôt qu'un pack.
 - Si la demande concerne une caméra ou un pack caméra (ex: "Sony FX6 pack caméra"), ne sélectionne jamais une cage, un rig, un support, une poignée, un câble ou un adaptateur, même si le nom contient FX6.
 - Les références modèle sont sacrées : fx6 doit matcher FX6, 70-200 doit matcher 70-200, black promist 82mm doit matcher Black Pro-Mist 82mm.
 - "x5" ou "5x" est une quantité, jamais le produit Insta360 X5 sauf si le client a explicitement demandé Insta360 X5.
