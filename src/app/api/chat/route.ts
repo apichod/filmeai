@@ -92,6 +92,12 @@ function getLastUserText(messages: OpenAI.Chat.ChatCompletionMessageParam[]): st
   return last ? textFromMessage(last) : ''
 }
 
+function getPreviousUserText(messages: OpenAI.Chat.ChatCompletionMessageParam[]): string {
+  const users = messages.filter(message => message.role === 'user')
+  const previous = users[users.length - 2]
+  return previous ? textFromMessage(previous) : ''
+}
+
 function cleanAssistantText(text: string): string {
   return text
     .replace(/\[(?:SEARCH|CREATE_QUOTE)[^\]]*\]/g, '')
@@ -158,7 +164,12 @@ function looksLikeQuoteList(text: string, conversationText = ''): boolean {
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
   const quantityHits = text.match(/(?:^|\n|\s)(?:x|×)?\d+\s*(?:x|×)?\s+[A-Za-zÀ-ÖØ-öø-ÿ0-9]/gi)?.length || 0
   const sectionHits = text.match(/^[A-Za-zÀ-ÖØ-öø-ÿ /&+-]{3,}:\s*$/gm)?.length || 0
-  const productVocabularyHit = /\b(?:pack|sony|canon|arri|aputure|profoto|smallhd|moniteur|cam[eé]ra|objectif|tr[eé]pied|filtre|micro|lumi[eè]re|fx\d+|b10x?|d2|cine|sachtler|teradek|dzofilm)\b/i.test(text)
+  const productVocabularyHit = /\b(?:pack|sony|canon|arri|aputure|profoto|smallhd|moniteur|cam[eé]ra|objectif|tr[eé]pied|filtre|micro|lumi[eè]re|fx\d+|c50|c70|c80|c300|c400|b10x?|d2|cine|sachtler|teradek|dzofilm|rf)\b/i.test(text)
+  const modelHits = text.match(/\b(?:fx3|fx6|fx9|fx30|c50|c70|c80|c300|c400|r5c?|r6|komodo|venice|alexa|b10x?|d2|pro-?11|prohead|atem|24\s*[-–—]\s*70|24\s*[-–—]\s*105|70\s*[-–—]\s*200|16\s*[-–—]\s*35)\b/gi)?.length || 0
+  const naturalListHits = text.split(/\b(?:avec|et|plus|,|\+)\b|\n/gi)
+    .map(part => part.trim())
+    .filter(part => /\b(?:une?|des?|c50|c70|c80|c300|c400|fx\d+|rf|24\s*[-–—]\s*70|24\s*[-–—]\s*105|70\s*[-–—]\s*200|16\s*[-–—]\s*35)\b/i.test(part))
+    .length
   const assistantAskedForGear = /quel mat[eé]riel souhaitez-vous louer|collez votre liste|liste de mat[eé]riel|mat[eé]riel souhait[eé]|faire un devis/i.test(conversationText)
 
   return (
@@ -171,6 +182,23 @@ function looksLikeQuoteList(text: string, conversationText = ''): boolean {
     lines.length >= 8 && sectionHits >= 1
   ) || (
     /devis|liste|mat[eé]riel|location/i.test(text) && quantityHits >= 2
+  ) || (
+    assistantAskedForGear && modelHits >= 2
+  ) || (
+    assistantAskedForGear && naturalListHits >= 2 && productVocabularyHit
+  )
+}
+
+function isBrandClarification(text: string): boolean {
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+
+  return (
+    /^(ce sont|c est|c'est|ils sont|elles sont|tout est|tous sont|toutes sont).*\b(canon|sony|arri|blackmagic|profoto|aputure|smallhd|sachtler)\b/.test(normalized) ||
+    /^(canon|sony|arri|blackmagic|profoto|aputure|smallhd|sachtler)$/.test(normalized)
   )
 }
 
@@ -407,7 +435,15 @@ export async function POST(req: NextRequest) {
     const incomingMessages = Array.isArray(body.messages) ? body.messages : []
     const sessionData = inferSessionData(incomingMessages, body.sessionData || {})
     const lastUserText = getLastUserText(incomingMessages)
+    const previousUserText = getPreviousUserText(incomingMessages)
     const conversationText = incomingMessages.map(textFromMessage).join('\n')
+    const lastLooksLikeQuoteList = Boolean(lastUserText && looksLikeQuoteList(lastUserText, conversationText))
+    const previousLooksLikeQuoteList = Boolean(previousUserText && looksLikeQuoteList(previousUserText, conversationText))
+    const quoteRequestText = lastLooksLikeQuoteList
+      ? lastUserText
+      : isBrandClarification(lastUserText) && previousLooksLikeQuoteList
+        ? `${previousUserText}\nPrécision client : ${lastUserText}`
+        : ''
 
     const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -428,8 +464,8 @@ export async function POST(req: NextRequest) {
 
         try {
           // ── Mode liste matériel / workflow devis ───────────────────────────
-          if (lastUserText && looksLikeQuoteList(lastUserText, conversationText)) {
-            requestContext = lastUserText
+          if (quoteRequestText) {
+            requestContext = quoteRequestText
             const intro = 'Je regarde ce qui est disponible dans notre catalogue !'
             fullResponse += intro
             send({ type: 'delta', content: intro })
@@ -450,7 +486,7 @@ export async function POST(req: NextRequest) {
 
             let items: QuoteParseItem[] = []
             try {
-              items = await parseQuoteList(req, lastUserText)
+              items = await parseQuoteList(req, quoteRequestText)
             } finally {
               clearInterval(progressTimer)
             }

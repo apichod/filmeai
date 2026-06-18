@@ -130,6 +130,7 @@ function importantModelTokens(item: ExtractedItem): string[] {
   const tokens = significantTokens(text)
   const important = tokens.filter(token =>
     /^(fx3|fx6|fx9|fx30|b10x|b10|d2|prohead|profoto|atem|ntg3|c1|r5|r6|rj45|bpu|bpu60|bpu90|vmount|vlock|v-lock|indie|shogun|sachtler|magliner|macbook|aputure|600x|1200d)$/.test(token) ||
+    /^(c50|c70|c80|c300|c400|r5c|rf)$/.test(token) ||
     /^\d{2,3}$/.test(token) ||
     /^\d{2,3}mm$/.test(token) ||
     /^\d{2,3}gb$/.test(token) ||
@@ -182,6 +183,9 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
     [/\bfx6\b/, /\bfx6\b/],
     [/\bfx3\b/, /\bfx3\b/],
     [/\bfx30\b/, /\bfx30\b/],
+    [/\bc400\b/, /\bc400\b/],
+    [/\bc50\b/, /\bc50\b/],
+    [/\bc70\b/, /\bc70\b/],
     [/\bb10x\b/, /\bb10x\b/],
     [/\batem\b/, /\batem\b/],
     [/\bntg3\b/, /\bntg3\b/],
@@ -189,6 +193,7 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
     [/\bmagliner\b/, /\bmagliner\b/],
     [/\b70\s*-?\s*200\b/, /\b70\s*-?\s*200\b/],
     [/\b24\s*-?\s*70\b/, /\b24\s*-?\s*70\b/],
+    [/\b24\s*-?\s*105\b/, /\b24\s*-?\s*105\b/],
     [/\b16\s*-?\s*35\b/, /\b16\s*-?\s*35\b/],
     [/\b82\s*mm\b/, /\b82\s*mm\b/],
     [/\b512\s*(gb|go)\b/, /\b512\s*(gb|go)\b|\b512\b/],
@@ -402,6 +407,7 @@ Ta mission : extraire CHAQUE équipement d'une liste matériel, dans l'ORDRE EXA
 
 RÈGLES ABSOLUES :
 1. Les préfixes de quantité peuvent être écrits AVANT l'article : "x5 fx6", "×5 fx6", "5x fx6", "5× fx6" signifient quantity=5 et raw="fx6". N'inclus JAMAIS "x5" dans la query produit.
+1b. "un", "une", "1", "un(e)" devant un produit signifie quantity=1. Exemple : "Une C400 avec une C50" = deux items séparés, quantity=1 chacun.
 2. Développe les abréviations en termes de recherche complets avec marque, mais garde raw court et propre.
 3. Chaque modèle/référence différente = un item séparé.
 4. Ignore les dates et infos administratives (Essai, Rendu, →, etc.).
@@ -415,6 +421,14 @@ GLOSSAIRE :
 - fx6 → Sony FX6 caméra cinéma
 - fx3 → Sony FX3 caméra
 - fx9 → Sony FX9 caméra
+- c400 → Canon EOS C400 caméra cinéma
+- c50 → Canon EOS C50 caméra cinéma
+- c70 → Canon EOS C70 caméra cinéma
+- c300 → Canon EOS C300 caméra cinéma
+- si le client précise "ce sont des Canon", applique Canon aux modèles C400/C50/C70 et aux optiques RF de la liste précédente.
+- 24-70 RF → Canon RF 24-70mm objectif
+- 24-105 RF 2.8 → Canon RF 24-105mm f/2.8 objectif
+- 24-105 RF → Canon RF 24-105mm objectif
 - indie 5 → Atomos Shogun Indie 5 moniteur enregistreur
 - cine 24 → moniteur vidéo 24 pouces
 - bpu → batterie Sony BP-U

@@ -12,6 +12,7 @@ type Settings = {
   teaser_delay: number
   attract_attention: boolean
   show_branding: boolean
+  organization_id?: string
 }
 
 const ICONS = [
@@ -197,6 +198,11 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [manualLoadingKeys, setManualLoadingKeys] = useState<Record<string, boolean>>({})
   const [removedPreviewKeys, setRemovedPreviewKeys] = useState<Record<string, boolean>>({})
   const [sessionData, setSessionData] = useState<{ selectedProductIds: string[]; conversationId: string | null }>({ selectedProductIds: [], conversationId: null })
+  const [showDevisChoice, setShowDevisChoice] = useState(false)
+  const [showDevisForm, setShowDevisForm] = useState(false)
+  const [devisForm, setDevisForm] = useState({ name: '', email: '', phone: '', message: '' })
+  const [devisFormStatus, setDevisFormStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
+  const [devisFormError, setDevisFormError] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const manualSearchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
@@ -226,6 +232,11 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setRemovedPreviewKeys({})
     setLoading(false)
     setSessionData({ selectedProductIds: [], conversationId: null })
+    setShowDevisChoice(false)
+    setShowDevisForm(false)
+    setDevisForm({ name: '', email: '', phone: '', message: '' })
+    setDevisFormStatus('idle')
+    setDevisFormError('')
   }
 
   const send = useCallback(async (text: string) => {
@@ -565,7 +576,104 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
         )}
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50">
+      {/* ── Écran choix devis ── */}
+      {showDevisChoice && !showDevisForm && (
+        <div className="flex-1 flex flex-col items-center justify-center px-4 py-6 bg-white space-y-4">
+          <div className="text-center space-y-1">
+            <p className="text-sm font-semibold text-gray-900">Comment souhaitez-vous procéder ?</p>
+            <p className="text-xs text-gray-500">Deux façons d&apos;obtenir votre devis sur liste.</p>
+          </div>
+          {/* Option 1 — IA */}
+          <button
+            onClick={() => { setShowDevisChoice(false); void send('Faire un devis') }}
+            className="w-full text-left border-2 border-gray-900 rounded-xl p-3.5 space-y-1 hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-gray-900 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              <span className="text-xs font-semibold text-gray-900">Estimation immédiate</span>
+              <span className="text-[10px] bg-gray-900 text-white rounded-full px-2 py-0.5 font-medium ml-auto shrink-0">Recommandé</span>
+            </div>
+            <p className="text-[11px] text-gray-500 leading-relaxed pl-6">L&apos;assistant rapproche votre liste de notre catalogue, vérifie la disponibilité et chiffre un devis tout de suite.</p>
+          </button>
+          {/* Option 2 — Formulaire */}
+          <button
+            onClick={() => { setShowDevisForm(true) }}
+            className="w-full text-left border border-gray-200 rounded-xl p-3.5 space-y-1 hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+              <span className="text-xs font-semibold text-gray-800">Envoyer ma liste à l&apos;équipe</span>
+            </div>
+            <p className="text-[11px] text-gray-500 leading-relaxed pl-6">Sans chiffrage automatique. Votre liste est transmise et traitée à la main ; réponse par e-mail.</p>
+          </button>
+          <button onClick={() => setShowDevisChoice(false)} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">Retour</button>
+        </div>
+      )}
+
+      {/* ── Formulaire inline ── */}
+      {showDevisForm && (
+        <div className="flex-1 overflow-y-auto px-4 py-4 bg-white">
+          {devisFormStatus === 'success' ? (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-3 py-8">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: color }}>
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+              </div>
+              <p className="text-sm font-semibold text-gray-900">Demande envoyée !</p>
+              <p className="text-xs text-gray-500">Nous vous recontacterons par e-mail dans les plus brefs délais.</p>
+              <button onClick={() => { setShowDevisForm(false); setShowDevisChoice(false) }} className="text-xs text-gray-400 hover:text-gray-600 mt-2">Retour au chat</button>
+            </div>
+          ) : (
+            <form
+              onSubmit={async e => {
+                e.preventDefault()
+                setDevisFormStatus('sending')
+                setDevisFormError('')
+                try {
+                  const fd = new FormData()
+                  fd.append('key', s.organization_id ?? '')
+                  fd.append('name', devisForm.name)
+                  fd.append('email', devisForm.email)
+                  fd.append('phone', devisForm.phone)
+                  fd.append('message', devisForm.message)
+                  fd.append('website', '')
+                  const res = await fetch('/api/form-submit', { method: 'POST', body: fd })
+                  const data = await res.json() as { ok?: boolean; error?: string }
+                  if (!res.ok || !data.ok) { setDevisFormError(data.error ?? 'Erreur'); setDevisFormStatus('error') }
+                  else setDevisFormStatus('success')
+                } catch { setDevisFormError('Erreur réseau.'); setDevisFormStatus('error') }
+              }}
+              className="space-y-3"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <button type="button" onClick={() => setShowDevisForm(false)} className="text-gray-400 hover:text-gray-600">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <p className="text-xs font-semibold text-gray-900">Envoyer ma liste</p>
+              </div>
+              {(['name','email','phone'] as const).map(field => (
+                <input key={field} required={field !== 'phone'} type={field === 'email' ? 'email' : 'text'}
+                  value={devisForm[field]} onChange={e => setDevisForm(p => ({ ...p, [field]: e.target.value }))}
+                  placeholder={field === 'name' ? 'Prénom et Nom *' : field === 'email' ? 'E-mail *' : 'Téléphone'}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400"
+                />
+              ))}
+              <textarea required value={devisForm.message} rows={4}
+                onChange={e => setDevisForm(p => ({ ...p, message: e.target.value }))}
+                placeholder={"Sony FX3 × 1\nObjectif 24-70mm × 1\n\nDates : du 20 au 22 juillet"}
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-900 placeholder-gray-400 resize-none"
+              />
+              {devisFormStatus === 'error' && <p className="text-[11px] text-red-500">{devisFormError}</p>}
+              <button type="submit" disabled={devisFormStatus === 'sending'}
+                className="w-full py-2.5 rounded-xl text-xs font-semibold text-white transition-opacity disabled:opacity-50"
+                style={{ backgroundColor: color }}>
+                {devisFormStatus === 'sending' ? 'Envoi…' : 'Envoyer ma demande'}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      <div ref={scrollRef} className={`flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50 ${showDevisChoice || showDevisForm ? 'hidden' : ''}`}>
         {messages.length === 0 && !loading && (
           <div className="flex flex-col items-center text-center pt-4 pb-2 space-y-3">
             <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: color }}>
@@ -574,7 +682,8 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
             <p className="text-xs font-semibold text-gray-900">Comment puis-je vous aider ?</p>
             <div className="flex flex-wrap gap-1.5 justify-center">
               {chips.map(chip => (
-                <button key={chip} onClick={() => void send(chip)}
+                <button key={chip}
+                  onClick={() => chip === 'Faire un devis' ? setShowDevisChoice(true) : void send(chip)}
                   className="text-xs bg-white border border-gray-200 rounded-full px-2.5 py-1 text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
                   {chip}
                 </button>
@@ -640,27 +749,29 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
         )}
       </div>
 
-      <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-center gap-2 shrink-0">
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input) } }}
-          placeholder="Écrivez votre message…"
-          disabled={loading}
-          className="flex-1 text-xs bg-transparent outline-none text-gray-700 placeholder-gray-400 disabled:opacity-50"
-        />
-        <button
-          onClick={() => void send(input)}
-          disabled={loading || !input.trim()}
-          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-opacity disabled:opacity-40"
-          style={{ backgroundColor: color }}
-        >
-          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-          </svg>
-        </button>
-      </div>
+      {!showDevisChoice && !showDevisForm && (
+        <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-center gap-2 shrink-0">
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input) } }}
+            placeholder="Écrivez votre message…"
+            disabled={loading}
+            className="flex-1 text-xs bg-transparent outline-none text-gray-700 placeholder-gray-400 disabled:opacity-50"
+          />
+          <button
+            onClick={() => void send(input)}
+            disabled={loading || !input.trim()}
+            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-opacity disabled:opacity-40"
+            style={{ backgroundColor: color }}
+          >
+            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {s.show_branding && (
         <div className="px-3 py-1.5 text-center border-t border-gray-50 bg-white shrink-0">
