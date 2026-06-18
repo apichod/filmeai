@@ -359,6 +359,7 @@ async function hybridSearch(query: string, limit = 10): Promise<Product[]> {
       .from('products_cache')
       .select('id, name, description, price_per_day, deposit, photo_url')
       .eq('archived', false)
+      .eq('show_in_store', true)
       .ilike('name', `%${query}%`)
       .limit(limit)
     return (fallback || []) as Product[]

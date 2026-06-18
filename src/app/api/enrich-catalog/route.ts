@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
       .from('products_cache')
       .select('id, name, description, enriched_text')
       .eq('archived', false)
+      .eq('show_in_store', true)
       .range(offset, offset + limit - 1)
       .order('name')
 
@@ -144,6 +145,7 @@ export async function POST(req: NextRequest) {
       .from('products_cache')
       .select('*', { count: 'exact', head: true })
       .eq('archived', false)
+      .eq('show_in_store', true)
 
     return NextResponse.json({
       processed: toEnrich.length,
@@ -168,12 +170,14 @@ export async function GET() {
     .from('products_cache')
     .select('*', { count: 'exact', head: true })
     .eq('archived', false)
+    .eq('show_in_store', true)
 
   // Count enriched = enriched_text significantly longer than name+description
   const { data: sample } = await supabase
     .from('products_cache')
     .select('name, description, enriched_text')
     .eq('archived', false)
+    .eq('show_in_store', true)
     .limit(200)
 
   const enriched = (sample || []).filter(p => {

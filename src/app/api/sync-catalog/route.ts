@@ -314,7 +314,7 @@ export async function POST(req: NextRequest) {
     ])
 
     const allRaw = attachBundleContext(productGroups, bundles, bundleItems)
-    const active = allRaw.filter(item => !item.archived && item.show_in_store !== false)
+    const active = allRaw.filter(item => !item.archived && item.show_in_store === true)
 
     const hiddenCount = allRaw.filter(item => !item.archived && item.show_in_store === false).length
     console.log(
@@ -329,11 +329,15 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseAdmin()
 
-    // Mark previous rows archived first. Then active rows are upserted as archived=false.
-    await supabase
+    // products_cache est un cache, pas un historique : on le reconstruit proprement
+    // à chaque sync pour éviter les anciennes lignes archivées et les faux doublons
+    // visibles dans Supabase.
+    const { error: deleteError } = await supabase
       .from('products_cache')
-      .update({ archived: true, last_synced_at: new Date().toISOString() })
+      .delete()
       .neq('id', '__never__')
+
+    if (deleteError) throw new Error(`Supabase cache clear error: ${deleteError.message}`)
 
     const rows = active.map((item, i) => ({
       id: item.id,
@@ -343,6 +347,8 @@ export async function POST(req: NextRequest) {
       deposit: item.deposit_as_decimal ? parseFloat(item.deposit_as_decimal) : null,
       photo_url: item.photo_url || null,
       archived: false,
+      show_in_store: item.show_in_store === true,
+      source_type: item.source_type,
       enriched_text: enrichedTexts[i],
       embedding: JSON.stringify(embeddings[i]),
       last_synced_at: new Date().toISOString(),
@@ -385,6 +391,7 @@ export async function GET() {
     .from('products_cache')
     .select('*', { count: 'exact', head: true })
     .eq('archived', false)
+    .eq('show_in_store', true)
 
   return NextResponse.json({ cached_products: count ?? 0 })
 }

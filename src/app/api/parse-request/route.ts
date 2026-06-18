@@ -363,6 +363,7 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
       .from('products_cache')
       .select('id, name, description, price_per_day, deposit, photo_url')
       .eq('archived', false)
+      .eq('show_in_store', true)
       .or(`name.ilike.%${safePhrase}%,description.ilike.%${safePhrase}%,enriched_text.ilike.%${safePhrase}%`)
       .limit(limit)
 
@@ -374,6 +375,7 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
       .from('products_cache')
       .select('id, name, description, price_per_day, deposit, photo_url')
       .eq('archived', false)
+      .eq('show_in_store', true)
       .ilike('name', `%${anchor}%`)
       .limit(limit)
 

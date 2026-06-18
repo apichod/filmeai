@@ -18,13 +18,17 @@ export async function GET() {
     const { count, error: countErr } = await supabase
       .from('products_cache')
       .select('*', { count: 'exact', head: true })
+      .eq('archived', false)
+      .eq('show_in_store', true)
 
     if (countErr) return NextResponse.json({ error: countErr.message }, { status: 500 })
 
     const { data: latest, error: latestErr } = await supabase
       .from('products_cache')
-      .select('updated_at')
-      .order('updated_at', { ascending: false })
+      .select('last_synced_at')
+      .eq('archived', false)
+      .eq('show_in_store', true)
+      .order('last_synced_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
@@ -32,7 +36,7 @@ export async function GET() {
 
     return NextResponse.json({
       count: count ?? 0,
-      lastSync: latest?.updated_at ?? null,
+      lastSync: latest?.last_synced_at ?? null,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

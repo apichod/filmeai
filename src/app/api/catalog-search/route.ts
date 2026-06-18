@@ -107,6 +107,7 @@ export async function GET(req: NextRequest) {
       .from('products_cache')
       .select('id, name, description, price_per_day, deposit, photo_url')
       .eq('archived', false)
+      .eq('show_in_store', true)
       .ilike('name', `%${q}%`)
       .limit(8)
     return NextResponse.json(dedupeCatalogResults(sortCatalogResults((data || []) as CatalogProduct[], q.trim())))
