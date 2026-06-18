@@ -1,10 +1,13 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { DEFAULT_CHAT_SYSTEM_PROMPT, DEFAULT_QUOTE_BACKEND_PROMPT, normalizeEditablePrompt } from '@/lib/defaultAssistantPrompts'
 
 type Settings = {
   language: string
   greeting_message: string
   internal_persona: string
+  chat_system_prompt: string
+  quote_backend_prompt: string
   forbidden_topics: string[]
 }
 
@@ -12,6 +15,8 @@ const defaults: Settings = {
   language: 'fr',
   greeting_message: '',
   internal_persona: '',
+  chat_system_prompt: DEFAULT_CHAT_SYSTEM_PROMPT,
+  quote_backend_prompt: DEFAULT_QUOTE_BACKEND_PROMPT,
   forbidden_topics: [],
 }
 
@@ -21,11 +26,21 @@ export default function AssistantBehaviorPage() {
   const [topicInput, setTopicInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
 
   const load = useCallback(() => {
     fetch('/api/assistant-settings')
       .then(r => r.json())
-      .then((d: { settings?: Settings }) => { if (d.settings) setS(prev => ({ ...prev, ...d.settings })) })
+      .then((d: { settings?: Partial<Settings> }) => {
+        if (!d.settings) return
+        setS(prev => ({
+          ...prev,
+          ...d.settings,
+          chat_system_prompt: normalizeEditablePrompt(d.settings?.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT),
+          quote_backend_prompt: normalizeEditablePrompt(d.settings?.quote_backend_prompt, DEFAULT_QUOTE_BACKEND_PROMPT),
+          forbidden_topics: Array.isArray(d.settings?.forbidden_topics) ? d.settings.forbidden_topics : prev.forbidden_topics,
+        }))
+      })
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -47,18 +62,28 @@ export default function AssistantBehaviorPage() {
 
   async function save() {
     setSaving(true)
-    await fetch('/api/assistant-settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(s),
-    })
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSaved(false)
+    setError('')
+
+    try {
+      const res = await fetch('/api/assistant-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(s),
+      })
+      const data = await res.json() as { error?: string }
+      if (!res.ok) throw new Error(data.error || 'Sauvegarde impossible.')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sauvegarde impossible.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-5xl space-y-5">
 
       {/* Messages */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
@@ -104,6 +129,68 @@ export default function AssistantBehaviorPage() {
         </div>
       </div>
 
+      {/* Prompts avancés */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Prompts avancés</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Ces instructions sont utilisées côté backend. À modifier prudemment : le prompt devis doit conserver une sortie JSON exploitable.
+          </p>
+        </div>
+
+        <div>
+          <div className="flex items-start justify-between gap-4 mb-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Prompt côté chat</label>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Utilisé par l&apos;assistant conversationnel pour collecter les informations, poser les bonnes questions et déclencher les outils.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => set('chat_system_prompt', DEFAULT_CHAT_SYSTEM_PROMPT)}
+              className="shrink-0 text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50"
+            >
+              Réinitialiser
+            </button>
+          </div>
+          <textarea
+            value={s.chat_system_prompt}
+            onChange={e => set('chat_system_prompt', e.target.value)}
+            rows={16}
+            spellCheck={false}
+            className="w-full font-mono border border-gray-200 rounded-lg px-3 py-2 text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-black resize-y"
+          />
+          <p className="mt-1 text-[11px] text-gray-400">{s.chat_system_prompt.length.toLocaleString('fr-FR')} caractères</p>
+        </div>
+
+        <div>
+          <div className="flex items-start justify-between gap-4 mb-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Prompt côté devis automatique</label>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Contient deux sections : extraction de liste puis reranking catalogue. Garde idéalement les séparateurs si tu modifies le prompt.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => set('quote_backend_prompt', DEFAULT_QUOTE_BACKEND_PROMPT)}
+              className="shrink-0 text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50"
+            >
+              Réinitialiser
+            </button>
+          </div>
+          <textarea
+            value={s.quote_backend_prompt}
+            onChange={e => set('quote_backend_prompt', e.target.value)}
+            rows={22}
+            spellCheck={false}
+            className="w-full font-mono border border-gray-200 rounded-lg px-3 py-2 text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-black resize-y"
+          />
+          <p className="mt-1 text-[11px] text-gray-400">{s.quote_backend_prompt.length.toLocaleString('fr-FR')} caractères</p>
+        </div>
+      </div>
+
       {/* Garde-fous */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
         <div>
@@ -141,10 +228,17 @@ export default function AssistantBehaviorPage() {
         </div>
       </div>
 
-      <button onClick={save} disabled={saving}
-        className="bg-black text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50">
-        {saved ? 'Sauvegardé ✓' : saving ? 'Sauvegarde…' : 'Sauvegarder'}
-      </button>
+      <div className="space-y-2">
+        {error && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            Erreur : {error}
+          </p>
+        )}
+        <button onClick={save} disabled={saving}
+          className="bg-black text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50">
+          {saved ? 'Sauvegardé ✓' : saving ? 'Sauvegarde…' : 'Sauvegarder'}
+        </button>
+      </div>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { DEFAULT_CHAT_SYSTEM_PROMPT, DEFAULT_QUOTE_BACKEND_PROMPT, normalizeEditablePrompt } from '@/lib/defaultAssistantPrompts'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -78,6 +79,11 @@ type ConversationPatch = {
   booqable_order_id?: string | null
   booqable_order_url?: string | null
   updated_at?: string
+}
+
+type AssistantPromptSettings = {
+  chat_system_prompt?: string | null
+  quote_backend_prompt?: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -251,6 +257,36 @@ async function getDefaultOrganizationId(supabase: SupabaseAdmin): Promise<string
   return created.id as string
 }
 
+async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
+  chatSystemPrompt: string
+  quoteBackendPrompt: string
+}> {
+  try {
+    const organizationId = await getDefaultOrganizationId(supabase)
+    const { data, error } = await supabase
+      .from('assistant_settings')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) throw error
+
+    const settings = (data || {}) as AssistantPromptSettings
+    return {
+      chatSystemPrompt: normalizeEditablePrompt(settings.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT),
+      quoteBackendPrompt: normalizeEditablePrompt(settings.quote_backend_prompt, DEFAULT_QUOTE_BACKEND_PROMPT),
+    }
+  } catch (err) {
+    console.warn('Assistant prompt settings fallback:', err instanceof Error ? err.message : String(err))
+    return {
+      chatSystemPrompt: DEFAULT_CHAT_SYSTEM_PROMPT,
+      quoteBackendPrompt: DEFAULT_QUOTE_BACKEND_PROMPT,
+    }
+  }
+}
+
 async function saveConversationExchange({
   messages,
   sessionData,
@@ -368,12 +404,12 @@ async function hybridSearch(query: string, limit = 10): Promise<Product[]> {
   return (data || []) as Product[]
 }
 
-async function parseQuoteList(req: NextRequest, message: string): Promise<QuoteParseItem[]> {
+async function parseQuoteList(req: NextRequest, message: string, quoteBackendPrompt: string): Promise<QuoteParseItem[]> {
   const url = new URL('/api/parse-request', req.url)
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, quoteBackendPrompt }),
     cache: 'no-store',
   })
 
@@ -406,38 +442,6 @@ function buildQuoteWorkflowResponse(items: QuoteParseItem[], hasDates: boolean):
   return parts.join('\n')
 }
 
-// ── System prompt ─────────────────────────────────────────────────────────────
-
-const SYSTEM_PROMPT = `Tu es l'assistant IA de Filme, loueur de matériel audiovisuel à Montreuil (Paris / Île-de-France).
-Tu aides les visiteurs à obtenir un devis rapidement.
-
-FLOW STANDARD :
-1. Accueille le visiteur.
-2. Collecte ces infos UNE PAR UNE : prénom/nom, email, matériel souhaité.
-3. Si le client veut faire un devis sur liste, demande-lui de coller la liste avec quantités. Les dates peuvent venir après la validation catalogue.
-4. Quand tu as une demande produit simple, émets : [SEARCH: terme de recherche principal]
-5. Quand les produits sont affichés et le client confirme explicitement la liste validée, émets : [CREATE_QUOTE]
-
-STYLE POUR UNE DEMANDE DEVIS SUR LISTE :
-- Commence par : "Avec plaisir ! Collez votre liste de matériel..." si la liste n'est pas encore fournie.
-- Une fois la liste fournie, sois court : "Je regarde ce qui est disponible dans notre catalogue !"
-- Ne réécris pas toute la liste client en prose.
-- Explique ensuite les lignes trouvées et les lignes à préciser.
-- N'invente jamais de prix ou de produit.
-- Ne donne pas de prix pendant la première étape de matching catalogue. Les prix et disponibilités se vérifient après validation de la liste et des dates.
-
-RÈGLES :
-- Réponds toujours en français.
-- Sois concis, professionnel et chaleureux.
-- Une seule question à la fois.
-- Si plusieurs produits sont demandés en liste, le backend analysera chaque ligne : ne lance pas une recherche unique globale.
-- N’émets JAMAIS [CREATE_QUOTE] après une simple précision comme "1/4" ou "Sony". Attends une validation claire : "je confirme", "valider le devis", "crée le devis avec cette liste".
-
-INFOS FILME :
-- Site : filme.fr | Email : bonjour@filme.fr
-- Spécialité : caméra, optique, lumière, son, grip, accessoires cinéma
-- Livraison Paris et Île-de-France`
-
 // ── API route ─────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -456,9 +460,10 @@ export async function POST(req: NextRequest) {
       : isBrandClarification(lastUserText) && previousLooksLikeQuoteList
         ? `${previousUserText}\nPrécision client : ${lastUserText}`
         : ''
+    const { chatSystemPrompt, quoteBackendPrompt } = await getAssistantPromptSettings(getSupabaseAdmin())
 
     const openaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: chatSystemPrompt },
       ...incomingMessages,
     ]
 
@@ -498,7 +503,7 @@ export async function POST(req: NextRequest) {
 
             let items: QuoteParseItem[] = []
             try {
-              items = await parseQuoteList(req, quoteRequestText)
+              items = await parseQuoteList(req, quoteRequestText, quoteBackendPrompt)
             } finally {
               clearInterval(progressTimer)
             }

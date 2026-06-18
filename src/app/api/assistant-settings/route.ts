@@ -27,6 +27,8 @@ const ALLOWED_FIELDS = new Set([
   'language',
   'greeting_message',
   'internal_persona',
+  'chat_system_prompt',
+  'quote_backend_prompt',
   'forbidden_topics',
 
   // Conditions
