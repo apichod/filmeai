@@ -181,6 +181,8 @@
     .filmeai-estimate-total-row { display:flex; justify-content:space-between; gap:10px; font-size:12px; color:#6b7280; }
     .filmeai-estimate-total-row.strong { color:#111827; font-weight:800; font-size:14px; }
     .filmeai-estimate-footer { margin-top:10px; font-size:11.5px; color:#6b7280; line-height:1.35; }
+    .filmeai-estimate-cta { margin-top:10px; width:100%; border:none; border-radius:10px; padding:10px 12px; background:#111827; color:white; cursor:pointer; font-size:13px; font-weight:800; }
+    .filmeai-estimate-cta:hover { background:#000; }
     @media (max-width: 400px) {
       #filmeai-panel { width: calc(100vw - 24px); right: 12px; bottom: 84px; }
     }
@@ -930,8 +932,15 @@
     html += '<div class="filmeai-estimate-total-row strong"><span>Total TTC estimé</span><strong>' + formatMoney(estimate.total || 0) + '</strong></div>';
     html += '</div>';
     html += '<div class="filmeai-estimate-footer">Cette estimation n’est pas encore envoyée. Les disponibilités et les lignes “Intervention Filme” seront validées par l’équipe Filme.</div>';
+    html += '<button type="button" class="filmeai-estimate-cta" data-action="estimate-continue">Continuer — recevoir mon devis</button>';
 
     card.innerHTML = html;
+    var cta = card.querySelector('[data-action="estimate-continue"]');
+    if (cta) {
+      cta.addEventListener('click', function() {
+        sendText('Je souhaite recevoir le devis avec cette estimation.');
+      });
+    }
     messagesEl.appendChild(card);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }

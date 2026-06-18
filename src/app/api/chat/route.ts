@@ -86,6 +86,7 @@ type AvailabilityCheck = {
 type QuoteEstimateLine = {
   id: string
   productId: string | null
+  sourceType: 'product_group' | 'bundle' | null
   title: string
   requestedName: string
   section: string | null
@@ -113,6 +114,15 @@ type QuoteEstimate = {
   total: number
   interventionCount: number
   status: 'pending_validation'
+}
+
+type CreateQuoteResponse = {
+  success?: boolean
+  orderId?: string
+  orderUrl?: string
+  customerId?: string
+  conversationId?: string | null
+  error?: string
 }
 
 type ConversationPatch = {
@@ -461,6 +471,19 @@ function isAvailabilityContinuation(text: string): boolean {
     .trim()
 
   return /^(j attends|jattends|ok|okay|d accord|daccord|parfait|tres bien|ca marche|go|allez y|vous pouvez|je vous laisse|faites|faites le|lancez|lancez la verification|lancer la verification|verifiez)(\s|[.!?])*$/i.test(normalized)
+}
+
+function isEstimateDeliveryRequest(text: string): boolean {
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return /\b(recevoir|envoyer|continuer|valider|confirmer|transmettre)\b.*\b(devis|estimation|demande)\b/.test(normalized) ||
+    /\bje souhaite recevoir le devis\b/.test(normalized)
 }
 
 function compactDescription(value: string | null): string {
@@ -1046,6 +1069,7 @@ async function buildQuoteEstimate(sessionData: SessionData): Promise<QuoteEstima
     return {
       id: `${index}-${selectedProductId || requestedName}`,
       productId: requiresFilmeIntervention ? null : product?.id || null,
+      sourceType: requiresFilmeIntervention ? null : product?.source_type || null,
       title: requiresFilmeIntervention ? requestedName : product?.name || requestedName,
       requestedName,
       section: typeof record.section === 'string' ? record.section : null,
@@ -1078,6 +1102,53 @@ async function buildQuoteEstimate(sessionData: SessionData): Promise<QuoteEstima
     interventionCount: lines.filter(line => line.requiresFilmeIntervention).length,
     status: 'pending_validation',
   }
+}
+
+function estimateLinesForQuote(estimate: QuoteEstimate) {
+  return estimate.lines.map((line, index) => ({
+    type: line.requiresFilmeIntervention || !line.productId ? 'custom_charge' : 'product',
+    sourceType: line.sourceType,
+    productId: line.productId || undefined,
+    quantity: line.quantity,
+    name: line.title,
+    title: line.title,
+    requestedName: line.requestedName,
+    section: line.section,
+    position: index + 1,
+    unitPrice: line.unitPrice,
+    deposit: line.deposit,
+    availabilityStatus: line.availabilityStatus,
+    availabilityLabel: line.availabilityLabel,
+    availableQuantity: line.availableQuantity,
+  }))
+}
+
+async function createQuoteFromEstimate(req: NextRequest, sessionData: SessionData, estimate: QuoteEstimate): Promise<CreateQuoteResponse> {
+  if (!sessionData.customerEmail) throw new Error('Il manque votre email pour envoyer le devis.')
+  if (!estimate.startsAt || !estimate.stopsAt) throw new Error('Il manque les dates de location.')
+
+  const res = await fetch(new URL('/api/create-quote', req.url), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customer: {
+        name: sessionData.customerName || sessionData.customerEmail,
+        email: sessionData.customerEmail,
+        phone: sessionData.customerPhone || undefined,
+      },
+      startsAt: estimate.startsAt,
+      stopsAt: estimate.stopsAt,
+      items: estimateLinesForQuote(estimate),
+    }),
+    cache: 'no-store',
+  })
+
+  const payload = await res.json() as CreateQuoteResponse
+  if (!res.ok || payload.error) {
+    throw new Error(payload.error || `Création du devis impossible (${res.status})`)
+  }
+
+  return payload
 }
 
 // ── API route ─────────────────────────────────────────────────────────────────
@@ -1141,13 +1212,24 @@ export async function POST(req: NextRequest) {
             ? `\n${estimate.interventionCount} ligne${estimate.interventionCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront créées en ligne custom pour ne pas bloquer le devis.`
             : ''
           const availabilityText = `\nDisponibilités : ${availableCount} disponible${availableCount > 1 ? 's' : ''}, ${limitedCount} limitée${limitedCount > 1 ? 's' : ''}, ${unavailableCount} indisponible${unavailableCount > 1 ? 's' : ''}.`
-          return `Voilà une première estimation ${estimate.dateLabel}.${availabilityText}${interventionText}\n\nLe détail est sur la carte ci-dessous. Les indisponibilités sont informatives et ne bloquent pas la création du devis.`
+          return `Voilà une première estimation ${estimate.dateLabel}.${availabilityText}${interventionText}\n\nLe détail de disponibilité est indiqué produit par produit sur la carte ci-dessous. Si tout vous convient, cliquez sur “Continuer — recevoir mon devis”.`
         }
 
         try {
           // ── Dates seules après matching catalogue : on complète le brouillon,
           // sans relancer l'extraction produit.
-          if (lastIsDateOnly && hasQuoteDraft(sessionData)) {
+          if (isEstimateDeliveryRequest(lastUserText) && hasQuoteDraft(sessionData) && sessionData.startsAt && sessionData.stopsAt) {
+            send({ type: 'progress', step: 'create_quote', message: 'Préparation de votre demande de devis…' })
+            const estimate = await buildQuoteEstimate(sessionData)
+            const created = await createQuoteFromEstimate(req, sessionData, estimate)
+            booqableOrderId = created.orderId || null
+            booqableOrderUrl = created.orderUrl || null
+            send({ type: 'quote_created', orderId: created.orderId, customerId: created.customerId, quoteUrl: created.orderUrl })
+
+            const responseText = `✅ Votre demande de devis est enregistrée. Vous recevrez une confirmation à ${sessionData.customerEmail}.\n\nLes lignes indisponibles ou à vérifier ont été transmises en intervention Filme, sans bloquer la demande.`
+            fullResponse += responseText
+            send({ type: 'delta', content: responseText })
+          } else if (lastIsDateOnly && hasQuoteDraft(sessionData)) {
             const introText = `Parfait, j’ai noté les dates ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}. Je garde la liste produit déjà préparée.\n\nJe lance la vérification des disponibilités et des prix.`
             fullResponse += introText
             send({ type: 'delta', content: introText })
