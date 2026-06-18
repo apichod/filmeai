@@ -28,6 +28,9 @@ type QuoteItem = {
   type?: 'product' | 'custom_charge' | 'section'
   sourceType?: 'product_group' | 'bundle' | null
   productId?: string
+  availabilityStatus?: 'available' | 'limited' | 'unavailable' | 'unknown'
+  availabilityLabel?: string | null
+  availableQuantity?: number | null
   quantity?: number
   name?: string
   title?: string
@@ -123,6 +126,8 @@ function quantityOf(item: QuoteItem) {
 function lineNotes(item: QuoteItem, extra?: string) {
   return [
     extra,
+    item.availabilityStatus ? `Disponibilité : ${item.availabilityLabel || item.availabilityStatus}` : null,
+    item.availableQuantity !== undefined && item.availableQuantity !== null ? `Quantité disponible détectée : ${item.availableQuantity}` : null,
     item.requestedName ? `Produit demandé : ${item.requestedName}` : null,
     item.name ? `Produit suggéré : ${item.name}` : null,
     item.productId ? `ID catalogue FilmeAI : ${item.productId}` : null,
@@ -141,9 +146,15 @@ function quoteLineTitle(item: QuoteItem) {
   return cleanTitle(item.title || item.name || item.requestedName, item.type === 'section' ? 'Section' : 'Produit à vérifier')
 }
 
+function shouldUseCustomChargeForAvailability(item: QuoteItem) {
+  return item.availabilityStatus === 'unavailable' || item.availabilityStatus === 'limited'
+}
+
 function buildStoredQuoteItems(items: QuoteItem[], days: number) {
   return (items || []).map((item, index) => {
-    const type = item.type || (item.productId ? 'product' : 'custom_charge')
+    const type = shouldUseCustomChargeForAvailability(item)
+      ? 'custom_charge'
+      : item.type || (item.productId ? 'product' : 'custom_charge')
     const quantity = type === 'section' ? 1 : quantityOf(item)
     const unitPrice = Number(item.unitPrice || 0)
     const deposit = Number(item.deposit || 0)
@@ -163,6 +174,9 @@ function buildStoredQuoteItems(items: QuoteItem[], days: number) {
       quantity,
       unitPrice,
       deposit,
+      availabilityStatus: item.availabilityStatus || null,
+      availabilityLabel: item.availabilityLabel || null,
+      availableQuantity: item.availableQuantity ?? null,
       lineTotal,
       lineDeposit,
     }
@@ -633,13 +647,16 @@ async function createCustomLine({
   const key = process.env.BOOQABLE_API_KEY
   const v4 = `https://${subdomain}.booqable.com/api/4`
   const title = cleanTitle(item.title || item.name || item.requestedName, lineType === 'section' ? 'Section' : 'Produit à vérifier')
+  const customReason = shouldUseCustomChargeForAvailability(item)
+    ? 'Ligne custom créée par FilmeAI car le produit semble indisponible ou en quantité insuffisante sur les dates demandées. À vérifier et chiffrer dans Booqable.'
+    : 'Ligne custom créée par FilmeAI car la correspondance catalogue est incertaine. À vérifier et chiffrer dans Booqable.'
   const attributes: JsonObject = {
     line_type: lineType,
     title,
     quantity: lineType === 'section' ? 1 : quantityOf(item),
     ...(lineType === 'charge' ? {
       price_each_in_cents: 0,
-      extra_information: lineNotes(item, 'Ligne custom créée par FilmeAI car la correspondance catalogue est incertaine. À vérifier et chiffrer dans Booqable.'),
+      extra_information: lineNotes(item, customReason),
     } : {}),
   }
 
@@ -783,7 +800,9 @@ async function postOrderFulfillmentAction(action: JsonObject, context: string) {
 async function bookProductById(orderId: string, productId: string, quantity: number, context: string) {
   await postOrderFulfillmentAction({
     order_id: orderId,
-    confirm_shortage: true,
+    // Ne force pas les ruptures : si Booqable refuse par manque de stock,
+    // FilmeAI bascule la ligne en custom charge pour ne pas bloquer le devis.
+    confirm_shortage: false,
     actions: [
       {
         action: 'book_product',
@@ -833,7 +852,7 @@ async function bookBundleById(orderId: string, item: QuoteItem, bundleId: string
     try {
       await postOrderFulfillmentAction({
         order_id: orderId,
-        confirm_shortage: true,
+        confirm_shortage: false,
         actions: [attempt.action],
       }, `${attempt.label} ${item.name || item.requestedName || item.productId}`)
       return
@@ -889,9 +908,10 @@ async function createProductLineOrCustomFallback({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (resolved.kind === 'bundle') {
-        throw new Error(`Bundle non créé dans Booqable : ${item.name || item.requestedName || item.productId}. ${message}`)
+        console.warn('Booqable bundle failed, creating custom charge:', message)
+      } else {
+        console.warn('Booqable book item failed, creating custom charge:', message)
       }
-      console.warn('Booqable book item failed, creating custom charge:', message)
     }
   }
 
@@ -944,7 +964,9 @@ export async function POST(req: NextRequest) {
     // Real products are created via /api/4/order_fulfillments.
     // Custom charges/sections are only used when we cannot resolve or book the item.
     for (const item of items || []) {
-      const type = item.type || (item.productId ? 'product' : 'custom_charge')
+      const type = shouldUseCustomChargeForAvailability(item)
+        ? 'custom_charge'
+        : item.type || (item.productId ? 'product' : 'custom_charge')
 
       if (type === 'section') {
         await createCustomLine({ orderId, item, lineType: 'section' })

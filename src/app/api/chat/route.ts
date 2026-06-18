@@ -75,6 +75,14 @@ type SelectionResult = {
   response?: string
 }
 
+type AvailabilityStatus = 'available' | 'limited' | 'unavailable' | 'unknown'
+
+type AvailabilityCheck = {
+  status: AvailabilityStatus
+  label: string
+  availableQuantity: number | null
+}
+
 type QuoteEstimateLine = {
   id: string
   productId: string | null
@@ -88,6 +96,9 @@ type QuoteEstimateLine = {
   lineDeposit: number
   isBundle: boolean
   bundleItems: string[]
+  availabilityStatus: AvailabilityStatus
+  availabilityLabel: string
+  availableQuantity: number | null
   requiresFilmeIntervention: boolean
 }
 
@@ -761,6 +772,236 @@ function productFromUnknown(value: unknown): Product | null {
   }
 }
 
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function resourceId(resource: unknown): string | null {
+  const obj = asObject(resource)
+  return obj ? stringFromUnknown(obj.id) || null : null
+}
+
+function resourceType(resource: unknown): string | null {
+  const obj = asObject(resource)
+  return obj ? stringFromUnknown(obj.type) || null : null
+}
+
+function relationshipData(resource: unknown, name: string): unknown[] {
+  const obj = asObject(resource)
+  const relationships = obj ? asObject(obj.relationships) : null
+  const relation = relationships ? asObject(relationships[name]) : null
+  const data = relation ? relation.data : null
+  return Array.isArray(data) ? data : data ? [data] : []
+}
+
+function attrNumber(resource: unknown, name: string): number | null {
+  const obj = asObject(resource)
+  const attrs = obj ? asObject(obj.attributes) : null
+  const direct = obj ? numberFromUnknown(obj[name]) : 0
+  if (direct) return direct
+  const nested = attrs ? numberFromUnknown(attrs[name]) : 0
+  return nested || null
+}
+
+function productBelongsToGroup(resource: unknown, productGroupId: string): boolean {
+  const obj = asObject(resource)
+  if (!obj) return false
+
+  if (stringFromUnknown(obj.product_group_id) === productGroupId) return true
+
+  const attrs = asObject(obj.attributes)
+  if (attrs && stringFromUnknown(attrs.product_group_id) === productGroupId) return true
+
+  return relationshipData(resource, 'product_group').some(rel => resourceId(rel) === productGroupId)
+}
+
+function productIdFromPayload(payload: unknown, productGroupId?: string): string | null {
+  const root = asObject(payload)
+  if (!root) return null
+
+  const product = asObject(root.product)
+  if (product) {
+    if (productGroupId && stringFromUnknown(product.product_group_id) !== productGroupId) return null
+    return stringFromUnknown(product.id) || null
+  }
+
+  const products = asArray(root.products)
+  if (products.length) {
+    if (productGroupId) {
+      const exact = products.find(candidate => productBelongsToGroup(candidate, productGroupId))
+      return resourceId(exact)
+    }
+    return resourceId(products[0])
+  }
+
+  const data = root.data
+  const dataArray = Array.isArray(data) ? data : data ? [data] : []
+  const directProduct = dataArray.find(resource => {
+    const type = resourceType(resource)
+    if (type !== 'products' && type !== 'product') return false
+    return productGroupId ? productBelongsToGroup(resource, productGroupId) : true
+  })
+  if (directProduct) return resourceId(directProduct)
+
+  for (const resource of dataArray) {
+    const relProducts = relationshipData(resource, 'products')
+    if (relProducts.length) return resourceId(relProducts[0])
+  }
+
+  const includedProduct = asArray(root.included).find(resource => {
+    const type = resourceType(resource)
+    if (type !== 'products' && type !== 'product') return false
+    return productGroupId ? productBelongsToGroup(resource, productGroupId) : true
+  })
+
+  return resourceId(includedProduct)
+}
+
+function booqableV4Base(): string | null {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  return subdomain ? `https://${subdomain}.booqable.com/api/4` : null
+}
+
+function booqableV1Base(): string | null {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  return subdomain ? `https://${subdomain}.booqable.com/api/1` : null
+}
+
+function booqableV4Headers(): Record<string, string> | null {
+  const key = process.env.BOOQABLE_API_KEY
+  return key ? { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } : null
+}
+
+async function fetchBooqableJsonOrNull(url: string, headers: Record<string, string>): Promise<unknown | null> {
+  try {
+    const res = await fetch(url, { headers, cache: 'no-store' })
+    if (!res.ok) return null
+    const text = await res.text()
+    return text.trim() ? JSON.parse(text) as unknown : null
+  } catch (error) {
+    console.warn('Booqable availability fetch failed:', error instanceof Error ? error.message : String(error))
+    return null
+  }
+}
+
+async function productIdForProductGroup(productGroupId: string): Promise<string | null> {
+  const key = process.env.BOOQABLE_API_KEY
+  const v4 = booqableV4Base()
+  const v1 = booqableV1Base()
+  const v4Headers = booqableV4Headers()
+  if (!key || !v4 || !v1 || !v4Headers) return null
+
+  const productGroupV4 = await fetchBooqableJsonOrNull(`${v4}/product_groups/${productGroupId}?include=products`, v4Headers)
+  const productFromGroup = productIdFromPayload(productGroupV4, productGroupId)
+  if (productFromGroup) return productFromGroup
+
+  const productsByGroupV4 = await fetchBooqableJsonOrNull(`${v4}/products?filter[product_group_id]=${productGroupId}&page[size]=25`, v4Headers)
+  const productFromFilterV4 = productIdFromPayload(productsByGroupV4, productGroupId)
+  if (productFromFilterV4) return productFromFilterV4
+
+  const productGroupV1 = await fetchBooqableJsonOrNull(`${v1}/product_groups/${productGroupId}?api_key=${key}`, { 'Content-Type': 'application/json' })
+  const productFromGroupV1 = productIdFromPayload(productGroupV1, productGroupId)
+  if (productFromGroupV1) return productFromGroupV1
+
+  const productsByGroupV1 = await fetchBooqableJsonOrNull(`${v1}/products?api_key=${key}&product_group_id=${productGroupId}&per=25`, { 'Content-Type': 'application/json' })
+  return productIdFromPayload(productsByGroupV1, productGroupId)
+}
+
+function formatBooqableDateTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (num: number) => String(num).padStart(2, '0')
+  return [
+    date.getUTCFullYear(),
+    '-',
+    pad(date.getUTCMonth() + 1),
+    '-',
+    pad(date.getUTCDate()),
+    ' ',
+    pad(date.getUTCHours()),
+    ':',
+    pad(date.getUTCMinutes()),
+    ':',
+    pad(date.getUTCSeconds()),
+    ' UTC',
+  ].join('')
+}
+
+async function fetchInventoryRows(itemId: string, startsAt: string, stopsAt: string): Promise<unknown[]> {
+  const v4 = booqableV4Base()
+  const headers = booqableV4Headers()
+  if (!v4 || !headers) return []
+
+  const url = new URL(`${v4}/inventory_levels`)
+  url.searchParams.set('filter[from]', formatBooqableDateTime(startsAt))
+  url.searchParams.set('filter[till]', formatBooqableDateTime(stopsAt))
+  url.searchParams.set('filter[item_id]', itemId)
+
+  const payload = await fetchBooqableJsonOrNull(url.toString(), headers)
+  const root = asObject(payload)
+  return root ? asArray(root.data) : []
+}
+
+function availabilityFromRows(rows: unknown[], requestedQuantity: number): AvailabilityCheck {
+  if (rows.length === 0) {
+    return { status: 'unknown', label: 'Disponibilité à confirmer', availableQuantity: null }
+  }
+
+  const available = rows.reduce<number>((sum, row) => sum + (attrNumber(row, 'location_available') || 0), 0)
+
+  if (available >= requestedQuantity) {
+    return {
+      status: 'available',
+      label: `Disponible (${available})`,
+      availableQuantity: available,
+    }
+  }
+
+  if (available > 0) {
+    return {
+      status: 'limited',
+      label: `Disponibilité limitée (${available}/${requestedQuantity})`,
+      availableQuantity: available,
+    }
+  }
+
+  return {
+    status: 'unavailable',
+    label: 'Indisponible sur ces dates',
+    availableQuantity: 0,
+  }
+}
+
+async function checkProductAvailability(
+  product: Product | null,
+  startsAt: string | null | undefined,
+  stopsAt: string | null | undefined,
+  quantity: number
+): Promise<AvailabilityCheck> {
+  if (!product || !startsAt || !stopsAt) {
+    return { status: 'unknown', label: 'Disponibilité à confirmer', availableQuantity: null }
+  }
+
+  let rows = await fetchInventoryRows(product.id, startsAt, stopsAt)
+
+  // Les product_groups sont indexés pour la recherche, mais l’inventaire
+  // Booqable est souvent calculé sur le product concret.
+  if (rows.length === 0 && product.source_type !== 'bundle') {
+    const concreteProductId = await productIdForProductGroup(product.id)
+    if (concreteProductId && concreteProductId !== product.id) {
+      rows = await fetchInventoryRows(concreteProductId, startsAt, stopsAt)
+    }
+  }
+
+  return availabilityFromRows(rows, quantity)
+}
+
 async function buildQuoteEstimate(sessionData: SessionData): Promise<QuoteEstimate> {
   const days = quoteCalendarDays(sessionData.startsAt, sessionData.stopsAt)
   const quoteMatches = Array.isArray(sessionData.quoteMatches) ? sessionData.quoteMatches : []
@@ -780,7 +1021,7 @@ async function buildQuoteEstimate(sessionData: SessionData): Promise<QuoteEstima
   if (productIds.length > 0) {
     const { data } = await supabase
       .from('products_cache')
-      .select('id, name, description, price_per_day, deposit, photo_url, source_type')
+      .select('id, name, description, price_per_day, deposit, photo_url, source_type, bundle_items')
       .in('id', Array.from(new Set(productIds)))
 
     for (const product of (data || []) as Product[]) {
@@ -788,14 +1029,16 @@ async function buildQuoteEstimate(sessionData: SessionData): Promise<QuoteEstima
     }
   }
 
-  const lines: QuoteEstimateLine[] = quoteMatches.map((item, index) => {
+  const lines: QuoteEstimateLine[] = await Promise.all(quoteMatches.map(async (item, index) => {
     const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
     const requestedName = stringFromUnknown(record.requestedName) || stringFromUnknown(record.searchQuery) || 'Produit à vérifier'
     const selectedProductId = stringFromUnknown(record.selectedProductId)
     const matched = productFromUnknown(record.matched)
     const product = (selectedProductId && productById.get(selectedProductId)) || matched
     const quantity = Math.max(1, Math.round(numberFromUnknown(record.quantity) || 1))
-    const requiresFilmeIntervention = record.leaveToFilme === true || !product || !selectedProductId
+    const availability = await checkProductAvailability(product, sessionData.startsAt, sessionData.stopsAt, quantity)
+    const unavailableOrShort = availability.status === 'unavailable' || availability.status === 'limited'
+    const requiresFilmeIntervention = record.leaveToFilme === true || !product || !selectedProductId || unavailableOrShort
     const unitPrice = requiresFilmeIntervention ? 0 : numberFromUnknown(product?.price_per_day)
     const deposit = requiresFilmeIntervention ? 0 : numberFromUnknown(product?.deposit)
     const bundleItems = Array.isArray(product?.bundle_items) ? product!.bundle_items || [] : []
@@ -813,9 +1056,12 @@ async function buildQuoteEstimate(sessionData: SessionData): Promise<QuoteEstima
       lineDeposit: deposit * quantity,
       isBundle: Boolean(product?.is_bundle || (product?.bundle_items || []).length > 0 || /\bpack\b/i.test(product?.name || '')),
       bundleItems,
+      availabilityStatus: availability.status,
+      availabilityLabel: availability.label,
+      availableQuantity: availability.availableQuantity,
       requiresFilmeIntervention,
     }
-  })
+  }))
 
   const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0)
   const deposit = lines.reduce((sum, line) => sum + line.lineDeposit, 0)
@@ -905,10 +1151,14 @@ export async function POST(req: NextRequest) {
             const estimate = await buildQuoteEstimate(sessionData)
             send({ type: 'quote_estimate', estimate })
 
+            const unavailableCount = estimate.lines.filter(line => line.availabilityStatus === 'unavailable').length
+            const limitedCount = estimate.lines.filter(line => line.availabilityStatus === 'limited').length
+            const availableCount = estimate.lines.filter(line => line.availabilityStatus === 'available').length
             const interventionText = estimate.interventionCount > 0
-              ? `\n${estimate.interventionCount} ligne${estimate.interventionCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront vérifiées à la main.`
+              ? `\n${estimate.interventionCount} ligne${estimate.interventionCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront créées en ligne custom pour ne pas bloquer le devis.`
               : ''
-            const responseText = `Voilà une première estimation ${estimate.dateLabel}.${interventionText}\n\nLe détail est sur la carte ci-dessous. Cette estimation reste à confirmer après vérification finale des disponibilités par l’équipe Filme.`
+            const availabilityText = `\nDisponibilités : ${availableCount} disponible${availableCount > 1 ? 's' : ''}, ${limitedCount} limitée${limitedCount > 1 ? 's' : ''}, ${unavailableCount} indisponible${unavailableCount > 1 ? 's' : ''}.`
+            const responseText = `Voilà une première estimation ${estimate.dateLabel}.${availabilityText}${interventionText}\n\nLe détail est sur la carte ci-dessous. Les indisponibilités sont informatives et ne bloquent pas la création du devis.`
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
           } else if (quoteRequestText) {

@@ -159,6 +159,15 @@
     .filmeai-estimate-line-meta { font-size:11px; color:#6b7280; margin-top:1px; }
     .filmeai-estimate-line-price { font-size:12.5px; font-weight:800; text-align:right; white-space:nowrap; }
     .filmeai-estimate-manual { color:#b45309; font-weight:700; }
+    .filmeai-estimate-availability { display:inline-flex; align-items:center; gap:5px; margin-top:3px; font-size:10.5px; font-weight:700; }
+    .filmeai-estimate-availability:before { content:''; width:7px; height:7px; border-radius:999px; background:#9ca3af; display:inline-block; }
+    .filmeai-estimate-availability.available { color:#15803d; }
+    .filmeai-estimate-availability.available:before { background:#22c55e; }
+    .filmeai-estimate-availability.limited { color:#b45309; }
+    .filmeai-estimate-availability.limited:before { background:#f59e0b; }
+    .filmeai-estimate-availability.unavailable { color:#b91c1c; }
+    .filmeai-estimate-availability.unavailable:before { background:#ef4444; }
+    .filmeai-estimate-availability.unknown { color:#6b7280; }
     .filmeai-estimate-totals { margin-top:10px; display:flex; flex-direction:column; gap:5px; }
     .filmeai-estimate-total-row { display:flex; justify-content:space-between; gap:10px; font-size:12px; color:#6b7280; }
     .filmeai-estimate-total-row.strong { color:#111827; font-weight:800; font-size:14px; }
@@ -845,6 +854,12 @@
         html += '<div class="filmeai-estimate-line-meta filmeai-estimate-manual">Intervention Filme demandée</div>';
       } else {
         html += '<div class="filmeai-estimate-line-meta">' + formatMoney(line.unitPrice || 0) + ' / jour</div>';
+      }
+      if (line.availabilityLabel) {
+        var availabilityStatus = ['available', 'limited', 'unavailable', 'unknown'].indexOf(line.availabilityStatus) !== -1
+          ? line.availabilityStatus
+          : 'unknown';
+        html += '<div class="filmeai-estimate-availability ' + availabilityStatus + '">' + formatMarkdown(line.availabilityLabel) + '</div>';
       }
       html += '</div>';
       html += '<div class="filmeai-estimate-line-price">' + (line.requiresFilmeIntervention ? 'À chiffrer' : formatMoney(line.lineTotal || 0)) + '</div>';
