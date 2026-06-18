@@ -243,6 +243,18 @@ function hasQuoteDraft(sessionData: SessionData): boolean {
   )
 }
 
+function countUnresolvedQuoteMatches(value?: unknown[]): number {
+  if (!Array.isArray(value)) return 0
+
+  return value.filter(item => {
+    if (!item || typeof item !== 'object') return true
+    const record = item as Record<string, unknown>
+    const selectedProductId = typeof record.selectedProductId === 'string' ? record.selectedProductId.trim() : ''
+    const leaveToFilme = record.leaveToFilme === true
+    return leaveToFilme || !selectedProductId
+  }).length
+}
+
 function formatDateRangeForUser(startsAt?: string | null, stopsAt?: string | null): string {
   const formatter = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' })
   const start = startsAt ? formatter.format(new Date(startsAt)) : null
@@ -340,8 +352,20 @@ function isExplicitQuoteConfirmation(text: string): boolean {
     .trim()
 
   if (/^\d+\s*\/\s*\d+$/.test(normalized)) return false
+  if (isListConfirmation(normalized)) return false
 
   return /\b(je confirme|confirme|confirmation|valider|valide|creer le devis|cree le devis|créer le devis|crée le devis|generer le devis|générer le devis|pousser dans booqable|envoyer le devis)\b/.test(normalized)
+}
+
+function isListConfirmation(text: string): boolean {
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+
+  return /\b(confirme|valide|validation|confirmer|valider)\b.*\b(liste|selection|sélection|materiel|matériel)\b/.test(normalized) ||
+    /\b(liste|selection|sélection|materiel|matériel)\b.*\b(confirmee|confirmée|validee|validée|ok)\b/.test(normalized)
 }
 
 function compactDescription(value: string | null): string {
@@ -662,6 +686,16 @@ export async function POST(req: NextRequest) {
             const responseText = `Parfait, j’ai noté les dates ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}. Je garde la liste produit déjà préparée.\n\nQuand tout vous convient, écrivez “je confirme” pour créer le devis dans Booqable.`
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
+          } else if (isListConfirmation(lastUserText) && hasQuoteDraft(sessionData)) {
+            const unresolvedCount = countUnresolvedQuoteMatches(sessionData.quoteMatches)
+            const unresolvedText = unresolvedCount > 0
+              ? `\nJ’ai bien noté que ${unresolvedCount} ligne${unresolvedCount > 1 ? 's' : ''} seront laissées à l’équipe Filme pour proposition manuelle.`
+              : ''
+            const responseText = sessionData.startsAt && sessionData.stopsAt
+              ? `Parfait, votre liste est confirmée ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}.${unresolvedText}\n\nJe ne crée pas encore le devis automatiquement : prochaine étape, vérification des disponibilités/prix. Quand tout est prêt, confirmez explicitement « je confirme le devis ».`
+              : `Parfait, votre liste est confirmée.${unresolvedText}\n\nIndiquez maintenant vos dates de location pour vérifier les disponibilités et préparer le devis.`
+            fullResponse += responseText
+            send({ type: 'delta', content: responseText })
           } else if (quoteRequestText) {
             requestContext = quoteRequestText
             const intro = 'Je regarde ce qui est disponible dans notre catalogue !'
@@ -785,6 +819,10 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
                 const needsSelection = "\n\nJe ne crée pas encore le devis : aucun produit catalogue n’a été validé. Envoyez ou collez votre liste matériel, puis choisissez les correspondances proposées avant de confirmer."
                 fullResponse += needsSelection
                 send({ type: 'delta', content: needsSelection })
+              } else if (!sessionData.startsAt || !sessionData.stopsAt) {
+                const needsDates = "\n\nJe ne crée pas encore le devis : il me manque les dates de location. Indiquez par exemple « du 21 au 26 juin », puis confirmez le devis."
+                fullResponse += needsDates
+                send({ type: 'delta', content: needsDates })
               } else {
                 send({ type: 'creating_quote' })
 
@@ -792,8 +830,8 @@ Réponds en JSON : { "selected": [{ "id": "...", "reason": "..." }], "response":
                 const booqableBase = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
                 const key = process.env.BOOQABLE_API_KEY
                 const name = sessionData.customerName || sessionData.customerEmail
-                const startsAt = sessionData.startsAt || new Date().toISOString()
-                const stopsAt = sessionData.stopsAt || new Date(Date.now() + 3 * 86400000).toISOString()
+                const startsAt = sessionData.startsAt
+                const stopsAt = sessionData.stopsAt
 
                 const custRes = await fetch(`${booqableBase}/customers?api_key=${key}`, {
                   method: 'POST',

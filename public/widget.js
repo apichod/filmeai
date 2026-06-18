@@ -73,11 +73,20 @@
       border-bottom-right-radius: 4px;
     }
     .filmeai-msg strong { font-weight: 600; }
-    .filmeai-typing { display: flex; gap: 7px; padding: 13px 15px; align-items: center; }
-    .filmeai-dot { width: 9px; height: 9px; border-radius: 50%; background: #111827; animation: filmeai-bounce 1s infinite; }
+    .filmeai-typing { display: flex; gap: 5px; padding: 12px 14px; align-items: center; }
+    .filmeai-dot { width: 6px; height: 6px; border-radius: 50%; background: #9ca3af; animation: filmeai-bounce 1.05s infinite; }
     .filmeai-dot:nth-child(2) { animation-delay: 0.2s; }
     .filmeai-dot:nth-child(3) { animation-delay: 0.4s; }
-    @keyframes filmeai-bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+    @keyframes filmeai-bounce { 0%,60%,100%{transform:translateY(0);opacity:.55} 30%{transform:translateY(-4px);opacity:1} }
+    .filmeai-progress-card { width: 100%; min-width: 230px; }
+    .filmeai-progress-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:7px; }
+    .filmeai-progress-title { font-size:12px; font-weight:700; color:#374151; }
+    .filmeai-progress-step { font-size:11px; color:#9ca3af; font-weight:700; white-space:nowrap; }
+    .filmeai-progress-track { height:6px; border-radius:999px; background:#e5e7eb; overflow:hidden; margin-bottom:7px; }
+    .filmeai-progress-fill { height:100%; border-radius:999px; background:#111827; transition:width .25s ease; }
+    .filmeai-progress-label { font-size:11.5px; line-height:1.35; color:#6b7280; }
+    .filmeai-progress-dots { display:inline-flex; gap:4px; margin-left:6px; vertical-align:middle; }
+    .filmeai-progress-dots .filmeai-dot { width:4px; height:4px; background:#9ca3af; }
     #filmeai-input-area {
       border-top: 1px solid #e5e7eb; padding: 10px 12px 8px;
     }
@@ -717,11 +726,32 @@
     return { startsAt: null, stopsAt: null };
   }
 
+  function progressStepForMessage(message) {
+    var text = String(message || '').toLowerCase();
+    if (text.indexOf('analyse') !== -1) return 1;
+    if (text.indexOf('extraction') !== -1) return 2;
+    if (text.indexOf('recherche') !== -1) return 3;
+    if (text.indexOf('comparaison') !== -1) return 4;
+    return 5;
+  }
+
+  function renderProgressCard(step, message) {
+    var safeStep = Math.min(5, Math.max(1, step || progressStepForMessage(message)));
+    var percent = Math.round((safeStep / 5) * 100);
+    return '<div class="filmeai-progress-card">' +
+      '<div class="filmeai-progress-head"><div class="filmeai-progress-title">Préparation du devis</div><div class="filmeai-progress-step">Étape ' + safeStep + '/5</div></div>' +
+      '<div class="filmeai-progress-track"><div class="filmeai-progress-fill" style="width:' + percent + '%"></div></div>' +
+      '<div class="filmeai-progress-label">' + formatMarkdown(message || 'Analyse en cours…') +
+      '<span class="filmeai-progress-dots"><span class="filmeai-dot"></span><span class="filmeai-dot"></span><span class="filmeai-dot"></span></span></div>' +
+      '</div>';
+  }
+
   // ── Stream response from API ──────────────────────────────────────────────
   function streamResponse() {
     var botEl = null;
     var botContent = '';
     var receivedQuoteMatchItems = false;
+    var progressEl = null;
 
     fetch(API_URL, {
       method: 'POST',
@@ -738,6 +768,7 @@
         return reader.read().then(function (result) {
           if (result.done) {
             hideTyping();
+            if (progressEl) { progressEl.remove(); progressEl = null; }
             isLoading = false;
             sendBtn.disabled = false;
             input.focus();
@@ -764,6 +795,7 @@
     })
     .catch(function (err) {
       hideTyping();
+      if (progressEl) { progressEl.remove(); progressEl = null; }
       isLoading = false;
       sendBtn.disabled = false;
       addMessage('bot', "Désolé, je rencontre une difficulté. Réessayez ou contactez bonjour@filme.fr");
@@ -772,6 +804,7 @@
 
     function handleEvent(evt) {
       if (evt.type === 'delta') {
+        if (progressEl) { progressEl.remove(); progressEl = null; }
         if (!botEl) { hideTyping(); botEl = addMessage('bot', ''); }
         botContent += evt.content;
         botEl.innerHTML = formatMarkdown(botContent);
@@ -779,19 +812,23 @@
       } else if (evt.type === 'searching') {
         if (!botEl) { hideTyping(); botEl = addMessage('bot', '🔍 Recherche dans notre catalogue…'); }
       } else if (evt.type === 'progress') {
-        if (!botEl) { hideTyping(); botEl = addMessage('bot', ''); }
-        if (evt.message && botContent.indexOf(evt.message) === -1) {
-          botContent += '\n\n' + evt.message;
-          botEl.innerHTML = formatMarkdown(botContent);
-          messagesEl.scrollTop = messagesEl.scrollHeight;
+        hideTyping();
+        if (!progressEl) {
+          progressEl = document.createElement('div');
+          progressEl.className = 'filmeai-msg bot';
+          messagesEl.appendChild(progressEl);
         }
+        progressEl.innerHTML = renderProgressCard(progressStepForMessage(evt.message), evt.message || 'Analyse en cours…');
+        messagesEl.scrollTop = messagesEl.scrollHeight;
       } else if (evt.type === 'products') {
         sessionData.selectedProductIds = (evt.products || []).map(function(p) { return p.id; });
         persistSession();
       } else if (evt.type === 'quote_matches') {
+        if (progressEl) { progressEl.remove(); progressEl = null; }
         initQuoteMatches(evt.items || []);
         renderQuoteMatches();
       } else if (evt.type === 'quote_match_item') {
+        if (progressEl) { progressEl.remove(); progressEl = null; }
         if (!receivedQuoteMatchItems) {
           receivedQuoteMatchItems = true;
           sessionData.quoteMatches = [];
@@ -810,6 +847,7 @@
       } else if (evt.type === 'quote_matches_done') {
         persistSession();
       } else if (evt.type === 'creating_quote') {
+        if (progressEl) { progressEl.remove(); progressEl = null; }
         if (botEl) botContent += '\n\n⏳ Création du devis en cours…';
         if (botEl) botEl.innerHTML = formatMarkdown(botContent);
       } else if (evt.type === 'quote_created') {
@@ -822,6 +860,7 @@
         console.warn('FilmeAI conversation save error:', evt.message);
       } else if (evt.type === 'done') {
         hideTyping();
+        if (progressEl) { progressEl.remove(); progressEl = null; }
         isLoading = false;
         sendBtn.disabled = false;
         input.focus();
@@ -830,6 +869,7 @@
         botContent = '';
       } else if (evt.type === 'error') {
         hideTyping();
+        if (progressEl) { progressEl.remove(); progressEl = null; }
         addMessage('bot', evt.message || 'Une erreur est survenue.');
         isLoading = false;
         sendBtn.disabled = false;

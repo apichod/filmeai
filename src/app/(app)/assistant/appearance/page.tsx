@@ -195,6 +195,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [streamText, setStreamText] = useState('')
+  const [progressInfo, setProgressInfo] = useState<{ step: number; message: string } | null>(null)
   const [pendingProducts, setPendingProducts] = useState<Product[]>([])
   const [streamQuoteMatches, setStreamQuoteMatches] = useState<QuoteMatch[]>([])
   const [editingPreviewKeys, setEditingPreviewKeys] = useState<Record<string, boolean>>({})
@@ -224,6 +225,15 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setTimeout(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
     }, 50)
+  }
+
+  function progressStepForMessage(message: string) {
+    const text = message.toLowerCase()
+    if (text.includes('analyse')) return 1
+    if (text.includes('extraction')) return 2
+    if (text.includes('recherche')) return 3
+    if (text.includes('comparaison')) return 4
+    return 5
   }
 
   function insertInputNewline(textarea: HTMLTextAreaElement) {
@@ -269,6 +279,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     setMessages(prev => [...prev, userMsg])
     setLoading(true)
     setStreamText('')
+    setProgressInfo(null)
     setPendingProducts([])
     setStreamQuoteMatches([])
     setEditingPreviewKeys({})
@@ -324,17 +335,19 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
             }
 
             if (evt.type === 'delta' && evt.content) {
+              setProgressInfo(null)
               accumulated += evt.content
               setStreamText(accumulated)
               scrollBottom()
-            } else if (evt.type === 'progress' && evt.message && !accumulated) {
-              setStreamText(evt.message)
+            } else if (evt.type === 'progress' && evt.message) {
+              setProgressInfo({ step: progressStepForMessage(evt.message), message: evt.message })
               scrollBottom()
             } else if (evt.type === 'selected_products' && evt.products) {
               localProducts = evt.products
               setPendingProducts(evt.products)
               setSessionData(prev => ({ ...prev, selectedProductIds: evt.products?.map(p => p.id) || prev.selectedProductIds }))
             } else if (evt.type === 'quote_match_item' && evt.item) {
+              setProgressInfo(null)
               localQuoteMatches = [...localQuoteMatches, evt.item]
               setStreamQuoteMatches(localQuoteMatches)
               const selectedIds = localQuoteMatches
@@ -343,6 +356,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               setSessionData(prev => ({ ...prev, selectedProductIds: selectedIds, quoteMatches: localQuoteMatches }))
               scrollBottom()
             } else if (evt.type === 'quote_matches' && evt.items) {
+              setProgressInfo(null)
               localQuoteMatches = evt.items as QuoteMatch[]
               const selectedIds = localQuoteMatches
                 .filter(item => item.matched && item.confidence >= 0.5)
@@ -361,6 +375,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
               }
               setMessages(prev => [...prev, assistantMsg])
               setStreamText('')
+              setProgressInfo(null)
               setPendingProducts([])
               setStreamQuoteMatches([])
               localProducts = []
@@ -378,6 +393,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
     } finally {
       setLoading(false)
       setStreamText('')
+      setProgressInfo(null)
       setStreamQuoteMatches([])
       inputRef.current?.focus()
     }
@@ -841,19 +857,66 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
         {loading && (
           <div className="flex justify-start">
             <div className="max-w-[85%]">
-              {streamText ? (
-                <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-3 py-2 text-xs text-gray-800 leading-relaxed shadow-sm whitespace-pre-wrap">
-                  {renderContent(streamText)}
-                  <span className="ml-1 inline-flex items-center gap-1 align-middle">
-                    {[0, 150, 300].map(d => (
-                      <span key={d} className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-gray-800" style={{ animationDelay: `${d}ms` }} />
-                    ))}
-                  </span>
+              {progressInfo && !streamText ? (
+                <div className="rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2.5 text-xs shadow-sm">
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <span className="font-semibold text-gray-700">Préparation du devis</span>
+                    <span className="font-semibold text-gray-400">Étape {progressInfo.step}/5</span>
+                  </div>
+                  <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-gray-900 transition-all"
+                      style={{ width: `${Math.round((progressInfo.step / 5) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 text-gray-500">
+                    <span>{progressInfo.message}</span>
+                    <span className="inline-flex items-center gap-1">
+                      {[0, 150, 300].map(d => (
+                        <span key={d} className="inline-block h-1 w-1 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: `${d}ms` }} />
+                      ))}
+                    </span>
+                  </div>
                 </div>
+              ) : streamText ? (
+                <>
+                  <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-3 py-2 text-xs text-gray-800 leading-relaxed shadow-sm whitespace-pre-wrap">
+                    {renderContent(streamText)}
+                    {!progressInfo && (
+                      <span className="ml-1 inline-flex items-center gap-1 align-middle">
+                        {[0, 150, 300].map(d => (
+                          <span key={d} className="inline-block h-1 w-1 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: `${d}ms` }} />
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                  {progressInfo && (
+                    <div className="mt-2 rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2.5 text-xs shadow-sm">
+                      <div className="mb-1.5 flex items-center justify-between gap-3">
+                        <span className="font-semibold text-gray-700">Préparation du devis</span>
+                        <span className="font-semibold text-gray-400">Étape {progressInfo.step}/5</span>
+                      </div>
+                      <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-gray-200">
+                        <div
+                          className="h-full rounded-full bg-gray-900 transition-all"
+                          style={{ width: `${Math.round((progressInfo.step / 5) * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 text-gray-500">
+                        <span>{progressInfo.message}</span>
+                        <span className="inline-flex items-center gap-1">
+                          {[0, 150, 300].map(d => (
+                            <span key={d} className="inline-block h-1 w-1 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: `${d}ms` }} />
+                          ))}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-3 py-2.5 shadow-sm">
                   {[0, 150, 300].map(d => (
-                    <span key={d} className="h-2.5 w-2.5 animate-bounce rounded-full bg-gray-900" style={{ animationDelay: `${d}ms` }} />
+                    <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: `${d}ms` }} />
                   ))}
                 </div>
               )}
