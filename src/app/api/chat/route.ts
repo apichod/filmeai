@@ -1129,11 +1129,33 @@ export async function POST(req: NextRequest) {
         let booqableOrderId: string | null = null
         let booqableOrderUrl: string | null = null
 
+        const sendQuoteEstimate = async () => {
+          send({ type: 'progress', step: 'quote_estimate', message: 'Vérification des disponibilités et préparation de l’estimation…' })
+          const estimate = await buildQuoteEstimate(sessionData)
+          send({ type: 'quote_estimate', estimate })
+
+          const unavailableCount = estimate.lines.filter(line => line.availabilityStatus === 'unavailable').length
+          const limitedCount = estimate.lines.filter(line => line.availabilityStatus === 'limited').length
+          const availableCount = estimate.lines.filter(line => line.availabilityStatus === 'available').length
+          const interventionText = estimate.interventionCount > 0
+            ? `\n${estimate.interventionCount} ligne${estimate.interventionCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront créées en ligne custom pour ne pas bloquer le devis.`
+            : ''
+          const availabilityText = `\nDisponibilités : ${availableCount} disponible${availableCount > 1 ? 's' : ''}, ${limitedCount} limitée${limitedCount > 1 ? 's' : ''}, ${unavailableCount} indisponible${unavailableCount > 1 ? 's' : ''}.`
+          return `Voilà une première estimation ${estimate.dateLabel}.${availabilityText}${interventionText}\n\nLe détail est sur la carte ci-dessous. Les indisponibilités sont informatives et ne bloquent pas la création du devis.`
+        }
+
         try {
           // ── Dates seules après matching catalogue : on complète le brouillon,
           // sans relancer l'extraction produit.
           if (lastIsDateOnly && hasQuoteDraft(sessionData)) {
-            const responseText = `Parfait, j’ai noté les dates ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}. Je garde la liste produit déjà préparée.\n\nProchaine étape : vérification des disponibilités et des prix avant préparation du devis.`
+            const introText = `Parfait, j’ai noté les dates ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}. Je garde la liste produit déjà préparée.\n\nJe lance la vérification des disponibilités et des prix.`
+            fullResponse += introText
+            send({ type: 'delta', content: introText })
+
+            const estimateText = sessionData.startsAt && sessionData.stopsAt
+              ? `\n\n${await sendQuoteEstimate()}`
+              : '\n\nIl me manque encore une date de début ou de retour pour vérifier les disponibilités.'
+            const responseText = estimateText
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
           } else if (isListConfirmation(lastUserText) && hasQuoteDraft(sessionData)) {
@@ -1142,23 +1164,12 @@ export async function POST(req: NextRequest) {
               ? `\nJ’ai bien noté que ${unresolvedCount} ligne${unresolvedCount > 1 ? 's' : ''} seront laissées à l’équipe Filme pour proposition manuelle.`
               : ''
             const responseText = sessionData.startsAt && sessionData.stopsAt
-              ? `Parfait, votre liste est confirmée ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}.${unresolvedText}\n\nProchaine étape : vérification des disponibilités et des prix avant préparation du devis.`
+              ? `Parfait, votre liste est confirmée ${formatDateRangeForUser(sessionData.startsAt, sessionData.stopsAt)}.${unresolvedText}\n\n${await sendQuoteEstimate()}`
               : `Parfait, votre liste est confirmée.${unresolvedText}\n\nIndiquez maintenant vos dates de location pour vérifier les disponibilités et préparer le devis.`
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
           } else if (isAvailabilityContinuation(lastUserText) && hasQuoteDraft(sessionData) && sessionData.startsAt && sessionData.stopsAt) {
-            send({ type: 'progress', step: 'quote_estimate', message: 'Vérification des disponibilités et préparation de l’estimation…' })
-            const estimate = await buildQuoteEstimate(sessionData)
-            send({ type: 'quote_estimate', estimate })
-
-            const unavailableCount = estimate.lines.filter(line => line.availabilityStatus === 'unavailable').length
-            const limitedCount = estimate.lines.filter(line => line.availabilityStatus === 'limited').length
-            const availableCount = estimate.lines.filter(line => line.availabilityStatus === 'available').length
-            const interventionText = estimate.interventionCount > 0
-              ? `\n${estimate.interventionCount} ligne${estimate.interventionCount > 1 ? 's' : ''} nécessitent une intervention Filme : elles seront créées en ligne custom pour ne pas bloquer le devis.`
-              : ''
-            const availabilityText = `\nDisponibilités : ${availableCount} disponible${availableCount > 1 ? 's' : ''}, ${limitedCount} limitée${limitedCount > 1 ? 's' : ''}, ${unavailableCount} indisponible${unavailableCount > 1 ? 's' : ''}.`
-            const responseText = `Voilà une première estimation ${estimate.dateLabel}.${availabilityText}${interventionText}\n\nLe détail est sur la carte ci-dessous. Les indisponibilités sont informatives et ne bloquent pas la création du devis.`
+            const responseText = await sendQuoteEstimate()
             fullResponse += responseText
             send({ type: 'delta', content: responseText })
           } else if (quoteRequestText) {

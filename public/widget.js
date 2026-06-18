@@ -147,6 +147,15 @@
     .filmeai-confirm-hint { font-size:12px; color:#6b7280; line-height:1.35; margin-bottom:8px; }
     .filmeai-confirm-button { width:100%; border:none; border-radius:10px; padding:10px 12px; background:#111827; color:white; cursor:pointer; font-size:13px; font-weight:700; }
     .filmeai-confirm-button:hover { background:#000; }
+    .filmeai-date-box { margin-top: 2px; padding: 10px; border: 1px solid #e5e7eb; background: #fff; border-radius: 12px; }
+    .filmeai-date-title { font-size:12.5px; font-weight:800; color:#111827; margin-bottom:3px; }
+    .filmeai-date-help { font-size:11px; color:#6b7280; line-height:1.35; margin-bottom:8px; }
+    .filmeai-date-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:8px; }
+    .filmeai-date-label { display:flex; flex-direction:column; gap:4px; font-size:10.5px; font-weight:700; color:#6b7280; }
+    .filmeai-date-input { border:1px solid #e5e7eb; border-radius:9px; padding:8px 9px; font-size:12px; color:#111827; background:#fff; outline:none; }
+    .filmeai-date-input:focus { border-color:#111827; }
+    .filmeai-date-button { width:100%; border:none; border-radius:10px; padding:10px 12px; background:#111827; color:white; cursor:pointer; font-size:13px; font-weight:700; }
+    .filmeai-date-button:disabled { opacity:.45; cursor:not-allowed; }
     .filmeai-estimate-card { max-width: 96%; align-self:flex-start; background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,.04); color:#111827; }
     .filmeai-estimate-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
     .filmeai-estimate-title { font-size:15px; font-weight:800; }
@@ -398,6 +407,27 @@
     } catch (e) {}
   }
 
+  function isoToDateInput(value) {
+    if (!value) return '';
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    var month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    var day = String(date.getUTCDate()).padStart(2, '0');
+    return date.getUTCFullYear() + '-' + month + '-' + day;
+  }
+
+  function dateInputToIso(value) {
+    var parts = String(value || '').split('-').map(function(part) { return parseInt(part, 10); });
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return null;
+    return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 9, 0, 0)).toISOString();
+  }
+
+  function dateInputToFrench(value) {
+    var parts = String(value || '').split('-');
+    if (parts.length !== 3) return '';
+    return parts[2] + '/' + parts[1] + '/' + parts[0];
+  }
+
   function isBundle(product) {
     return !!(product && (product.is_bundle || /\bpack\b/i.test(product.name || '') || (product.bundle_items || []).length));
   }
@@ -527,6 +557,18 @@
     return formatMarkdown(displayProductName(product)) + (isBundle(product) ? '<span class="filmeai-pack-label">PACK</span>' : '');
   }
 
+  function renderDateSelectorHtml() {
+    return '<div class="filmeai-date-box">' +
+      '<div class="filmeai-date-title">Dates de location</div>' +
+      '<div class="filmeai-date-help">Choisissez les dates ici : ça évite les erreurs d’interprétation dans le chat.</div>' +
+      '<div class="filmeai-date-grid">' +
+      '<label class="filmeai-date-label">Début<input class="filmeai-date-input" data-action="date-start" type="date" value="' + escapeAttr(isoToDateInput(sessionData.startsAt)) + '"></label>' +
+      '<label class="filmeai-date-label">Retour<input class="filmeai-date-input" data-action="date-end" type="date" value="' + escapeAttr(isoToDateInput(sessionData.stopsAt)) + '"></label>' +
+      '</div>' +
+      '<button type="button" class="filmeai-date-button" data-action="date-submit">Vérifier disponibilité et prix</button>' +
+      '</div>';
+  }
+
   function renderQuoteMatches() {
     var items = sessionData.quoteMatches || [];
     if (matchListEl && matchListEl.parentNode) matchListEl.remove();
@@ -621,6 +663,8 @@
       '</div><button type="button" class="filmeai-confirm-button" data-action="confirm-list">Confirmer ma liste</button>';
     wrap.appendChild(confirmBox);
 
+    wrap.insertAdjacentHTML('beforeend', renderDateSelectorHtml());
+
     wrap.addEventListener('click', function(e) {
       var target = e.target.closest('[data-action]');
       if (!target) {
@@ -634,6 +678,19 @@
         return;
       }
       var action = target.getAttribute('data-action');
+
+      if (action === 'date-submit') {
+        var startInput = wrap.querySelector('[data-action="date-start"]');
+        var endInput = wrap.querySelector('[data-action="date-end"]');
+        var startValue = startInput ? startInput.value : '';
+        var endValue = endInput ? endInput.value : '';
+        if (!startValue || !endValue) return;
+        sessionData.startsAt = dateInputToIso(startValue);
+        sessionData.stopsAt = dateInputToIso(endValue);
+        persistSession();
+        sendText('Dates sélectionnées : du ' + dateInputToFrench(startValue) + ' au ' + dateInputToFrench(endValue));
+        return;
+      }
 
       if (action === 'confirm-list') {
         var missing = 0;
