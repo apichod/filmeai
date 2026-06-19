@@ -506,7 +506,7 @@ function itemNameLooksLikeBundle(item: QuoteItem): boolean {
 
 async function resolveBooqableItem(item: QuoteItem): Promise<ResolvedBooqableItem> {
   const id = item.productId
-  if (!id) return { kind: 'none', reason: 'Pas d'ID catalogue' }
+  if (!id) return { kind: 'none', reason: "Pas d'ID catalogue" }
 
   const subdomain = process.env.BOOQABLE_SUBDOMAIN
   const key = process.env.BOOQABLE_API_KEY
