@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -266,6 +266,7 @@ function ProductSearchDropdown({
 
 export default function RequestDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [request, setRequest] = useState<RequestDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -291,7 +292,10 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       .then(r => r.json())
       .then((data: RequestDetail) => {
         setRequest(data)
-        if (data.quote_status === 'draft') setEditing(true)
+        if (searchParams.get('autoEdit') === '1') {
+          setEditing(true)
+          router.replace(`/requests/${params.id}`)
+        }
         setContactName(data.contact_name || '')
         setContactEmail(data.contact_email || '')
         setContactPhone(data.contact_phone || '')

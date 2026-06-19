@@ -586,7 +586,7 @@ export default function NewRequestPage() {
       const data = await res.json() as { conversationId?: string; error?: string }
       if (!res.ok || data.error) throw new Error(data.error || `Erreur HTTP ${res.status}`)
       if (data.conversationId) {
-        router.push('/requests/' + data.conversationId)
+        router.push('/requests/' + data.conversationId + '?autoEdit=1')
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde du devis')
