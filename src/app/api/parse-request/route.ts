@@ -87,7 +87,7 @@ async function getApprovedCatalogSignals(): Promise<CatalogSignal[]> {
       .eq('approved', true)
       .order('occurrences', { ascending: false })
       .order('updated_at', { ascending: false })
-      .limit(150)
+      .limit(1000)
 
     if (error || !data?.length) return []
     return data as CatalogSignal[]
@@ -126,11 +126,14 @@ type Product = {
   signal_match?: boolean
 }
 
+type BrandContext = 'sony' | 'canon' | null
+
 type ExtractedItem = {
   raw: string
   query: string
   quantity: number
   section: string | null
+  contextBrand?: BrandContext
 }
 
 type CandidateSet = {
@@ -324,11 +327,70 @@ function productLooksLikeSecondaryAccessory(product: Product): boolean {
   return /\b(adaptateur|adapter|alimentation|alim|battery eliminator|batterie|battery|chargeur|charger|cable|câble|support|plate|griffe)\b/.test(name)
 }
 
+function itemLooksLikeInterchangeableLens(item: ExtractedItem): boolean {
+  const text = normalizeText(`${item.raw} ${item.query}`)
+  return /\b(16\s*-?\s*35|24\s*-?\s*70|24\s*-?\s*105|70\s*-?\s*200|14\s*-?\s*24|50\s*mm|85\s*mm|35\s*mm|objectif|optique|lens)\b/.test(text)
+}
+
+function requestedLensMountHint(item: ExtractedItem): BrandContext {
+  const text = normalizeText(`${item.raw} ${item.query}`)
+  if (!itemLooksLikeInterchangeableLens(item)) return null
+
+  if (/\b(canon|rf)\b/.test(text)) return 'canon'
+  if (/\b(sony|fe|e-mount|monture e)\b/.test(text)) return 'sony'
+  return item.contextBrand || null
+}
+
+function productViolatesLensMountHint(product: Product, item: ExtractedItem): boolean {
+  const hint = requestedLensMountHint(item)
+  if (!hint) return false
+
+  const name = normalizeText(product.name)
+  if (hint === 'sony') {
+    return /\b(canon|rf|ef)\b/.test(name)
+  }
+  if (hint === 'canon') {
+    return /\b(sony|fe|e-mount|monture e)\b/.test(name)
+  }
+  return false
+}
+
 function isSafeProductForItem(product: Product, item: ExtractedItem): boolean {
   if (hasStrictReferenceMismatch(product, item)) return false
+  if (productViolatesLensMountHint(product, item)) return false
   if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) return false
   if (isBareBrandOnlyRequest(item) && productLooksLikeSecondaryAccessory(product)) return false
   return true
+}
+
+function inferBrandContext(items: ExtractedItem[]): BrandContext {
+  const joined = normalizeText(items.map(item => `${item.raw} ${item.query}`).join(' '))
+  const sonyHits = (/\b(sony|fx3|fx6|fx9|fx30|fe|e-mount)\b/.test(joined) ? 1 : 0)
+  const canonHits = (/\b(canon|eos|c400|c50|c70|c300|rf)\b/.test(joined) ? 1 : 0)
+
+  if (sonyHits > canonHits) return 'sony'
+  if (canonHits > sonyHits) return 'canon'
+  return null
+}
+
+function applyListContext(items: ExtractedItem[]): ExtractedItem[] {
+  const brandContext = inferBrandContext(items)
+  if (!brandContext) return items
+
+  return items.map(item => {
+    if (!itemLooksLikeInterchangeableLens(item)) return item
+    if (requestedLensMountHint(item)) return item
+
+    const suffix = brandContext === 'sony'
+      ? ' Sony FE monture E'
+      : ' Canon RF'
+
+    return {
+      ...item,
+      contextBrand: brandContext,
+      query: `${item.query}${suffix}`.trim(),
+    }
+  })
 }
 
 function deterministicScore(product: Product, item: ExtractedItem): number {
@@ -360,6 +422,8 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
     // Si le client n'a pas demandé de pack, on préfère le produit nu à modèle égal.
     score -= 0.95
   }
+
+  if (productViolatesLensMountHint(product, item)) score -= 4.5
 
   // “Sony FX6 pack caméra” means camera/pack, not an accessory compatible with FX6.
   if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) {
@@ -552,6 +616,44 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
   return dedupeProducts(found)
 }
 
+async function signalProductNameSearch(productName: string, limit = 8): Promise<Product[]> {
+  const cleaned = productName.trim()
+  if (!cleaned) return []
+
+  const supabase = getSupabaseAdmin()
+  const normalizedTarget = normalizeText(cleaned)
+  const flexiblePattern = `%${cleaned
+    .replace(/[%,]/g, ' ')
+    .replace(/[–—−]/g, ' ')
+    .replace(/\s+/g, '%')
+    .trim()}%`
+
+  const { data } = await supabase
+    .from('products_cache')
+    .select('id, name, description, price_per_day, deposit, photo_url')
+    .eq('archived', false)
+    .eq('show_in_store', true)
+    .ilike('name', flexiblePattern)
+    .limit(limit)
+
+  const direct = data?.length ? data as Product[] : []
+  const fallback = direct.length > 0
+    ? []
+    : await directNameSearch({ raw: cleaned, query: cleaned, quantity: 1, section: null }, limit)
+
+  return dedupeProducts([...direct, ...fallback])
+    .sort((a, b) => {
+      const aExact = Number(normalizeText(a.name) === normalizedTarget)
+      const bExact = Number(normalizeText(b.name) === normalizedTarget)
+      if (aExact !== bExact) return bExact - aExact
+
+      const aIncludes = Number(normalizeText(a.name).includes(normalizedTarget))
+      const bIncludes = Number(normalizeText(b.name).includes(normalizedTarget))
+      return bIncludes - aIncludes
+    })
+    .slice(0, limit)
+}
+
 async function signalProductSearch(item: ExtractedItem, signals: CatalogSignal[], limit = 8): Promise<Product[]> {
   const matches = matchingSignalsForItem(item, signals).filter(signal => !isInstructionOnlySignal(signal))
   if (matches.length === 0) return []
@@ -582,12 +684,13 @@ async function signalProductSearch(item: ExtractedItem, signals: CatalogSignal[]
       query: productName,
       quantity: 1,
       section: null,
+      contextBrand: item.contextBrand || null,
     }
 
-    const direct = await directNameSearch(signalItem, limit)
+    const direct = await signalProductNameSearch(productName, limit)
     const safeDirect = direct
       .filter(product => isSafeProductForItem(product, item))
-      .filter(product => deterministicScore(product, signalItem) >= 0.8 || deterministicScore(product, item) >= 0.8)
+      .filter(product => deterministicScore(product, signalItem) >= 0.35 || deterministicScore(product, item) >= 0.35)
 
     found.push(...dedupeProducts(safeDirect).map(product => ({ ...product, signal_match: true })))
   }
@@ -740,7 +843,7 @@ export async function POST(req: NextRequest) {
       ? `${extractionPrompt}\n\n${learnedGlossary}`
       : extractionPrompt
 
-    const extractedItems = await extractItems(message, finalExtractionPrompt)
+    const extractedItems = applyListContext(await extractItems(message, finalExtractionPrompt))
     if (extractedItems.length === 0) return NextResponse.json({ items: [] })
 
     const embeddingMap = await createEmbeddingMap(
