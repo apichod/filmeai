@@ -198,6 +198,19 @@ function isInstructionOnlySignal(signal: CatalogSignal): boolean {
   return productName.startsWith('appliquer ') || productName.startsWith('utiliser ')
 }
 
+function hasPreciseReference(value: string): boolean {
+  const text = normalizeText(value)
+  return /\b(fx3|fx6|fx9|fx30|c50|c70|c80|c300|c400|r5c|r5|komodo|pyxis)\b/.test(text) ||
+    /\b\d{2,3}\s*-\s*\d{2,3}\b/.test(text) ||
+    /\b\d{2,4}\s*(mm|gb|go|wh|w)\b/.test(text) ||
+    /\b\d+\s*\/\s*\d+\b/.test(text)
+}
+
+function isBroadSignalTerm(value: string): boolean {
+  const text = normalizeText(value)
+  return /^(canon|sony|blackmagic|profoto|aputure|smallhd|atomos|canon rf|canon ef|sony fe|sony e|rf|ef|fe|pl|objectif|objectifs|camera|caméra)$/.test(text)
+}
+
 function signalMatchesItem(signal: CatalogSignal, item: ExtractedItem): boolean {
   const signalTerm = normalizedSignalTerm(signal.normalized_term || signal.term)
   if (!signalTerm) return false
@@ -207,6 +220,15 @@ function signalMatchesItem(signal: CatalogSignal, item: ExtractedItem): boolean 
   const itemText = normalizeText(`${item.raw} ${item.query}`)
 
   if (signalTerm === raw || signalTerm === query) return true
+
+  // Les signaux génériques de marque/monture (ex: “canon rf”) ne doivent pas
+  // capturer une demande précise comme “24-70 Canon”, sinon ils court-circuitent
+  // le reranking et imposent une série/pack sans rapport.
+  if (isBroadSignalTerm(signalTerm)) return false
+
+  // Si la demande contient une référence précise (24-70, 82mm, 256Go…), un signal
+  // plus vague ne peut matcher en inclusion que s’il contient lui aussi cette référence.
+  if (hasPreciseReference(itemText) && !hasPreciseReference(signalTerm)) return false
 
   // Les signaux courts (FX3, FX6, C70…) doivent matcher exactement.
   // Les expressions longues peuvent matcher en inclusion.
@@ -310,8 +332,6 @@ function requestText(item: ExtractedItem): string {
 }
 
 function requestHasFamilyMismatch(product: Product, item: ExtractedItem): boolean {
-  if (product.signal_match) return false
-
   const req = requestText(item)
   const name = productNameText(product)
 
@@ -370,7 +390,6 @@ function isBrandOnlyAmbiguousRequest(item: ExtractedItem): boolean {
 }
 
 function candidateIsUnsafe(product: Product, item: ExtractedItem): boolean {
-  if (product.signal_match) return false
   if (requestHasFamilyMismatch(product, item)) return true
   if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) return true
   if (isBrandOnlyAmbiguousRequest(item) && productLooksLikeAccessoryOnly(product)) return true
@@ -698,8 +717,8 @@ async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap,
       score: deterministicScore(product, item) + (signalIds.has(product.id) || product.signal_match ? 3 : 0),
     }))
     .filter(({ product, score }) => {
-      if (signalIds.has(product.id) || product.signal_match) return true
       if (candidateIsUnsafe(product, item)) return false
+      if (signalIds.has(product.id) || product.signal_match) return true
 
       const important = importantModelTokens(item)
       // If the request has strong references, require at least one in the candidate text.
@@ -752,17 +771,34 @@ async function extractItems(message: string, quoteBackendPrompt: string): Promis
 }
 
 async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: string): Promise<RerankSelection[]> {
+  const context = candidateSets.map((set, index) => ({
+    index,
+    raw: set.item.raw,
+    query: set.item.query,
+    quantity: set.item.quantity,
+    section: set.item.section,
+    top_candidates: set.candidates.slice(0, 5).map(candidate => ({
+      id: candidate.id,
+      name: candidate.name,
+      description: (candidate.description || '').slice(0, 320),
+      similarity: candidate.similarity || null,
+      is_bundle: candidate.is_bundle || false,
+    })),
+  }))
+
   const payload = candidateSets.map((set, index) => ({
     index,
     raw: set.item.raw,
     query: set.item.query,
     quantity: set.item.quantity,
+    section: set.item.section,
     candidates: set.candidates.map(candidate => ({
       id: candidate.id,
       name: candidate.name,
       price_per_day: candidate.price_per_day,
-      description: (candidate.description || '').slice(0, 160),
+      description: (candidate.description || '').slice(0, 320),
       similarity: candidate.similarity || null,
+      is_bundle: candidate.is_bundle || false,
     })),
   }))
 
@@ -773,11 +809,11 @@ async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: string): P
         role: 'system',
         content: rerankPrompt,
       },
-      { role: 'user', content: JSON.stringify({ items: payload }) },
+      { role: 'user', content: JSON.stringify({ context, items: payload }) },
     ],
     response_format: { type: 'json_object' },
     temperature: 0,
-    max_tokens: 2200,
+    max_tokens: 2600,
   })
 
   try {
@@ -855,7 +891,7 @@ export async function POST(req: NextRequest) {
       const safeAiSelected = aiSelected && candidateIsUnsafe(aiSelected, set.item)
         ? null
         : aiSelected
-      const signalSelected = set.candidates.find(candidate => candidate.signal_match) || null
+      const signalSelected = set.candidates.find(candidate => candidate.signal_match && !candidateIsUnsafe(candidate, set.item)) || null
       const selected = signalSelected || preferredPack?.product || safeAiSelected || deterministic?.product || null
       const confidence = signalSelected
         ? 0.96
