@@ -1,47 +1,100 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import {
-  DEFAULT_CHAT_SYSTEM_PROMPT,
+  DEFAULT_CHAT_SECTIONS,
+  DEFAULT_CHAT_IDENTITY,
+  DEFAULT_CHAT_FLOW,
+  DEFAULT_CHAT_STYLE,
+  DEFAULT_CHAT_RULES,
+  DEFAULT_CHAT_INFO,
   DEFAULT_QUOTE_EXTRACTION_PROMPT,
   DEFAULT_QUOTE_RERANK_PROMPT,
+  assembleChatPrompt,
+  splitChatPrompt,
   normalizeEditablePrompt,
   splitQuoteBackendPrompt,
+  type ChatSections,
 } from '@/lib/defaultAssistantPrompts'
 
 type Settings = {
   language: string
   greeting_message: string
-  chat_system_prompt: string
+  chatSections: ChatSections
   quote_extraction_prompt: string
   quote_rerank_prompt: string
   forbidden_topics: string[]
 }
 
-type ApiSettings = Partial<Settings> & {
+type ApiSettings = {
+  language?: string
+  greeting_message?: string
+  chat_system_prompt?: string | null
+  quote_extraction_prompt?: string | null
+  quote_rerank_prompt?: string | null
   quote_backend_prompt?: string | null
+  forbidden_topics?: string[]
 }
 
 const defaults: Settings = {
   language: 'fr',
   greeting_message: '',
-  chat_system_prompt: DEFAULT_CHAT_SYSTEM_PROMPT,
+  chatSections: DEFAULT_CHAT_SECTIONS,
   quote_extraction_prompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
   quote_rerank_prompt: DEFAULT_QUOTE_RERANK_PROMPT,
   forbidden_topics: [],
 }
 
-function topicsToText(topics: string[]) {
-  return topics.join('\n')
-}
-
+function topicsToText(topics: string[]) { return topics.join('\n') }
 function textToTopics(value: string) {
-  return value
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .filter((line, index, arr) => arr.indexOf(line) === index)
+  return value.split('\n').map(l => l.trim()).filter(Boolean)
+    .filter((l, i, a) => a.indexOf(l) === i)
 }
 
+type SectionConfig = {
+  key: keyof ChatSections
+  label: string
+  description: string
+  rows: number
+  defaultValue: string
+}
+
+const SECTIONS: SectionConfig[] = [
+  {
+    key: 'identity',
+    label: 'Identité & ton',
+    description: 'Qui est l\'assistant, son rôle, son ton général.',
+    rows: 4,
+    defaultValue: DEFAULT_CHAT_IDENTITY,
+  },
+  {
+    key: 'flow',
+    label: 'Étapes de conversation',
+    description: 'Le déroulé de la conversation et les signaux [SEARCH:] / [CREATE_QUOTE] qui déclenchent les outils backend.',
+    rows: 8,
+    defaultValue: DEFAULT_CHAT_FLOW,
+  },
+  {
+    key: 'style',
+    label: 'Style de réponse',
+    description: 'Comment l\'assistant doit formuler ses réponses selon les situations.',
+    rows: 8,
+    defaultValue: DEFAULT_CHAT_STYLE,
+  },
+  {
+    key: 'rules',
+    label: 'Règles',
+    description: 'Ce que l\'assistant ne doit jamais faire ou dire.',
+    rows: 6,
+    defaultValue: DEFAULT_CHAT_RULES,
+  },
+  {
+    key: 'info',
+    label: 'Infos pratiques',
+    description: 'Adresse, email, spécialités, zones de livraison, horaires, etc.',
+    rows: 5,
+    defaultValue: DEFAULT_CHAT_INFO,
+  },
+]
 
 export default function AssistantBehaviorPage() {
   const [s, setS] = useState<Settings>(defaults)
@@ -55,10 +108,12 @@ export default function AssistantBehaviorPage() {
       .then((d: { settings?: ApiSettings }) => {
         if (!d.settings) return
         const legacyPrompts = splitQuoteBackendPrompt(d.settings.quote_backend_prompt)
+        const rawChat = normalizeEditablePrompt(d.settings.chat_system_prompt, assembleChatPrompt(DEFAULT_CHAT_SECTIONS))
         setS(prev => ({
           ...prev,
-          ...d.settings,
-          chat_system_prompt: normalizeEditablePrompt(d.settings?.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT),
+          language: d.settings?.language ?? prev.language,
+          greeting_message: d.settings?.greeting_message ?? prev.greeting_message,
+          chatSections: splitChatPrompt(rawChat),
           quote_extraction_prompt: normalizeEditablePrompt(d.settings?.quote_extraction_prompt, legacyPrompts.extractionPrompt),
           quote_rerank_prompt: normalizeEditablePrompt(d.settings?.quote_rerank_prompt, legacyPrompts.rerankPrompt),
           forbidden_topics: Array.isArray(d.settings?.forbidden_topics) ? d.settings.forbidden_topics : prev.forbidden_topics,
@@ -72,27 +127,27 @@ export default function AssistantBehaviorPage() {
     setS(prev => ({ ...prev, [key]: val }))
   }
 
+  function setSection(key: keyof ChatSections, val: string) {
+    setS(prev => ({ ...prev, chatSections: { ...prev.chatSections, [key]: val } }))
+  }
+
   async function save() {
     setSaving(true)
     setSaved(false)
     setError('')
-
     try {
-      const payload = {
-        language: s.language,
-        greeting_message: s.greeting_message,
-        // internal_persona supprimé du flux actif : le prompt côté chat est désormais la source unique.
-        internal_persona: '',
-        chat_system_prompt: s.chat_system_prompt,
-        quote_extraction_prompt: s.quote_extraction_prompt,
-        quote_rerank_prompt: s.quote_rerank_prompt,
-        forbidden_topics: s.forbidden_topics,
-      }
-
       const res = await fetch('/api/assistant-settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          language: s.language,
+          greeting_message: s.greeting_message,
+          internal_persona: '',
+          chat_system_prompt: assembleChatPrompt(s.chatSections),
+          quote_extraction_prompt: s.quote_extraction_prompt,
+          quote_rerank_prompt: s.quote_rerank_prompt,
+          forbidden_topics: s.forbidden_topics,
+        }),
       })
       const data = await res.json() as { error?: string }
       if (!res.ok) throw new Error(data.error || 'Sauvegarde impossible.')
@@ -104,6 +159,8 @@ export default function AssistantBehaviorPage() {
       setSaving(false)
     }
   }
+
+  const totalChars = assembleChatPrompt(s.chatSections).length
 
   return (
     <div className="max-w-5xl space-y-5">
@@ -140,48 +197,71 @@ export default function AssistantBehaviorPage() {
         </div>
       </div>
 
+      {/* Comportement — sections */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Comportement de l&apos;assistant</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Ces sections forment le prompt envoyé à l&apos;IA à chaque message. Modifiez-les indépendamment sans risquer de casser la structure globale.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] text-gray-400">{totalChars.toLocaleString('fr-FR')} car.</span>
+            <button
+              type="button"
+              onClick={() => set('chatSections', DEFAULT_CHAT_SECTIONS)}
+              className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50"
+            >
+              Tout réinitialiser
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-5 divide-y divide-gray-100">
+          {SECTIONS.map(({ key, label, description, rows, defaultValue }) => (
+            <div key={key} className="pt-5 first:pt-0">
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">{label}</label>
+                  <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSection(key, defaultValue)}
+                  className="shrink-0 text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50"
+                >
+                  Réinitialiser
+                </button>
+              </div>
+              <textarea
+                value={s.chatSections[key]}
+                onChange={e => setSection(key, e.target.value)}
+                rows={rows}
+                spellCheck={false}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-5 focus:outline-none focus:ring-2 focus:ring-black resize-y"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">{s.chatSections[key].length.toLocaleString('fr-FR')} caractères</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Prompts avancés */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Prompts avancés</h2>
           <p className="text-xs text-gray-500 mt-1">
-            Ces instructions sont utilisées côté backend. Le prompt côté chat remplace l’ancien “Persona interne” : c’est la source unique pour le comportement conversationnel.
-            Extraction et reranking doivent conserver une sortie JSON exploitable.
+            Utilisés par le backend pour interpréter les listes matériel. Doivent conserver une sortie JSON valide.
           </p>
         </div>
 
         <div>
           <div className="flex items-start justify-between gap-4 mb-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Prompt côté chat</label>
+              <label className="block text-sm font-medium text-gray-700">Extraction liste</label>
               <p className="text-xs text-gray-500 mt-0.5">
-                Utilisé par l&apos;assistant conversationnel pour collecter les informations, poser les bonnes questions et déclencher les outils.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => set('chat_system_prompt', DEFAULT_CHAT_SYSTEM_PROMPT)}
-              className="shrink-0 text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50"
-            >
-              Réinitialiser
-            </button>
-          </div>
-          <textarea
-            value={s.chat_system_prompt}
-            onChange={e => set('chat_system_prompt', e.target.value)}
-            rows={16}
-            spellCheck={false}
-            className="w-full font-mono border border-gray-200 rounded-lg px-3 py-2 text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-black resize-y"
-          />
-          <p className="mt-1 text-[11px] text-gray-400">{s.chat_system_prompt.length.toLocaleString('fr-FR')} caractères</p>
-        </div>
-
-        <div>
-          <div className="flex items-start justify-between gap-4 mb-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Prompt extraction liste</label>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Commun au chat et à /requests/new. Il transforme un message client en lignes produit structurées, avec quantités, ordre et sections.
+                Transforme un message client en lignes produit structurées, avec quantités, ordre et sections.
               </p>
             </div>
             <button
@@ -205,9 +285,9 @@ export default function AssistantBehaviorPage() {
         <div>
           <div className="flex items-start justify-between gap-4 mb-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Prompt reranking catalogue</label>
+              <label className="block text-sm font-medium text-gray-700">Reranking catalogue</label>
               <p className="text-xs text-gray-500 mt-0.5">
-                Commun au chat et à /requests/new. Il choisit le meilleur produit parmi les candidats du moteur hybride, sans inventer.
+                Choisit le meilleur produit parmi les candidats du moteur hybride, sans inventer.
               </p>
             </div>
             <button
@@ -234,10 +314,9 @@ export default function AssistantBehaviorPage() {
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Garde-fous</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Une règle par ligne. Ces garde-fous sont injectés dans le prompt côté chat au moment de répondre.
+            Une règle par ligne. Ces garde-fous sont injectés dans le prompt au moment de répondre.
           </p>
         </div>
-
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Règles et sujets à éviter</label>
           <textarea
@@ -259,8 +338,11 @@ export default function AssistantBehaviorPage() {
             Erreur : {error}
           </p>
         )}
-        <button onClick={save} disabled={saving}
-          className="bg-black text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="bg-black text-white rounded-lg px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
+        >
           {saved ? 'Sauvegardé ✓' : saving ? 'Sauvegarde…' : 'Sauvegarder'}
         </button>
       </div>

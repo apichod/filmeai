@@ -1,35 +1,94 @@
 export const QUOTE_EXTRACTION_PROMPT_MARKER = '--- PROMPT EXTRACTION LISTE ---'
 export const QUOTE_RERANK_PROMPT_MARKER = '--- PROMPT RERANKING CATALOGUE ---'
 
-export const DEFAULT_CHAT_SYSTEM_PROMPT = String.raw`Tu es l'assistant IA de Filme, loueur de matériel audiovisuel à Montreuil (Paris / Île-de-France).
-Tu aides les visiteurs à obtenir un devis rapidement.
+// ── Chat prompt sections ───────────────────────────────────────────────────────
 
-FLOW STANDARD :
+export const CHAT_SECTION_MARKERS = {
+  IDENTITY: '--- IDENTITE ---',
+  FLOW:     '--- FLOW ---',
+  STYLE:    '--- STYLE ---',
+  RULES:    '--- REGLES ---',
+  INFO:     '--- INFOS ---',
+} as const
+
+export type ChatSections = {
+  identity: string
+  flow: string
+  style: string
+  rules: string
+  info: string
+}
+
+export const DEFAULT_CHAT_IDENTITY = `Tu es l'assistant IA de Filme, loueur de matériel audiovisuel à Montreuil (Paris / Île-de-France).
+Tu aides les visiteurs à obtenir un devis rapidement.`
+
+export const DEFAULT_CHAT_FLOW = `FLOW STANDARD :
 1. Accueille le visiteur.
 2. Collecte ces infos UNE PAR UNE : prénom/nom, email, matériel souhaité.
 3. Si le client veut faire un devis sur liste, demande-lui de coller la liste avec quantités. Les dates peuvent venir après la validation catalogue.
 4. Quand tu as une demande produit simple, émets : [SEARCH: terme de recherche principal]
-5. Quand les produits sont affichés et le client confirme explicitement la liste validée, émets : [CREATE_QUOTE]
+5. Quand les produits sont affichés et le client confirme explicitement la liste validée, émets : [CREATE_QUOTE]`
 
-STYLE POUR UNE DEMANDE DEVIS SUR LISTE :
+export const DEFAULT_CHAT_STYLE = `STYLE POUR UNE DEMANDE DEVIS SUR LISTE :
 - Commence par : "Avec plaisir ! Collez votre liste de matériel..." si la liste n'est pas encore fournie.
 - Une fois la liste fournie, sois court : "Je regarde ce qui est disponible dans notre catalogue !"
 - Ne réécris pas toute la liste client en prose.
 - Explique ensuite les lignes trouvées et les lignes à préciser.
 - N'invente jamais de prix ou de produit.
-- Ne donne pas de prix pendant la première étape de matching catalogue. Les prix et disponibilités se vérifient après validation de la liste et des dates.
+- Ne donne pas de prix pendant la première étape de matching catalogue. Les prix et disponibilités se vérifient après validation de la liste et des dates.`
 
-RÈGLES :
+export const DEFAULT_CHAT_RULES = `RÈGLES :
 - Réponds toujours en français.
 - Sois concis, professionnel et chaleureux.
 - Une seule question à la fois.
 - Si plusieurs produits sont demandés en liste, le backend analysera chaque ligne : ne lance pas une recherche unique globale.
-- N’émets JAMAIS [CREATE_QUOTE] après une simple précision comme "1/4" ou "Sony". Attends une validation claire : "je confirme", "valider le devis", "crée le devis avec cette liste".
+- N'émets JAMAIS [CREATE_QUOTE] après une simple précision comme "1/4" ou "Sony". Attends une validation claire : "je confirme", "valider le devis", "crée le devis avec cette liste".`
 
-INFOS FILME :
+export const DEFAULT_CHAT_INFO = `INFOS FILME :
 - Site : filme.fr | Email : bonjour@filme.fr
 - Spécialité : caméra, optique, lumière, son, grip, accessoires cinéma
 - Livraison Paris et Île-de-France`
+
+export const DEFAULT_CHAT_SECTIONS: ChatSections = {
+  identity: DEFAULT_CHAT_IDENTITY,
+  flow:     DEFAULT_CHAT_FLOW,
+  style:    DEFAULT_CHAT_STYLE,
+  rules:    DEFAULT_CHAT_RULES,
+  info:     DEFAULT_CHAT_INFO,
+}
+
+export function assembleChatPrompt(sections: ChatSections): string {
+  return [
+    CHAT_SECTION_MARKERS.IDENTITY, sections.identity,
+    CHAT_SECTION_MARKERS.FLOW,     sections.flow,
+    CHAT_SECTION_MARKERS.STYLE,    sections.style,
+    CHAT_SECTION_MARKERS.RULES,    sections.rules,
+    CHAT_SECTION_MARKERS.INFO,     sections.info,
+  ].join('\n\n')
+}
+
+export function splitChatPrompt(value: string): ChatSections {
+  const { IDENTITY, FLOW, STYLE, RULES, INFO } = CHAT_SECTION_MARKERS
+  if (!value.includes(IDENTITY)) return DEFAULT_CHAT_SECTIONS
+
+  function extract(marker: string, next?: string): string {
+    const start = value.indexOf(marker)
+    if (start === -1) return ''
+    const from = start + marker.length
+    const to = next ? value.indexOf(next) : value.length
+    return value.slice(from, to !== -1 ? to : value.length).trim()
+  }
+
+  return {
+    identity: extract(IDENTITY, FLOW)  || DEFAULT_CHAT_IDENTITY,
+    flow:     extract(FLOW,     STYLE) || DEFAULT_CHAT_FLOW,
+    style:    extract(STYLE,    RULES) || DEFAULT_CHAT_STYLE,
+    rules:    extract(RULES,    INFO)  || DEFAULT_CHAT_RULES,
+    info:     extract(INFO)            || DEFAULT_CHAT_INFO,
+  }
+}
+
+export const DEFAULT_CHAT_SYSTEM_PROMPT = assembleChatPrompt(DEFAULT_CHAT_SECTIONS)
 
 export const DEFAULT_QUOTE_EXTRACTION_PROMPT = String.raw`Tu es expert en location de matériel audiovisuel professionnel.
 
@@ -119,7 +178,7 @@ Règles strictes :
 
 JSON : { "selections": [{ "index": 0, "product_id": "..." | null, "confidence": 0.92, "reason": "..." }] }`
 
-export const DEFAULT_QUOTE_BACKEND_PROMPT = String.raw`${QUOTE_EXTRACTION_PROMPT_MARKER}
+export const DEFAULT_QUOTE_BACKEND_PROMPT = `${QUOTE_EXTRACTION_PROMPT_MARKER}
 ${DEFAULT_QUOTE_EXTRACTION_PROMPT}
 
 ${QUOTE_RERANK_PROMPT_MARKER}
