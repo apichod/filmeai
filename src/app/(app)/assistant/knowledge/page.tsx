@@ -416,6 +416,44 @@ export default function AssistantKnowledgePage() {
     }
   }
 
+  function exportSignalsSQL() {
+    if (signals.length === 0) return
+    const date = new Date().toISOString().slice(0, 10)
+    const escape = (s: string) => s.replace(/'/g, "''")
+
+    const rows = signals.map(s => {
+      const term = escape(s.term)
+      const productName = escape(s.product_name)
+      const productId = s.product_id ? `'${s.product_id}'` : 'NULL'
+      const source = escape(s.source || 'knowledge_manual')
+      const occurrences = s.occurrences || 1
+      const approved = s.approved === false ? 'false' : 'true'
+      return `  ('${term}', '${productName}', ${productId}, '${source}', ${occurrences}, ${approved})`
+    }).join(',\n')
+
+    const sql = [
+      `-- Export signaux FilmeAI — ${date}`,
+      `-- ${signals.length} alias / associations catalogue`,
+      ``,
+      `INSERT INTO public.catalog_signals (term, product_name, product_id, source, occurrences, approved) VALUES`,
+      rows,
+      `ON CONFLICT (term) DO UPDATE SET`,
+      `  product_name = EXCLUDED.product_name,`,
+      `  product_id   = EXCLUDED.product_id,`,
+      `  source       = EXCLUDED.source,`,
+      `  occurrences  = EXCLUDED.occurrences,`,
+      `  approved     = EXCLUDED.approved;`,
+    ].join('\n')
+
+    const blob = new Blob([sql], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `filmeai-signaux-${date}.sql`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   async function approveSignal(id: string) {
     setSignalError('')
     try {
@@ -867,12 +905,25 @@ export default function AssistantKnowledgePage() {
                   Ces signaux alimentent le glossaire d’extraction : “terme client” → “produit catalogue”. Les corrections manuelles dans les devis l’enrichissent automatiquement.
                 </p>
               </div>
-              <button
-                onClick={() => void loadSignals()}
-                className="flex items-center gap-1 text-xs border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
-              >
-                <IconRefresh className="w-3.5 h-3.5" /> Rafraîchir
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={exportSignalsSQL}
+                  disabled={signals.length === 0}
+                  title="Exporter tous les signaux en SQL"
+                  className="flex items-center gap-1 text-xs border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors disabled:opacity-40"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Exporter SQL
+                </button>
+                <button
+                  onClick={() => void loadSignals()}
+                  className="flex items-center gap-1 text-xs border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
+                >
+                  <IconRefresh className="w-3.5 h-3.5" /> Rafraîchir
+                </button>
+              </div>
             </div>
 
             <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
