@@ -102,6 +102,68 @@ function ResetButton({ onClick }: { onClick: () => void }) {
   )
 }
 
+function buildExportText(s: Settings): string {
+  const line = '─'.repeat(60)
+  const sections: string[] = []
+
+  const add = (tab: string, field: string, dbColumn: string, content: string) => {
+    sections.push([
+      `Onglet          : ${tab}`,
+      `Champ           : ${field}`,
+      `Colonne SQL     : ${dbColumn}`,
+      ``,
+      content.trim(),
+    ].join('\n'))
+  }
+
+  DEVIS_SECTIONS.forEach(({ label, key }) => {
+    const dbMap: Record<string, string> = {
+      identity: 'chat_system_prompt [section IDENTITE]',
+      flow:     'chat_system_prompt [section FLOW]',
+      style:    'chat_system_prompt [section STYLE]',
+      compat:   'chat_system_prompt [section COMPAT]',
+      rules:    'chat_system_prompt [section REGLES]',
+      info:     'chat_system_prompt [section INFOS]',
+    }
+    add('Devis', label, dbMap[key] ?? key, s.chatSections[key])
+  })
+
+  add('Disponibilité', 'Prompt système',   'chat_system_prompt_disponibilite', s.chat_system_prompt_disponibilite)
+  add('Question technique', 'Prompt système', 'chat_system_prompt_technique',   s.chat_system_prompt_technique)
+  add('Question générale',  'Prompt système', 'chat_system_prompt_general',     s.chat_system_prompt_general)
+  add('Avancé', 'Extraction liste',    'quote_extraction_prompt', s.quote_extraction_prompt)
+  add('Avancé', 'Reranking catalogue', 'quote_rerank_prompt',     s.quote_rerank_prompt)
+
+  return sections.join(`\n\n${line}\n\n`)
+}
+
+function ExportButton({ s }: { s: Settings }) {
+  function handleExport() {
+    const text = buildExportText(s)
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `prompts-filmeai-${new Date().toISOString().slice(0, 10)}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleExport}
+      title="Exporter tous les prompts"
+      className="ml-auto flex items-center gap-1.5 text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50 transition-colors"
+    >
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+      </svg>
+      Exporter
+    </button>
+  )
+}
+
 export default function AssistantBehaviorPage() {
   const [s, setS] = useState<Settings>(defaults)
   const [tab, setTab] = useState<Tab>('devis')
@@ -217,6 +279,7 @@ export default function AssistantBehaviorPage() {
           <TabButton id="technique" active={tab === 'technique'} label="Question technique" onClick={setTab} />
           <TabButton id="general" active={tab === 'general'} label="Question générale" onClick={setTab} />
           <TabButton id="avance" active={tab === 'avance'} label="Avancé" onClick={setTab} />
+          <ExportButton s={s} />
         </div>
 
         <div className="p-6">
