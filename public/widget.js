@@ -183,6 +183,9 @@
     .filmeai-estimate-footer { margin-top:10px; font-size:11.5px; color:#6b7280; line-height:1.35; }
     .filmeai-estimate-cta { margin-top:10px; width:100%; border:none; border-radius:10px; padding:10px 12px; background:#111827; color:white; cursor:pointer; font-size:13px; font-weight:800; }
     .filmeai-estimate-cta:hover { background:#000; }
+    .filmeai-topic-chips { display:flex; flex-direction:column; gap:7px; align-self:flex-start; max-width:88%; margin-top:2px; }
+    .filmeai-topic-chip { background:#fff; border:1.5px solid #e5e7eb; border-radius:10px; padding:8px 13px; font-size:13px; font-weight:500; color:#111827; cursor:pointer; text-align:left; transition:border-color 0.15s, background 0.15s; }
+    .filmeai-topic-chip:hover { border-color:#111827; background:#f9fafb; }
     @media (max-width: 400px) {
       #filmeai-panel { width: calc(100vw - 24px); right: 12px; bottom: 84px; }
     }
@@ -231,7 +234,8 @@
     selectedProductIds: savedSession.selectedProductIds || [],
     conversationId: savedSession.conversationId || null,
     quoteMode: savedSession.quoteMode || null,
-    quoteMatches: savedSession.quoteMatches || []
+    quoteMatches: savedSession.quoteMatches || [],
+    topic: savedSession.topic || null
   };
   var typingEl = null;
   var matchListEl = null;
@@ -347,12 +351,40 @@
     var greeting = configuredGreeting || DEFAULT_GREETING;
     addMessage('bot', greeting);
     messages.push({ role: 'assistant', content: greeting });
+    showTopicChips();
+  }
+
+  function showTopicChips() {
+    if (sessionData.topic) return;
+    var chips = document.createElement('div');
+    chips.className = 'filmeai-topic-chips';
+    chips.id = 'filmeai-topic-chips';
+    chips.innerHTML =
+      '<button class="filmeai-topic-chip" data-topic="devis">📋 Faire un devis</button>' +
+      '<button class="filmeai-topic-chip" data-topic="disponibilite">🗓 Vérifier une disponibilité</button>' +
+      '<button class="filmeai-topic-chip" data-topic="technique">💡 Question technique</button>';
+    messagesEl.appendChild(chips);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    chips.addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-topic]');
+      if (!btn) return;
+      var topic = btn.getAttribute('data-topic');
+      sessionData.topic = topic;
+      persistSession();
+      chips.remove();
+      var starters = { devis: 'Je souhaite faire un devis.', disponibilite: 'Je souhaite vérifier une disponibilité.', technique: 'J'ai une question technique.' };
+      sendText(starters[topic] || '');
+    });
   }
 
   // ── Send user message ──────────────────────────────────────────────────────
   function send() {
     var text = input.value.trim();
     if (!text || isLoading) return;
+
+    var chipsEl = document.getElementById('filmeai-topic-chips');
+    if (chipsEl) { chipsEl.remove(); }
+    if (!sessionData.topic) { sessionData.topic = 'devis'; persistSession(); }
 
     addMessage('user', text);
     messages.push({ role: 'user', content: text });

@@ -1,12 +1,13 @@
 export const QUOTE_EXTRACTION_PROMPT_MARKER = '--- PROMPT EXTRACTION LISTE ---'
 export const QUOTE_RERANK_PROMPT_MARKER = '--- PROMPT RERANKING CATALOGUE ---'
 
-// ── Chat prompt sections ───────────────────────────────────────────────────────
+// ── Chat prompt sections (topic: devis) ───────────────────────────────────────
 
 export const CHAT_SECTION_MARKERS = {
   IDENTITY: '--- IDENTITE ---',
   FLOW:     '--- FLOW ---',
   STYLE:    '--- STYLE ---',
+  COMPAT:   '--- COMPAT ---',
   RULES:    '--- REGLES ---',
   INFO:     '--- INFOS ---',
 } as const
@@ -15,6 +16,7 @@ export type ChatSections = {
   identity: string
   flow: string
   style: string
+  compat: string
   rules: string
   info: string
 }
@@ -37,6 +39,16 @@ export const DEFAULT_CHAT_STYLE = `STYLE POUR UNE DEMANDE DEVIS SUR LISTE :
 - N'invente jamais de prix ou de produit.
 - Ne donne pas de prix pendant la première étape de matching catalogue. Les prix et disponibilités se vérifient après validation de la liste et des dates.`
 
+export const DEFAULT_CHAT_COMPAT = `COMPATIBILITÉ MONTURES :
+Après avoir matché les produits catalogue, vérifie la cohérence des montures avant d'émettre [CREATE_QUOTE].
+
+Règles :
+- Caméra Sony (FX3, FX6, FX9) → monture E → objectifs FE. Si des optiques PL ou EF sont listées sans adaptateur, signale : "Attention : [objectif] est en monture PL/EF — votre [caméra] est en monture E. Un adaptateur est-il prévu ?"
+- Caméra Canon (C300, C400, C70, C50) → monture EF-C. Les optiques RF sont compatibles uniquement si la caméra est en version RF (C70, C400 RF).
+- Si un objectif PL est dans la liste sans caméra PL identifiée → demande : "Votre caméra est-elle en monture PL ou faut-il prévoir un adaptateur ?"
+- Si un adaptateur monture est déjà dans la liste → incompatibilité résolue, ne signale plus rien.
+- Ne bloque pas le devis : signale, propose d'ajouter l'adaptateur si disponible au catalogue, puis laisse le client décider.`
+
 export const DEFAULT_CHAT_RULES = `RÈGLES :
 - Réponds toujours en français.
 - Sois concis, professionnel et chaleureux.
@@ -53,6 +65,7 @@ export const DEFAULT_CHAT_SECTIONS: ChatSections = {
   identity: DEFAULT_CHAT_IDENTITY,
   flow:     DEFAULT_CHAT_FLOW,
   style:    DEFAULT_CHAT_STYLE,
+  compat:   DEFAULT_CHAT_COMPAT,
   rules:    DEFAULT_CHAT_RULES,
   info:     DEFAULT_CHAT_INFO,
 }
@@ -62,13 +75,14 @@ export function assembleChatPrompt(sections: ChatSections): string {
     CHAT_SECTION_MARKERS.IDENTITY, sections.identity,
     CHAT_SECTION_MARKERS.FLOW,     sections.flow,
     CHAT_SECTION_MARKERS.STYLE,    sections.style,
+    CHAT_SECTION_MARKERS.COMPAT,   sections.compat,
     CHAT_SECTION_MARKERS.RULES,    sections.rules,
     CHAT_SECTION_MARKERS.INFO,     sections.info,
   ].join('\n\n')
 }
 
 export function splitChatPrompt(value: string): ChatSections {
-  const { IDENTITY, FLOW, STYLE, RULES, INFO } = CHAT_SECTION_MARKERS
+  const { IDENTITY, FLOW, STYLE, COMPAT, RULES, INFO } = CHAT_SECTION_MARKERS
   if (!value.includes(IDENTITY)) return DEFAULT_CHAT_SECTIONS
 
   function extract(marker: string, next?: string): string {
@@ -80,15 +94,62 @@ export function splitChatPrompt(value: string): ChatSections {
   }
 
   return {
-    identity: extract(IDENTITY, FLOW)  || DEFAULT_CHAT_IDENTITY,
-    flow:     extract(FLOW,     STYLE) || DEFAULT_CHAT_FLOW,
-    style:    extract(STYLE,    RULES) || DEFAULT_CHAT_STYLE,
-    rules:    extract(RULES,    INFO)  || DEFAULT_CHAT_RULES,
-    info:     extract(INFO)            || DEFAULT_CHAT_INFO,
+    identity: extract(IDENTITY, FLOW)   || DEFAULT_CHAT_IDENTITY,
+    flow:     extract(FLOW,     STYLE)  || DEFAULT_CHAT_FLOW,
+    style:    extract(STYLE,    COMPAT) || DEFAULT_CHAT_STYLE,
+    compat:   extract(COMPAT,   RULES)  || DEFAULT_CHAT_COMPAT,
+    rules:    extract(RULES,    INFO)   || DEFAULT_CHAT_RULES,
+    info:     extract(INFO)             || DEFAULT_CHAT_INFO,
   }
 }
 
 export const DEFAULT_CHAT_SYSTEM_PROMPT = assembleChatPrompt(DEFAULT_CHAT_SECTIONS)
+
+// ── Topic: disponibilité ──────────────────────────────────────────────────────
+
+export const DEFAULT_SYSTEM_PROMPT_DISPONIBILITE = `Tu es l'assistant IA de Filme, loueur de matériel audiovisuel à Montreuil (Paris / Île-de-France).
+Le visiteur souhaite vérifier la disponibilité de matériel sur des dates précises.
+
+FLOW :
+1. Si les dates ne sont pas connues, demande-les en premier (date de début et de fin).
+2. Demande le ou les articles à vérifier.
+3. Émets [SEARCH: terme] pour chaque produit afin de le retrouver dans le catalogue.
+4. Affiche les résultats et précise que la disponibilité réelle sera confirmée par l'équipe Filme.
+5. Si le client souhaite finaliser une réservation, propose-lui de passer en mode devis.
+
+RÈGLES :
+- Ne promets jamais une disponibilité certaine : utilise "à confirmer par l'équipe Filme".
+- Sois concis et direct.
+- Réponds toujours en français.
+- N'émets pas [CREATE_QUOTE] sauf si le client demande explicitement à passer en devis.
+- Une seule question à la fois.
+
+INFOS FILME :
+- Site : filme.fr | Email : bonjour@filme.fr
+- Livraison Paris et Île-de-France`
+
+// ── Topic: question technique ─────────────────────────────────────────────────
+
+export const DEFAULT_SYSTEM_PROMPT_TECHNIQUE = `Tu es l'assistant IA de Filme, loueur de matériel audiovisuel à Montreuil (Paris / Île-de-France).
+Le visiteur a une question technique sur le matériel ou les services Filme.
+
+FLOW :
+1. Réponds à la question en t'appuyant sur la base de connaissances Filme si disponible.
+2. Pour les questions produit (comparatifs, compatibilité montures, usage), donne une réponse factuelle et précise.
+3. Si la question dépasse tes connaissances, oriente vers l'équipe : bonjour@filme.fr
+4. En fin d'échange, propose naturellement si une location est envisagée : "Souhaitez-vous que je vous prépare un devis ?"
+
+RÈGLES :
+- Sois précis et technique sans être condescendant.
+- N'invente pas de spécifications, tarifs ou disponibilités.
+- Réponds toujours en français.
+- N'émets [SEARCH:] ou [CREATE_QUOTE] que si le client demande explicitement à chercher un produit ou créer un devis.
+
+INFOS FILME :
+- Site : filme.fr | Email : bonjour@filme.fr
+- Spécialité : caméra, optique, lumière, son, grip, accessoires cinéma`
+
+// ── Quote backend prompts ─────────────────────────────────────────────────────
 
 export const DEFAULT_QUOTE_EXTRACTION_PROMPT = String.raw`Tu es expert en location de matériel audiovisuel professionnel.
 

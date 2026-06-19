@@ -5,6 +5,8 @@ import {
   DEFAULT_CHAT_SYSTEM_PROMPT,
   DEFAULT_QUOTE_EXTRACTION_PROMPT,
   DEFAULT_QUOTE_RERANK_PROMPT,
+  DEFAULT_SYSTEM_PROMPT_DISPONIBILITE,
+  DEFAULT_SYSTEM_PROMPT_TECHNIQUE,
   normalizeEditablePrompt,
   splitQuoteBackendPrompt,
 } from '@/lib/defaultAssistantPrompts'
@@ -37,6 +39,8 @@ type Product = {
   source_type?: 'product_group' | 'bundle' | null
 }
 
+type ChatTopic = 'devis' | 'disponibilite' | 'technique'
+
 type SessionData = {
   customerName?: string | null
   customerEmail?: string | null
@@ -47,6 +51,7 @@ type SessionData = {
   quoteMatches?: unknown[]
   conversationId?: string | null
   quoteMode?: 'immediate' | 'manual' | null
+  topic?: ChatTopic | null
 }
 
 type IncomingBody = {
@@ -142,6 +147,8 @@ type ConversationPatch = {
 
 type AssistantPromptSettings = {
   chat_system_prompt?: string | null
+  chat_system_prompt_disponibilite?: string | null
+  chat_system_prompt_technique?: string | null
   quote_extraction_prompt?: string | null
   quote_rerank_prompt?: string | null
   quote_backend_prompt?: string | null
@@ -378,6 +385,7 @@ function inferSessionData(messages: OpenAI.Chat.ChatCompletionMessageParam[], se
     quoteMatches: sessionData.quoteMatches || [],
     conversationId: sessionData.conversationId || null,
     quoteMode: sessionData.quoteMode || null,
+    topic: sessionData.topic || null,
   }
 }
 
@@ -554,9 +562,12 @@ async function getDefaultOrganizationId(supabase: SupabaseAdmin): Promise<string
 }
 
 async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
-  chatSystemPrompt: string
+  chatSystemPromptDevis: string
+  chatSystemPromptDisponibilite: string
+  chatSystemPromptTechnique: string
   quoteExtractionPrompt: string
   quoteRerankPrompt: string
+  forbiddenTopics: string[] | null
 }> {
   try {
     const organizationId = await getDefaultOrganizationId(supabase)
@@ -572,18 +583,23 @@ async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
 
     const settings = (data || {}) as AssistantPromptSettings
     const legacyPrompts = splitQuoteBackendPrompt(settings.quote_backend_prompt)
-    const baseChatPrompt = normalizeEditablePrompt(settings.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT)
     return {
-      chatSystemPrompt: buildChatSystemPrompt(baseChatPrompt, settings.forbidden_topics),
+      chatSystemPromptDevis: normalizeEditablePrompt(settings.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT),
+      chatSystemPromptDisponibilite: normalizeEditablePrompt(settings.chat_system_prompt_disponibilite, DEFAULT_SYSTEM_PROMPT_DISPONIBILITE),
+      chatSystemPromptTechnique: normalizeEditablePrompt(settings.chat_system_prompt_technique, DEFAULT_SYSTEM_PROMPT_TECHNIQUE),
       quoteExtractionPrompt: normalizeEditablePrompt(settings.quote_extraction_prompt, legacyPrompts.extractionPrompt),
       quoteRerankPrompt: normalizeEditablePrompt(settings.quote_rerank_prompt, legacyPrompts.rerankPrompt),
+      forbiddenTopics: Array.isArray(settings.forbidden_topics) ? settings.forbidden_topics : null,
     }
   } catch (err) {
     console.warn('Assistant prompt settings fallback:', err instanceof Error ? err.message : String(err))
     return {
-      chatSystemPrompt: DEFAULT_CHAT_SYSTEM_PROMPT,
+      chatSystemPromptDevis: DEFAULT_CHAT_SYSTEM_PROMPT,
+      chatSystemPromptDisponibilite: DEFAULT_SYSTEM_PROMPT_DISPONIBILITE,
+      chatSystemPromptTechnique: DEFAULT_SYSTEM_PROMPT_TECHNIQUE,
       quoteExtractionPrompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
       quoteRerankPrompt: DEFAULT_QUOTE_RERANK_PROMPT,
+      forbiddenTopics: null,
     }
   }
 }
@@ -1186,7 +1202,19 @@ export async function POST(req: NextRequest) {
         ? `${previousUserText}\nPrécision client : ${lastUserText}`
         : ''
     const supabaseAdmin = getSupabaseAdmin()
-    const { chatSystemPrompt, quoteExtractionPrompt, quoteRerankPrompt } = await getAssistantPromptSettings(supabaseAdmin)
+    const { chatSystemPromptDevis, chatSystemPromptDisponibilite, chatSystemPromptTechnique, quoteExtractionPrompt, quoteRerankPrompt, forbiddenTopics } = await getAssistantPromptSettings(supabaseAdmin)
+
+    const topic = sessionData.topic || 'devis'
+    let baseSystemPrompt: string
+    if (topic === 'disponibilite') {
+      baseSystemPrompt = chatSystemPromptDisponibilite
+    } else if (topic === 'technique') {
+      baseSystemPrompt = chatSystemPromptTechnique
+    } else {
+      baseSystemPrompt = chatSystemPromptDevis
+    }
+    const chatSystemPrompt = buildChatSystemPrompt(baseSystemPrompt, forbiddenTopics)
+
     let knowledgeContext = ''
 
     if (!quoteRequestText && shouldSearchKnowledge(lastUserText)) {
