@@ -362,7 +362,8 @@
     chips.innerHTML =
       '<button class="filmeai-topic-chip" data-topic="devis">📋 Faire un devis</button>' +
       '<button class="filmeai-topic-chip" data-topic="disponibilite">🗓 Vérifier une disponibilité</button>' +
-      '<button class="filmeai-topic-chip" data-topic="technique">💡 Question technique</button>';
+      '<button class="filmeai-topic-chip" data-topic="technique">💡 Question technique</button>' +
+      '<button class="filmeai-topic-chip" data-topic="general">💬 Question générale</button>';
     messagesEl.appendChild(chips);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     chips.addEventListener('click', function(e) {
@@ -372,7 +373,7 @@
       sessionData.topic = topic;
       persistSession();
       chips.remove();
-      var starters = { devis: 'Je souhaite faire un devis.', disponibilite: 'Je souhaite vérifier une disponibilité.', technique: 'J'ai une question technique.' };
+      var starters = { devis: 'Je souhaite faire un devis.', disponibilite: 'Je souhaite vérifier une disponibilité.', technique: 'J'ai une question technique.', general: 'J'ai une question générale.' };
       sendText(starters[topic] || '');
     });
   }
