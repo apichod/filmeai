@@ -78,8 +78,10 @@ const rawItems = candidateSets.map((set, index) => {
     }
   })
 
+  const displayRequestedName = set.item.displayRaw || set.item.raw
+
   return {
-    requestedName: set.item.raw,
+    requestedName: displayRequestedName,
     searchQuery: set.item.query,
     section: set.item.section,
     quantity: set.item.quantity,
@@ -95,14 +97,15 @@ const rawItems = candidateSets.map((set, index) => {
             : 'Correspondance catalogue forte par nom/référence')
       : selection?.reason || 'Aucune correspondance catalogue assez fiable',
     debug: {
-      requestedName: set.item.raw,
+      requestedName: displayRequestedName,
+      matchingRaw: set.item.raw,
       searchQuery: set.item.query,
       section: set.item.section,
       quantity: set.item.quantity,
       query: {
         requestedFromPrompt: set.item.queryDebug?.requestedFromPrompt || set.item.raw,
         queryFromPrompt: set.item.queryDebug?.queryFromPrompt || set.item.query,
-        finalRequested: set.item.raw,
+        finalRequested: displayRequestedName,
         finalQuery: set.item.query,
         changed: Boolean(set.item.queryDebug?.changed) || set.item.raw.trim() !== set.item.query.trim(),
         influences: queryInfluences,

@@ -8,6 +8,88 @@ function appendTokenIfMissing(value: string, token: string): string {
   return norm.includes(tokenNorm) ? value : `${value} ${token}`.trim()
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function cleanOriginalRequestedText(value: string, section: string | null): string {
+  let text = value
+    .replace(/^[\s•\-–—]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (section) {
+    const sectionPattern = new RegExp(`^${escapeRegExp(section)}\\s*[:：-]\\s*`, 'i')
+    text = text.replace(sectionPattern, '').trim()
+  }
+
+  return stripQuantityPrefix(text)
+    .replace(/^[:：-]\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function itemNeedles(item: ExtractedItem): string[] {
+  const values = [item.raw, item.query]
+  const needles: string[] = []
+
+  for (const value of values) {
+    const norm = normalizeText(value)
+    const modelMatches = norm.match(/\b(?:fx3|fx6|fx9|fx30|c50|c70|c80|c300|c400|rs3|rs4|ronin\s*rs\s*[34]|\d{2,3}\s*-\s*\d{2,3}|\d{2,3}\s*(?:mm|gb|go|wh)|b10x|prohead|air\s*remote)\b/g) || []
+    needles.push(...modelMatches)
+  }
+
+  const rawNorm = normalizeText(item.raw)
+  if (rawNorm.length >= 3) needles.push(rawNorm)
+
+  return Array.from(new Set(needles.map(n => normalizeText(n)).filter(n => n.length >= 2)))
+}
+
+function lineContainsNeedle(line: string, needles: string[]): boolean {
+  const norm = normalizeText(line)
+  const compact = norm.replace(/\s+/g, '')
+  return needles.some(needle => norm.includes(needle) || compact.includes(needle.replace(/\s+/g, '')))
+}
+
+function splitQuantityChunks(line: string): string[] {
+  // Découpe les lignes compactes du type "Objectifs : 3x 70-200 1x 24-70".
+  const chunks = line
+    .replace(/\s+(?=(?:x|×)?\d+\s*(?:x|×)\s+)/gi, '\n')
+    .replace(/\s+(?=(?:un|une)\s+)/gi, '\n')
+    .split('\n')
+    .map(chunk => chunk.trim())
+    .filter(Boolean)
+
+  return chunks.length > 0 ? chunks : [line]
+}
+
+function findOriginalRequestedText(message: string, item: ExtractedItem): string | null {
+  const needles = itemNeedles(item)
+  if (needles.length === 0) return null
+
+  const lines = message
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  const candidates: string[] = []
+  for (const line of lines) {
+    for (const chunk of splitQuantityChunks(line)) {
+      if (lineContainsNeedle(chunk, needles)) {
+        const cleaned = cleanOriginalRequestedText(chunk, item.section)
+        if (cleaned) candidates.push(cleaned)
+      }
+    }
+  }
+
+  if (candidates.length === 0) return null
+
+  // On préfère la trace la plus riche : elle garde les précisions utiles comme
+  // "avec v lock" plutôt que le modèle nu "Sony FX3".
+  return candidates.sort((a, b) => b.length - a.length)[0]
+}
+
 function restoreExplicitBrand(raw: string, message: string): { raw: string; influence?: QueryInfluence } {
   const cleanRaw = normalizeText(raw)
   const rules: Array<{ raw: RegExp; message: RegExp; label: string }> = [
@@ -52,6 +134,7 @@ function findApertureNearFocal(message: string, item: ExtractedItem): string | n
 function restoreOriginalHints(item: ExtractedItem, message: string): ExtractedItem {
   const requestedFromPrompt = item.raw
   const queryFromPrompt = item.query
+  const displayRaw = findOriginalRequestedText(message, item) || item.raw
   const influences: QueryInfluence[] = []
 
   if (normalizeText(requestedFromPrompt) !== normalizeText(queryFromPrompt)) {
@@ -65,6 +148,14 @@ function restoreOriginalHints(item: ExtractedItem, message: string): ExtractedIt
       source: 'extraction_prompt',
       label: 'Prompt Extraction liste',
       detail: `L'extraction a conservé la query proche du demandé : “${queryFromPrompt}”.`,
+    })
+  }
+
+  if (displayRaw && normalizeText(displayRaw) !== normalizeText(item.raw)) {
+    influences.push({
+      source: 'original_client_text',
+      label: 'Texte client conservé',
+      detail: `Affichage conservé depuis la demande originale : “${displayRaw}”.`,
     })
   }
 
@@ -100,10 +191,11 @@ function restoreOriginalHints(item: ExtractedItem, message: string): ExtractedIt
     ...item,
     raw,
     query,
+    displayRaw,
     queryDebug: {
       requestedFromPrompt,
       queryFromPrompt,
-      finalRequested: raw,
+      finalRequested: displayRaw,
       finalQuery: query,
       changed: normalizeText(requestedFromPrompt) !== normalizeText(raw) || normalizeText(queryFromPrompt) !== normalizeText(query),
       influences,

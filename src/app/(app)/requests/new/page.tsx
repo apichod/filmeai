@@ -31,6 +31,7 @@ type Product = {
 type MatchDebug = {
   requestedName: string
   searchQuery: string
+  matchingRaw?: string
   section?: string | null
   quantity: number
   query?: {
@@ -228,6 +229,7 @@ function formatDiagnosticForCopy(debug: MatchDebug) {
   lines.push('DIAGNOSTIC IA FILMEAI')
   lines.push('')
   lines.push(`Demandé : ${debug.requestedName}`)
+  if (debug.matchingRaw && debug.matchingRaw !== debug.requestedName) lines.push(`Terme matching : ${debug.matchingRaw}`)
   lines.push(`Query : ${debug.searchQuery}`)
   if (debug.query) {
     lines.push(`Query prompt initiale : ${debug.query.queryFromPrompt}`)
@@ -315,6 +317,9 @@ function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
         <div>
           <p className="font-semibold text-slate-900">Diagnostic IA</p>
           <p className="mt-1 text-slate-500">Demandé : <span className="font-medium text-slate-700">{debug.requestedName}</span></p>
+          {debug.matchingRaw && debug.matchingRaw !== debug.requestedName && (
+            <p className="text-slate-500">Terme matching : <span className="font-medium text-slate-700">{debug.matchingRaw}</span></p>
+          )}
           <p className="text-slate-500">Query : <span className="font-medium text-slate-700">{debug.searchQuery}</span></p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

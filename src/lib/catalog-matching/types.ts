@@ -22,7 +22,7 @@ export type Product = {
 }
 
 export type QueryInfluence = {
-  source: 'extraction_prompt' | 'frontend_signal' | 'backend_preserve_brand' | 'backend_preserve_aperture' | 'section_context'
+  source: 'extraction_prompt' | 'frontend_signal' | 'backend_preserve_brand' | 'backend_preserve_aperture' | 'section_context' | 'original_client_text'
   label: string
   detail: string
 }
@@ -37,8 +37,12 @@ export type QueryDebug = {
 }
 
 export type ExtractedItem = {
+  // Terme court/nettoyé utilisé par le moteur de matching.
   raw: string
+  // Terme enrichi utilisé pour chercher dans le catalogue.
   query: string
+  // Terme exact client, sans préfixe quantité, utilisé pour l'affichage et la correction humaine.
+  displayRaw?: string
   quantity: number
   section: string | null
   queryDebug?: QueryDebug
