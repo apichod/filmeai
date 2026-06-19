@@ -193,7 +193,63 @@ function sourceLabel(source: MatchDebug['selectedBy']) {
   return 'Aucun choix automatique'
 }
 
+function formatDiagnosticForCopy(debug: MatchDebug) {
+  const lines: string[] = []
+
+  lines.push('DIAGNOSTIC IA FILMEAI')
+  lines.push('')
+  lines.push(`Demandé : ${debug.requestedName}`)
+  lines.push(`Query : ${debug.searchQuery}`)
+  if (debug.section) lines.push(`Section : ${debug.section}`)
+  lines.push(`Quantité : ${debug.quantity}`)
+  lines.push(`Source du choix : ${sourceLabel(debug.selectedBy)}`)
+  lines.push(`Choix final : ${debug.finalChoice?.name || 'aucun'}`)
+
+  lines.push('')
+  lines.push('SIGNAUX UTILISÉS')
+  if (debug.signals.length === 0) {
+    lines.push('- aucun')
+  } else {
+    debug.signals.forEach(signal => {
+      lines.push(`- ${signal.term} → ${signal.productName} | source=${signal.source || 'n/a'} | occurrences=${signal.occurrences ?? 0} | type=${signal.instructionOnly ? 'instruction' : 'association'}`)
+    })
+  }
+
+  lines.push('')
+  lines.push('DÉCISIONS MOTEUR')
+  lines.push(`- Reranking : ${debug.rerank?.productId ? `${Math.round(debug.rerank.confidence * 100)}%` : 'aucun choix'}`)
+  if (debug.rerank?.reason) lines.push(`- Raison reranking : ${debug.rerank.reason}`)
+  lines.push(`- Déterministe : ${debug.deterministic ? `${debug.deterministic.productName} (${debug.deterministic.score})` : 'aucun'}`)
+  lines.push(`- Pack préféré : ${debug.preferredPack ? `${debug.preferredPack.productName} (${debug.preferredPack.score})` : 'aucun'}`)
+
+  lines.push('')
+  lines.push('CANDIDATS TESTÉS')
+  debug.candidates.forEach((candidate, index) => {
+    lines.push(`${index + 1}. ${candidate.name}`)
+    lines.push(`   id=${candidate.id}`)
+    lines.push(`   score=${candidate.deterministicScore} | similarité=${candidate.similarity != null ? Math.round(candidate.similarity * 100) + '%' : 'n/a'} | selected=${candidate.selected ? 'oui' : 'non'} | rerank=${candidate.rerankChoice ? 'oui' : 'non'} | signal=${candidate.signalMatch ? 'oui' : 'non'} | unsafe=${candidate.unsafe ? 'oui' : 'non'}`)
+    if (candidate.unsafeReasons.length > 0) {
+      lines.push(`   garde-fous=${candidate.unsafeReasons.join(' · ')}`)
+    }
+  })
+
+  lines.push('')
+  lines.push('JSON DEBUG')
+  lines.push(JSON.stringify(debug, null, 2))
+
+  return lines.join('\n')
+}
+
 function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copyDiagnostic() {
+    const text = formatDiagnosticForCopy(debug)
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
+
   return (
     <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
       <div className="flex items-start justify-between gap-3">
@@ -202,9 +258,18 @@ function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
           <p className="mt-1 text-slate-500">Demandé : <span className="font-medium text-slate-700">{debug.requestedName}</span></p>
           <p className="text-slate-500">Query : <span className="font-medium text-slate-700">{debug.searchQuery}</span></p>
         </div>
-        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
-          {sourceLabel(debug.selectedBy)}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={copyDiagnostic}
+            className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-slate-700"
+          >
+            {copied ? 'Copié !' : 'Copier'}
+          </button>
+          <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+            {sourceLabel(debug.selectedBy)}
+          </span>
+        </div>
       </div>
 
       {debug.finalChoice && (
