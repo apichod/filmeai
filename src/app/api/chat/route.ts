@@ -496,6 +496,19 @@ function isEstimateDeliveryRequest(text: string): boolean {
     /\bje souhaite recevoir le devis\b/.test(normalized)
 }
 
+function isQuoteIntent(text: string): boolean {
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return /\b(faire|avoir|obtenir|preparer|recevoir|demander|creer|generer)\b.*\b(devis|estimation|demande)\b/.test(normalized) ||
+    /\b(comment faire un devis|je veux un devis|j ai besoin d un devis|besoin d un devis)\b/.test(normalized)
+}
+
 function compactDescription(value: string | null): string {
   if (!value) return ''
   return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 180)
@@ -1217,7 +1230,7 @@ export async function POST(req: NextRequest) {
       forbiddenTopics,
     } = await getAssistantPromptSettings(supabaseAdmin)
 
-    const topic = sessionData.topic || 'devis'
+    const topic = isQuoteIntent(lastUserText) ? 'devis' : sessionData.topic || 'devis'
     let baseSystemPrompt: string
     if (topic === 'disponibilite') {
       baseSystemPrompt = chatSystemPromptDisponibilite
