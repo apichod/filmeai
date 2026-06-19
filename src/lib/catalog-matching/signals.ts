@@ -1,3 +1,4 @@
+// Doctrine matching: lire ./DOCTRINE.md avant modification. Généraliser l'intention, éviter les exceptions produit.
 import { getDefaultOrganizationId, getSupabaseAdmin } from './db'
 import { hasPreciseReference, normalizeText, normalizedSignalTerm, significantTokens, STOPWORDS } from './text'
 import type { CatalogSignal, ExtractedItem, Product } from './types'
@@ -51,6 +52,20 @@ export function isBroadSignalTerm(value: string): boolean {
   return /^(canon|sony|blackmagic|profoto|aputure|smallhd|atomos|canon rf|canon ef|sony fe|sony e|rf|ef|fe|pl|objectif|objectifs|camera|caméra)$/.test(text)
 }
 
+function isCameraModelToPackSignal(signal: CatalogSignal): boolean {
+  const source = normalizeText(signal.source || '')
+  const productName = normalizeText(signal.product_name || '')
+  return source === 'camera_model_to_pack' || /\bpack\b/.test(productName)
+}
+
+function itemLooksLikeCameraAccessoryRequest(item: ExtractedItem): boolean {
+  const text = normalizeText(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
+  const hasCameraModel = /\b(fx3|fx6|fx9|fx30|c50|c70|c80|c300|c400|komodo|pyxis)\b/.test(text)
+  const hasAccessoryHead = /\b(cable|câble|declencheur|déclencheur|trigger|poignee|poignée|cage|rig|support|adaptateur|adapter|alim|alimentation|batterie|battery|chargeur|plate|plaque)\b/.test(text)
+  const explicitlyAsksCamera = /\b(camera|caméra|boitier|boîtier|body|pack|kit)\b/.test(text)
+  return hasCameraModel && hasAccessoryHead && !explicitlyAsksCamera
+}
+
 export function signalMatchesItem(signal: CatalogSignal, item: ExtractedItem): boolean {
   const signalTerm = normalizedSignalTerm(signal.normalized_term || signal.term)
   if (!signalTerm) return false
@@ -58,6 +73,11 @@ export function signalMatchesItem(signal: CatalogSignal, item: ExtractedItem): b
   const raw = normalizedSignalTerm(item.raw)
   const query = normalizedSignalTerm(item.query)
   const itemText = normalizeText(`${item.raw} ${item.query}`)
+
+  // Un signal métier “Sony FX6 → pack essentiel” sert quand le client demande
+  // la caméra. Il ne doit pas capturer “câble déclencheur pour Sony FX6”,
+  // “batterie pour FX6”, “cage FX6”, etc.
+  if (isCameraModelToPackSignal(signal) && itemLooksLikeCameraAccessoryRequest(item)) return false
 
   if (signalTerm === raw || signalTerm === query) return true
 

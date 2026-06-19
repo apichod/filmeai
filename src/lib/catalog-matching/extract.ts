@@ -1,3 +1,4 @@
+// Doctrine matching: lire ./DOCTRINE.md avant modification. Généraliser l'intention, éviter les exceptions produit.
 import { openai } from './openai'
 import { normalizeText, stripQuantityPrefix } from './text'
 import type { ExtractedItem, QueryInfluence } from './types'

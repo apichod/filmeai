@@ -1,3 +1,4 @@
+// Doctrine matching: lire ./DOCTRINE.md avant modification. Généraliser l'intention, éviter les exceptions produit.
 import { getSupabaseAdmin } from './db'
 import { openai } from './openai'
 import { isInstructionOnlySignal, matchingSignalsForItem, signalNameMatchesProduct } from './signals'
@@ -43,7 +44,40 @@ function flexibleSqlPatterns(phrase: string): string[] {
     patterns.add('%Ronin%RS4%')
   }
 
+  for (const variant of receiverSearchVariants(clean)) {
+    patterns.add(`%${variant.replace(/\s+/g, '%')}%`)
+  }
+
   return Array.from(patterns).filter(pattern => pattern.replace(/%/g, '').length >= 2)
+}
+
+function receiverSearchVariants(phrase: string): string[] {
+  const clean = phrase
+    .replace(/[%,]/g, ' ')
+    .replace(/[–—−]/g, '-')
+    .replace(/\btransmsission\b/gi, 'Transmission')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!/\b(r[eé]cepteur|receiver|rx)\b/i.test(clean)) return []
+
+  const subject = clean
+    .replace(/\b(r[eé]cepteur|receiver|rx)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!subject) return []
+
+  return Array.from(new Set([
+    `Récepteur ${subject}`,
+    `Recepteur ${subject}`,
+    `Récepteur vidéo ${subject}`,
+    `Recepteur video ${subject}`,
+    `${subject} récepteur`,
+    `${subject} recepteur`,
+    `${subject} receiver`,
+    `${subject} RX`,
+  ]))
 }
 
 function expandSearchPhrase(phrase: string): string[] {
@@ -65,6 +99,8 @@ function expandSearchPhrase(phrase: string): string[] {
     variants.add(`F${apertureMatch[1]}`)
     variants.add(apertureMatch[1])
   }
+
+  receiverSearchVariants(clean).forEach(variant => variants.add(variant))
 
   return Array.from(variants).filter(v => v.length >= 2)
 }

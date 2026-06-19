@@ -1,3 +1,4 @@
+// Doctrine matching: lire ./DOCTRINE.md avant modification. Généraliser l'intention, éviter les exceptions produit.
 import { MIN_DETERMINISTIC_ACCEPT } from './types'
 import { compactText, normalizeText, significantTokens, stripQuantityPrefix } from './text'
 import type { CandidateSet, ExtractedItem, Product } from './types'
@@ -35,7 +36,7 @@ export function requestWantsCameraBody(item: ExtractedItem): boolean {
 
 export function productLooksLikeAccessoryOnly(product: Product): boolean {
   const name = normalizeText(product.name)
-  return /\b(cage|rig|poignee|poignée|handle|plate|plaque|support|adaptateur|cable|câble|battery plate|baseplate|module|sac|plateau)\b/.test(name)
+  return /\b(cage|rig|poignee|poignée|handle|plate|plaque|support|adaptateur|cable|câble|declencheur|déclencheur|trigger|battery plate|baseplate|module|sac|plateau|epauliere|épaulière)\b/.test(name)
 }
 
 export function importantModelTokens(item: ExtractedItem): string[] {
@@ -45,6 +46,7 @@ export function importantModelTokens(item: ExtractedItem): string[] {
   const important = tokens.filter(token =>
     /^(fx3|fx6|fx9|fx30|b10x|b10|d2|prohead|profoto|atem|ntg3|c1|r5|r6|rj45|bpu|bpu60|bpu90|vmount|vlock|v-lock|indie|shogun|sachtler|magliner|macbook|aputure|600x|1200d)$/.test(token) ||
     /^(c50|c70|c80|c300|c400|r5c|rf|rs3|rs4|teradek|bolt|tx|rx|blackmagic|sdi|iso|extreme)$/.test(token) ||
+    /^(dji|transmission|recepteur|receiver)$/.test(token) ||
     /^\d{2,3}-\d{2,3}(mm)?$/.test(token) ||
     /^f\d(?:\.\d)?$/.test(token) ||
     /^\d\.\d$/.test(token) ||
@@ -68,7 +70,36 @@ export function productNameText(product: Product): string {
 }
 
 export function requestText(item: ExtractedItem): string {
-  return normalizeText(`${item.raw} ${item.query}`)
+  return normalizeText(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
+}
+
+function requestLooksLikeCameraAccessory(item: ExtractedItem): boolean {
+  const text = requestText(item)
+  const hasCameraModel = /\b(fx3|fx6|fx9|fx30|c50|c70|c80|c300|c400|komodo|pyxis)\b/.test(text)
+  const hasAccessoryHead = /\b(cable|câble|declencheur|déclencheur|trigger|poignee|poignée|cage|rig|support|adaptateur|adapter|alim|alimentation|batterie|battery|chargeur|plate|plaque)\b/.test(text)
+  const explicitlyAsksCamera = /\b(camera|caméra|boitier|boîtier|body|pack|kit)\b/.test(text)
+  return hasCameraModel && hasAccessoryHead && !explicitlyAsksCamera
+}
+
+function productLooksLikeCameraOrCameraPack(product: Product): boolean {
+  const name = productNameText(product)
+  const hasCameraModel = /\b(fx3|fx6|fx9|fx30|c50|c70|c80|c300|c400|komodo|pyxis)\b/.test(name)
+  return hasCameraModel && (productLooksLikePack(product) || !productLooksLikeAccessoryOnly(product))
+}
+
+function requestWantsReceiverProduct(item: ExtractedItem): boolean {
+  const text = requestText(item)
+  return /\b(recepteur|récepteur|receiver|rx)\b/.test(text)
+}
+
+function productLooksLikeReceiverProduct(product: Product): boolean {
+  const name = productNameText(product)
+  return /\b(recepteur|récepteur|receiver|rx)\b/.test(name)
+}
+
+function productLooksLikeReceiverAccessory(product: Product): boolean {
+  const name = productNameText(product)
+  return /\b(antenne|antennes|batterie|battery|chargeur|cable|câble|adaptateur|base\s*plate|plate|support|commande|focus)\b/.test(name)
 }
 
 
@@ -202,6 +233,16 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
   // Versions/générations : GM et GM II ne sont pas interchangeables.
   if (requestWantsGmVersionTwo(item) && !productHasGmVersionTwo(product)) return true
 
+  // Si la demande vise un accessoire pour caméra, ne pas substituer la caméra
+  // ou son pack prêt-à-tourner simplement parce que le modèle FX6/FX3 est cité.
+  if (requestLooksLikeCameraAccessory(item) && productLooksLikeCameraOrCameraPack(product)) return true
+
+  // Récepteur / RX : c'est une intention produit générique. Ne pas remplacer un
+  // récepteur demandé par ses accessoires (antennes, batteries, chargeurs, etc.).
+  if (requestWantsReceiverProduct(item) && productLooksLikeReceiverAccessory(product)) {
+    return true
+  }
+
   // Transmission vidéo : un kit Teradek Bolt TX/RX doit rester un Teradek Bolt
   // complet et respecter la portée/référence demandée si elle est indiquée.
   const boltDistance = requestedBoltDistance(item)
@@ -250,6 +291,8 @@ export function isBrandOnlyAmbiguousRequest(item: ExtractedItem): boolean {
 
 export function candidateUnsafeReasons(product: Product, item: ExtractedItem): string[] {
   const reasons: string[] = []
+  const req = requestText(item)
+  const name = productNameText(product)
 
   const requestedDensities = requestedFilterDensities(item)
   if (requestedDensities.length > 0 && !requestedDensities.every(density => productHasFilterDensity(product, density))) {
@@ -258,12 +301,16 @@ export function candidateUnsafeReasons(product: Product, item: ExtractedItem): s
   if (requestWantsGmVersionTwo(item) && !productHasGmVersionTwo(product)) {
     reasons.push('Version demandée GM II absente du produit')
   }
+  if (requestLooksLikeCameraAccessory(item) && productLooksLikeCameraOrCameraPack(product)) {
+    reasons.push('Accessoire caméra demandé : caméra ou pack caméra non retenu automatiquement')
+  }
+  if (requestWantsReceiverProduct(item) && productLooksLikeReceiverAccessory(product)) {
+    reasons.push('Récepteur demandé : accessoire non retenu automatiquement')
+  }
   const boltDistance = requestedBoltDistance(item)
   if (boltDistance && !productHasBoltDistance(product, boltDistance)) {
     reasons.push(`Référence Teradek Bolt ${boltDistance} absente du produit`)
   }
-  const req = requestText(item)
-  const name = productNameText(product)
   if (/\btx\b/.test(req) && /\brx\b/.test(req) && (!/\btx\b/.test(name) || !/\brx\b/.test(name))) {
     reasons.push('Kit TX/RX demandé : produit incomplet TX/RX')
   }
@@ -327,6 +374,11 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
   if (requestWantsGmVersionTwo(item)) {
     if (productHasGmVersionTwo(product)) score += 1.35
     else score -= 1.35
+  }
+
+  if (requestWantsReceiverProduct(item)) {
+    if (productLooksLikeReceiverProduct(product)) score += 1.5
+    if (productLooksLikeReceiverAccessory(product)) score -= 1.5
   }
 
   if (/\bold\b/i.test(product.name)) score -= 0.35
