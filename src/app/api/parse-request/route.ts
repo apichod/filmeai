@@ -66,24 +66,39 @@ async function getQuotePrompts(): Promise<{ extractionPrompt: string; rerankProm
   }
 }
 
-async function getCatalogSignalsGlossary(): Promise<string> {
+type CatalogSignal = {
+  term: string
+  normalized_term: string | null
+  product_id: string | null
+  product_name: string
+  occurrences: number | null
+}
+
+async function getApprovedCatalogSignals(): Promise<CatalogSignal[]> {
   try {
     const organizationId = await getDefaultOrganizationId()
-    if (!organizationId) return ''
+    if (!organizationId) return []
 
     const supabase = getSupabaseAdmin()
     const { data, error } = await supabase
       .from('catalog_signals')
-      .select('term, product_name, occurrences')
+      .select('term, normalized_term, product_id, product_name, occurrences')
       .eq('organization_id', organizationId)
       .eq('approved', true)
       .order('occurrences', { ascending: false })
       .order('updated_at', { ascending: false })
       .limit(150)
 
-    if (error || !data?.length) return ''
+    if (error || !data?.length) return []
+    return data as CatalogSignal[]
+  } catch (err) {
+    console.warn('Catalog signals fallback:', err instanceof Error ? err.message : String(err))
+    return []
+  }
+}
 
-    const lines = data
+function buildCatalogSignalsGlossary(signals: CatalogSignal[]): string {
+  const lines = signals
       .map(row => {
         const term = String(row.term || '').trim()
         const productName = String(row.product_name || '').trim()
@@ -93,13 +108,9 @@ async function getCatalogSignalsGlossary(): Promise<string> {
       .filter(Boolean)
       .join('\n')
 
-    return lines
-      ? `GLOSSAIRE APPRIS DEPUIS L'INTERFACE :\n${lines}\n\nSi un terme client correspond à une entrée de ce glossaire appris, utilise cette association dans le champ query.`
-      : ''
-  } catch (err) {
-    console.warn('Catalog signals glossary fallback:', err instanceof Error ? err.message : String(err))
-    return ''
-  }
+  return lines
+    ? `GLOSSAIRE APPRIS DEPUIS L'INTERFACE :\n${lines}\n\nSi un terme client correspond à une entrée de ce glossaire appris, utilise cette association dans le champ query.`
+    : ''
 }
 
 type Product = {
@@ -112,6 +123,7 @@ type Product = {
   similarity?: number
   is_bundle?: boolean
   bundle_items?: string[]
+  signal_match?: boolean
 }
 
 type ExtractedItem = {
@@ -175,6 +187,36 @@ function stripQuantityPrefix(value: string): string {
     .replace(/(^|\s)(\d+)\s*[x×]\s+/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function normalizedSignalTerm(value: string): string {
+  return normalizeText(stripQuantityPrefix(value))
+}
+
+function isInstructionOnlySignal(signal: CatalogSignal): boolean {
+  const productName = normalizeText(signal.product_name || '')
+  return productName.startsWith('appliquer ') || productName.startsWith('utiliser ')
+}
+
+function signalMatchesItem(signal: CatalogSignal, item: ExtractedItem): boolean {
+  const signalTerm = normalizedSignalTerm(signal.normalized_term || signal.term)
+  if (!signalTerm) return false
+
+  const raw = normalizedSignalTerm(item.raw)
+  const query = normalizedSignalTerm(item.query)
+  const itemText = normalizeText(`${item.raw} ${item.query}`)
+
+  if (signalTerm === raw || signalTerm === query) return true
+  if (signalTerm.length < 4) return false
+
+  return raw.includes(signalTerm) || query.includes(signalTerm) || itemText.includes(signalTerm)
+}
+
+function matchingSignalsForItem(item: ExtractedItem, signals: CatalogSignal[]): CatalogSignal[] {
+  return signals
+    .filter(signal => signalMatchesItem(signal, item))
+    .sort((a, b) => Number(b.occurrences || 0) - Number(a.occurrences || 0))
+    .slice(0, 6)
 }
 
 function significantTokens(value: string): string[] {
@@ -250,6 +292,7 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
   const important = importantModelTokens(item)
 
   let score = product.similarity || 0
+
 
   if (raw && name.includes(raw)) score += 1.1
   if (query && name.includes(query)) score += 0.9
@@ -482,20 +525,71 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
   return dedupeProducts(found)
 }
 
-async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap): Promise<Product[]> {
+async function signalProductSearch(item: ExtractedItem, signals: CatalogSignal[], limit = 8): Promise<Product[]> {
+  const matches = matchingSignalsForItem(item, signals).filter(signal => !isInstructionOnlySignal(signal))
+  if (matches.length === 0) return []
+
+  const supabase = getSupabaseAdmin()
+  const found: Product[] = []
+  const ids = Array.from(new Set(matches.map(signal => signal.product_id).filter(Boolean))) as string[]
+
+  if (ids.length > 0) {
+    const { data } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .eq('show_in_store', true)
+      .in('id', ids)
+
+    if (data?.length) {
+      found.push(...(data as Product[]).map(product => ({ ...product, signal_match: true })))
+    }
+  }
+
+  for (const signal of matches) {
+    const productName = String(signal.product_name || '').trim()
+    if (!productName) continue
+
+    const signalItem: ExtractedItem = {
+      raw: productName,
+      query: productName,
+      quantity: 1,
+      section: null,
+    }
+
+    const [direct, semantic] = await Promise.all([
+      directNameSearch(signalItem, limit),
+      rpcSearch(productName, limit),
+    ])
+
+    found.push(...dedupeProducts([...direct, ...semantic]).map(product => ({ ...product, signal_match: true })))
+  }
+
+  return dedupeProducts(found).slice(0, limit)
+}
+
+async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap, signals: CatalogSignal[] = []): Promise<Product[]> {
   const cleanedRaw = stripQuantityPrefix(item.raw).trim()
   const expandedEmbedding = embeddingMap?.get(item.query.trim())
   const rawEmbedding = embeddingMap?.get(cleanedRaw)
 
-  const [expandedResults, rawResults, directResults] = await Promise.all([
+  const [signalResults, expandedResults, rawResults, directResults] = await Promise.all([
+    signalProductSearch(item, signals, 8),
     rpcSearch(item.query, 24, expandedEmbedding),
     rpcSearch(cleanedRaw, 12, rawEmbedding),
     directNameSearch(item, 20),
   ])
 
-  const candidates = dedupeProducts([...directResults, ...expandedResults, ...rawResults])
-    .map(product => ({ product, score: deterministicScore(product, item) }))
+  const signalIds = new Set(signalResults.map(product => product.id))
+
+  const candidates = dedupeProducts([...signalResults, ...directResults, ...expandedResults, ...rawResults])
+    .map(product => ({
+      product,
+      score: deterministicScore(product, item) + (signalIds.has(product.id) || product.signal_match ? 3 : 0),
+    }))
     .filter(({ product, score }) => {
+      if (signalIds.has(product.id) || product.signal_match) return true
+
       const important = importantModelTokens(item)
       // If the request has strong references, require at least one in the candidate text.
       if (important.length >= 1 && !queryHasAllTokens(product, important.slice(0, 2))) {
@@ -503,7 +597,11 @@ async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap)
       }
       return score >= 0.12
     })
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      const signalDelta = Number(signalIds.has(b.product.id) || b.product.signal_match) - Number(signalIds.has(a.product.id) || a.product.signal_match)
+      if (signalDelta !== 0) return signalDelta
+      return b.score - a.score
+    })
     .slice(0, 10)
     .map(({ product }) => product)
 
@@ -608,7 +706,8 @@ export async function POST(req: NextRequest) {
       rerankPrompt = settingsPrompts.rerankPrompt
     }
 
-    const learnedGlossary = await getCatalogSignalsGlossary()
+    const approvedSignals = await getApprovedCatalogSignals()
+    const learnedGlossary = buildCatalogSignalsGlossary(approvedSignals)
     const finalExtractionPrompt = learnedGlossary
       ? `${extractionPrompt}\n\n${learnedGlossary}`
       : extractionPrompt
@@ -623,7 +722,7 @@ export async function POST(req: NextRequest) {
     const candidateSets: CandidateSet[] = await Promise.all(
       extractedItems.map(async item => ({
         item,
-        candidates: await candidateSearch(item, embeddingMap),
+        candidates: await candidateSearch(item, embeddingMap, approvedSignals),
       }))
     )
 
@@ -645,8 +744,11 @@ export async function POST(req: NextRequest) {
       const safeAiSelected = aiSelected && requestWantsCameraBody(set.item) && productLooksLikeAccessoryOnly(aiSelected)
         ? null
         : aiSelected
-      const selected = preferredPack?.product || safeAiSelected || deterministic?.product || null
-      const confidence = preferredPack
+      const signalSelected = set.candidates.find(candidate => candidate.signal_match) || null
+      const selected = signalSelected || preferredPack?.product || safeAiSelected || deterministic?.product || null
+      const confidence = signalSelected
+        ? 0.96
+        : preferredPack
         ? Math.min(0.95, Math.max(0.84, preferredPack.score / 2.6))
         : safeAiSelected
         ? selection?.confidence || 0.85
@@ -662,7 +764,13 @@ export async function POST(req: NextRequest) {
         matched: selected,
         confidence,
         reason: selected
-          ? (preferredPack ? 'Pack/kit privilégié car demandé par le client' : safeAiSelected ? selection?.reason || null : 'Correspondance catalogue forte par nom/référence')
+          ? (signalSelected
+            ? 'Association apprise depuis Signaux'
+            : preferredPack
+              ? 'Pack/kit privilégié car demandé par le client'
+              : safeAiSelected
+                ? selection?.reason || null
+                : 'Correspondance catalogue forte par nom/référence')
           : selection?.reason || 'Aucune correspondance catalogue assez fiable',
         alternatives: set.candidates
           .filter(candidate => candidate.id !== selected?.id)
