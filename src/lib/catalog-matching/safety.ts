@@ -86,9 +86,12 @@ export function requestWantsStabilizer(item: ExtractedItem): boolean {
   return /\b(ronin|rs\s*3|rs3|rs\s*4|rs4|stabilisateur|gimbal)\b/.test(text)
 }
 
-function productContainsNormalized(product: Product, pattern: RegExp): boolean {
+function productMatchesRsModel(product: Product, model: '3' | '4'): boolean {
   const name = productNameText(product)
-  return pattern.test(name) || pattern.test(compactText(name))
+  const compact = compactText(name)
+  const spacedPattern = new RegExp(`\\b(?:dji\\s*)?(?:ronin\\s*)?rs\\s*${model}(?:\\s*pro)?\\b`)
+  const compactPattern = new RegExp(`(?:dji)?(?:ronin)?rs${model}(?:pro)?`)
+  return spacedPattern.test(name) || compactPattern.test(compact)
 }
 
 export function requestHasFamilyMismatch(product: Product, item: ExtractedItem): boolean {
@@ -113,8 +116,8 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     [/\bc300\b/, /\bc300\b/],
     [/\bb10x\s*plus\b/, /\bb10x\s*plus\b/],
     [/\bpro\s*-?\s*11\b/, /\bpro\s*-?\s*11\b/],
-    [/\bronin\s*rs\s*3\b|\brs3\b/, /\bronin\s*rs\s*3\b|\brs3\b/],
-    [/\bronin\s*rs\s*4\b|\brs4\b/, /\bronin\s*rs\s*4\b|\brs4\b/],
+    [/\bronin\s*rs\s*3\b|\brs3\b/, /\b(?:dji\s*)?(?:ronin\s*)?rs\s*3(?:\s*pro)?\b|\brs3(?:pro)?\b/],
+    [/\bronin\s*rs\s*4\b|\brs4\b/, /\b(?:dji\s*)?(?:ronin\s*)?rs\s*4(?:\s*pro)?\b|\brs4(?:pro)?\b/],
     [/\b300x\b/, /\b300x\b/],
     [/\b600x\b/, /\b600x\b/],
     [/\b1200d\b/, /\b1200d\b/],
@@ -156,8 +159,8 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     if (!aperturePattern.test(name)) return true
   }
 
-  if (/\bronin\s*rs\s*3\b|\brs3\b/.test(req) && !productContainsNormalized(product, /\bronin\s*rs\s*3\b|\brs3\b/)) return true
-  if (/\bronin\s*rs\s*4\b|\brs4\b/.test(req) && !productContainsNormalized(product, /\bronin\s*rs\s*4\b|\brs4\b/)) return true
+  if (/\bronin\s*rs\s*3\b|\brs3\b/.test(req) && !productMatchesRsModel(product, '3')) return true
+  if (/\bronin\s*rs\s*4\b|\brs4\b/.test(req) && !productMatchesRsModel(product, '4')) return true
 
   return false
 }
