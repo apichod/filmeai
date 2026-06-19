@@ -43,6 +43,7 @@ const ALLOWED_FIELDS = new Set([
   'delivery_pricing',
   'round_trip',
   'delivery_fee',
+  'delivery_fee_return',
   'delivery_zones',
   'booking_delay',
   'payment_methods',
