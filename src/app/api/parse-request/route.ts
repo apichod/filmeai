@@ -283,6 +283,54 @@ function importantModelTokens(item: ExtractedItem): string[] {
   return Array.from(new Set(important))
 }
 
+const STRICT_REFERENCE_RULES: Array<[RegExp, RegExp]> = [
+  [/\bfx6\b/, /\bfx6\b/],
+  [/\bfx3\b/, /\bfx3\b/],
+  [/\bfx30\b/, /\bfx30\b/],
+  [/\bc400\b/, /\bc400\b/],
+  [/\bc50\b/, /\bc50\b/],
+  [/\bc70\b/, /\bc70\b/],
+  [/\bb10x\b/, /\bb10x\b/],
+  [/\batem\b/, /\batem\b/],
+  [/\bntg3\b/, /\bntg3\b/],
+  [/\bsachtler\b/, /\bsachtler\b/],
+  [/\bmagliner\b/, /\bmagliner\b/],
+  [/\b70\s*-?\s*200\b/, /\b70\s*-?\s*200\b/],
+  [/\b24\s*-?\s*70\b/, /\b24\s*-?\s*70\b/],
+  [/\b24\s*-?\s*105\b/, /\b24\s*-?\s*105\b/],
+  [/\b16\s*-?\s*35\b/, /\b16\s*-?\s*35\b/],
+  [/\b82\s*mm\b/, /\b82\s*mm\b/],
+  [/\b512\s*(gb|go)\b/, /\b512\s*(gb|go)\b|\b512\b/],
+]
+
+function hasStrictReferenceMismatch(product: Product, item: ExtractedItem): boolean {
+  const requestText = normalizeText(`${item.raw} ${item.query}`)
+  const haystack = normalizeText(`${product.name} ${product.description || ''}`)
+
+  return STRICT_REFERENCE_RULES.some(([requestPattern, productPattern]) =>
+    requestPattern.test(requestText) && !productPattern.test(haystack)
+  )
+}
+
+function isBareBrandOnlyRequest(item: ExtractedItem): boolean {
+  const rawTokens = significantTokens(item.raw)
+  const queryTokens = significantTokens(item.query)
+  const tokens = rawTokens.length ? rawTokens : queryTokens
+  return tokens.length === 1 && /^(atomos|profoto|canon|sony|aputure|arri|dji|ronin)$/.test(tokens[0])
+}
+
+function productLooksLikeSecondaryAccessory(product: Product): boolean {
+  const name = normalizeText(product.name)
+  return /\b(adaptateur|adapter|alimentation|alim|battery eliminator|batterie|battery|chargeur|charger|cable|câble|support|plate|griffe)\b/.test(name)
+}
+
+function isSafeProductForItem(product: Product, item: ExtractedItem): boolean {
+  if (hasStrictReferenceMismatch(product, item)) return false
+  if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) return false
+  if (isBareBrandOnlyRequest(item) && productLooksLikeSecondaryAccessory(product)) return false
+  return true
+}
+
 function deterministicScore(product: Product, item: ExtractedItem): number {
   const name = normalizeText(product.name)
   const haystack = normalizeText(`${product.name} ${product.description || ''}`)
@@ -324,31 +372,10 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
     if (!haystack.includes(normalizeText(token))) score -= 0.85
   }
 
-  // Product family sanity checks
-  const familyRules: Array<[RegExp, RegExp]> = [
-    [/\bfx6\b/, /\bfx6\b/],
-    [/\bfx3\b/, /\bfx3\b/],
-    [/\bfx30\b/, /\bfx30\b/],
-    [/\bc400\b/, /\bc400\b/],
-    [/\bc50\b/, /\bc50\b/],
-    [/\bc70\b/, /\bc70\b/],
-    [/\bb10x\b/, /\bb10x\b/],
-    [/\batem\b/, /\batem\b/],
-    [/\bntg3\b/, /\bntg3\b/],
-    [/\bsachtler\b/, /\bsachtler\b/],
-    [/\bmagliner\b/, /\bmagliner\b/],
-    [/\b70\s*-?\s*200\b/, /\b70\s*-?\s*200\b/],
-    [/\b24\s*-?\s*70\b/, /\b24\s*-?\s*70\b/],
-    [/\b24\s*-?\s*105\b/, /\b24\s*-?\s*105\b/],
-    [/\b16\s*-?\s*35\b/, /\b16\s*-?\s*35\b/],
-    [/\b82\s*mm\b/, /\b82\s*mm\b/],
-    [/\b512\s*(gb|go)\b/, /\b512\s*(gb|go)\b|\b512\b/],
-  ]
-
-  const requestText = normalizeText(`${item.raw} ${item.query}`)
-  for (const [requestPattern, productPattern] of familyRules) {
-    if (requestPattern.test(requestText) && !productPattern.test(haystack)) score -= 1.2
-  }
+  // Product family sanity checks: a candidate missing a sacred reference
+  // should almost never be selected as a strong match.
+  if (hasStrictReferenceMismatch(product, item)) score -= 3.5
+  if (isBareBrandOnlyRequest(item) && productLooksLikeSecondaryAccessory(product)) score -= 1.8
 
   return score
 }
@@ -557,12 +584,12 @@ async function signalProductSearch(item: ExtractedItem, signals: CatalogSignal[]
       section: null,
     }
 
-    const [direct, semantic] = await Promise.all([
-      directNameSearch(signalItem, limit),
-      rpcSearch(productName, limit),
-    ])
+    const direct = await directNameSearch(signalItem, limit)
+    const safeDirect = direct
+      .filter(product => isSafeProductForItem(product, item))
+      .filter(product => deterministicScore(product, signalItem) >= 0.8 || deterministicScore(product, item) >= 0.8)
 
-    found.push(...dedupeProducts([...direct, ...semantic]).map(product => ({ ...product, signal_match: true })))
+    found.push(...dedupeProducts(safeDirect).map(product => ({ ...product, signal_match: true })))
   }
 
   return dedupeProducts(found).slice(0, limit)
@@ -588,6 +615,7 @@ async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap,
       score: deterministicScore(product, item) + (signalIds.has(product.id) || product.signal_match ? 3 : 0),
     }))
     .filter(({ product, score }) => {
+      if (!isSafeProductForItem(product, item)) return false
       if (signalIds.has(product.id) || product.signal_match) return true
 
       const important = importantModelTokens(item)
@@ -738,13 +766,13 @@ export async function POST(req: NextRequest) {
       const preferredPack = requestWantsPack(set.item)
         ? set.candidates
           .map(product => ({ product, score: deterministicScore(product, set.item) }))
-          .filter(({ product, score }) => productLooksLikePack(product) && score >= 0.8)
+          .filter(({ product, score }) => productLooksLikePack(product) && isSafeProductForItem(product, set.item) && score >= 0.8)
           .sort((a, b) => b.score - a.score)[0] || null
         : null
-      const safeAiSelected = aiSelected && requestWantsCameraBody(set.item) && productLooksLikeAccessoryOnly(aiSelected)
-        ? null
-        : aiSelected
-      const signalSelected = set.candidates.find(candidate => candidate.signal_match) || null
+      const safeAiSelected = aiSelected && isSafeProductForItem(aiSelected, set.item)
+        ? aiSelected
+        : null
+      const signalSelected = set.candidates.find(candidate => candidate.signal_match && isSafeProductForItem(candidate, set.item)) || null
       const selected = signalSelected || preferredPack?.product || safeAiSelected || deterministic?.product || null
       const confidence = signalSelected
         ? 0.96
