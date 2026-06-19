@@ -1,10 +1,13 @@
 import { MIN_DETERMINISTIC_ACCEPT } from './types'
-import { normalizeText, significantTokens, stripQuantityPrefix } from './text'
+import { compactText, normalizeText, significantTokens, stripQuantityPrefix } from './text'
 import type { CandidateSet, ExtractedItem, Product } from './types'
 
 export function queryHasAllTokens(product: Product, tokens: string[]): boolean {
   const haystack = normalizeText(`${product.name} ${product.description || ''}`)
-  return tokens.every(token => haystack.includes(normalizeText(token)))
+  return tokens.every(token => {
+    const normalized = normalizeText(token)
+    return haystack.includes(normalized) || compactText(haystack).includes(compactText(normalized))
+  })
 }
 
 export function requestWantsPack(item: ExtractedItem): boolean {
@@ -32,7 +35,7 @@ export function requestWantsCameraBody(item: ExtractedItem): boolean {
 
 export function productLooksLikeAccessoryOnly(product: Product): boolean {
   const name = normalizeText(product.name)
-  return /\b(cage|rig|poignee|poignée|handle|plate|support|adaptateur|cable|câble|battery plate|baseplate)\b/.test(name)
+  return /\b(cage|rig|poignee|poignée|handle|plate|plaque|support|adaptateur|cable|câble|battery plate|baseplate|module|sac|plateau)\b/.test(name)
 }
 
 export function importantModelTokens(item: ExtractedItem): string[] {
@@ -40,13 +43,20 @@ export function importantModelTokens(item: ExtractedItem): string[] {
   const tokens = significantTokens(text)
   const important = tokens.filter(token =>
     /^(fx3|fx6|fx9|fx30|b10x|b10|d2|prohead|profoto|atem|ntg3|c1|r5|r6|rj45|bpu|bpu60|bpu90|vmount|vlock|v-lock|indie|shogun|sachtler|magliner|macbook|aputure|600x|1200d)$/.test(token) ||
-    /^(c50|c70|c80|c300|c400|r5c|rf)$/.test(token) ||
+    /^(c50|c70|c80|c300|c400|r5c|rf|rs3|rs4)$/.test(token) ||
+    /^\d{2,3}-\d{2,3}(mm)?$/.test(token) ||
+    /^f\d(?:\.\d)?$/.test(token) ||
+    /^\d\.\d$/.test(token) ||
     /^\d{2,3}$/.test(token) ||
     /^\d{2,3}mm$/.test(token) ||
     /^\d{2,3}gb$/.test(token) ||
     /^\d{2,3}go$/.test(token) ||
     /^\d{2,3}wh$/.test(token)
   )
+
+  const compact = compactText(text)
+  if (/roninrs3|rs3/.test(compact)) important.push('rs3')
+  if (/roninrs4|rs4/.test(compact)) important.push('rs4')
 
   return Array.from(new Set(important))
 }
@@ -57,6 +67,27 @@ export function productNameText(product: Product): string {
 
 export function requestText(item: ExtractedItem): string {
   return normalizeText(`${item.raw} ${item.query}`)
+}
+
+
+export function requestWantsTripod(item: ExtractedItem): boolean {
+  const text = requestText(item)
+  return /\b(trepied|trépied|tripod)\b/.test(text)
+}
+
+export function productLooksLikeTripod(product: Product): boolean {
+  const name = productNameText(product)
+  return /\b(trepied|trépied|tripod)\b/.test(name)
+}
+
+export function requestWantsStabilizer(item: ExtractedItem): boolean {
+  const text = requestText(item)
+  return /\b(ronin|rs\s*3|rs3|rs\s*4|rs4|stabilisateur|gimbal)\b/.test(text)
+}
+
+function productContainsNormalized(product: Product, pattern: RegExp): boolean {
+  const name = productNameText(product)
+  return pattern.test(name) || pattern.test(compactText(name))
 }
 
 export function requestHasFamilyMismatch(product: Product, item: ExtractedItem): boolean {
@@ -76,7 +107,8 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     [/\bc300\b/, /\bc300\b/],
     [/\bb10x\s*plus\b/, /\bb10x\s*plus\b/],
     [/\bpro\s*-?\s*11\b/, /\bpro\s*-?\s*11\b/],
-    [/\bronin\s*rs\s*4\b/, /\bronin\s*rs\s*4\b/],
+    [/\bronin\s*rs\s*3\b|\brs3\b/, /\bronin\s*rs\s*3\b|\brs3\b/],
+    [/\bronin\s*rs\s*4\b|\brs4\b/, /\bronin\s*rs\s*4\b|\brs4\b/],
     [/\b300x\b/, /\b300x\b/],
     [/\b600x\b/, /\b600x\b/],
     [/\b1200d\b/, /\b1200d\b/],
@@ -108,6 +140,19 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
   if (/\brf\b/.test(req) && /\b(fe|e-mount|sony)\b/.test(name) && !/\brf\b/.test(name)) return true
   if (/\bfe\b/.test(req) && /\brf\b/.test(name) && !/\bfe\b/.test(name)) return true
 
+  const explicitAperture = req.match(/\bf\s*\/?\s*(1\.2|1\.4|1\.8|2\.8|4)\b/)?.[1]
+  const decimalApertureNearLens = /\b(12\s*-?\s*24|14\s*-?\s*24|15\s*-?\s*35|16\s*-?\s*35|24\s*-?\s*70|24\s*-?\s*105|70\s*-?\s*200)\b/.test(req)
+    ? req.match(/\b(1\.2|1\.4|1\.8|2\.8)\b/)?.[1]
+    : undefined
+  const aperture = explicitAperture || decimalApertureNearLens
+  if (aperture) {
+    const aperturePattern = new RegExp(`\\bf\\s*${aperture.replace('.', '\\.?')}\\b|\\b${aperture.replace('.', '\\.?')}\\b`)
+    if (!aperturePattern.test(name)) return true
+  }
+
+  if (/\bronin\s*rs\s*3\b|\brs3\b/.test(req) && !productContainsNormalized(product, /\bronin\s*rs\s*3\b|\brs3\b/)) return true
+  if (/\bronin\s*rs\s*4\b|\brs4\b/.test(req) && !productContainsNormalized(product, /\bronin\s*rs\s*4\b|\brs4\b/)) return true
+
   return false
 }
 
@@ -125,6 +170,12 @@ export function candidateUnsafeReasons(product: Product, item: ExtractedItem): s
   }
   if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) {
     reasons.push('Accessoire caméra détecté alors que la demande vise une caméra ou un pack caméra')
+  }
+  if (requestWantsTripod(item) && !productLooksLikeTripod(product)) {
+    reasons.push('La demande vise un trépied : accessoire ou élément compatible non retenu automatiquement')
+  }
+  if (requestWantsStabilizer(item) && productLooksLikeAccessoryOnly(product)) {
+    reasons.push('La demande vise un stabilisateur Ronin complet : accessoire Ronin non retenu automatiquement')
   }
   if (isBrandOnlyAmbiguousRequest(item) && productLooksLikeAccessoryOnly(product)) {
     reasons.push('Demande trop générique : accessoire non retenu automatiquement')

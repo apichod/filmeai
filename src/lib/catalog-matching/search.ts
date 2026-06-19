@@ -2,9 +2,39 @@ import { getSupabaseAdmin } from './db'
 import { openai } from './openai'
 import { isInstructionOnlySignal, matchingSignalsForItem, signalNameMatchesProduct } from './signals'
 import { candidateIsUnsafe, deterministicScore, importantModelTokens, queryHasAllTokens } from './safety'
-import { normalizeText, significantTokens, stripQuantityPrefix } from './text'
+import { compactText, normalizeText, significantTokens, spacedModelVariant, stripQuantityPrefix } from './text'
 import { MIN_SIMILARITY } from './types'
 import type { CatalogSignal, EmbeddingMap, ExtractedItem, Product } from './types'
+
+
+function productContainsToken(product: Product, token: string): boolean {
+  const haystack = normalizeText(`${product.name} ${product.description || ''}`)
+  const tokenNorm = normalizeText(token)
+  return haystack.includes(tokenNorm) || compactText(haystack).includes(compactText(tokenNorm))
+}
+
+function expandSearchPhrase(phrase: string): string[] {
+  const clean = phrase.replace(/[%,]/g, ' ').replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim()
+  if (!clean) return []
+
+  const variants = new Set<string>([clean])
+  variants.add(spacedModelVariant(clean))
+
+  const focalMatch = clean.match(/\b(12\s*-\s*24|14\s*-\s*24|15\s*-\s*35|16\s*-\s*35|24\s*-\s*70|24\s*-\s*105|70\s*-\s*200)\s*(?:mm)?\b/i)
+  if (focalMatch) {
+    const focal = focalMatch[1].replace(/\s+/g, '')
+    variants.add(focal)
+    variants.add(`${focal}mm`)
+  }
+
+  const apertureMatch = clean.match(/\bf?\s*(1\.2|1\.4|1\.8|2\.8|4)\b/i)
+  if (apertureMatch) {
+    variants.add(`F${apertureMatch[1]}`)
+    variants.add(apertureMatch[1])
+  }
+
+  return Array.from(variants).filter(v => v.length >= 2)
+}
 
 export function dedupeProducts(products: Product[]): Product[] {
   const map = new Map<string, Product>()
@@ -117,7 +147,7 @@ export async function directNameSearch(item: ExtractedItem, limit = 16): Promise
   const phrases = Array.from(new Set([
     stripQuantityPrefix(item.raw),
     stripQuantityPrefix(item.query),
-  ].map(phrase => phrase.trim()).filter(phrase => phrase.length >= 3))).slice(0, 3)
+  ].flatMap(expandSearchPhrase).map(phrase => phrase.trim()).filter(phrase => phrase.length >= 2))).slice(0, 10)
 
   for (const phrase of phrases) {
     const safePhrase = phrase.replace(/[%,]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -231,7 +261,7 @@ export async function candidateSearch(item: ExtractedItem, embeddingMap?: Embedd
 
       const important = importantModelTokens(item)
       // If the request has strong references, require at least one in the candidate text.
-      if (important.length >= 1 && !queryHasAllTokens(product, important.slice(0, 2))) {
+      if (important.length >= 1 && !important.slice(0, 3).every(token => productContainsToken(product, token)) && !queryHasAllTokens(product, important.slice(0, 2))) {
         return score >= 0.9
       }
       return score >= 0.12
