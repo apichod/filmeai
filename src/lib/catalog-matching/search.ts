@@ -1,0 +1,248 @@
+import { getSupabaseAdmin } from './db'
+import { openai } from './openai'
+import { isInstructionOnlySignal, matchingSignalsForItem, signalNameMatchesProduct } from './signals'
+import { candidateIsUnsafe, deterministicScore, importantModelTokens, queryHasAllTokens } from './safety'
+import { normalizeText, significantTokens, stripQuantityPrefix } from './text'
+import { MIN_SIMILARITY } from './types'
+import type { CatalogSignal, EmbeddingMap, ExtractedItem, Product } from './types'
+
+export function dedupeProducts(products: Product[]): Product[] {
+  const map = new Map<string, Product>()
+  const seenNames = new Set<string>()
+  for (const product of products) {
+    const nameKey = normalizeText(product.name)
+    if (seenNames.has(nameKey)) continue
+    seenNames.add(nameKey)
+    if (!map.has(product.id)) map.set(product.id, product)
+  }
+  return Array.from(map.values())
+}
+
+export function parseBundleItems(enrichedText: string | null | undefined): string[] {
+  if (!enrichedText) return []
+  const match = enrichedText.match(/Contenu du pack\s*:\s*(.+?)(?:\.\s|$)/i)
+  if (!match?.[1]) return []
+  return match[1]
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+}
+
+export async function hydrateProductMetadata(products: Product[]): Promise<Product[]> {
+  if (products.length === 0) return []
+
+  const supabase = getSupabaseAdmin()
+  const ids = Array.from(new Set(products.map(product => product.id)))
+  const { data } = await supabase
+    .from('products_cache')
+    .select('id, enriched_text')
+    .in('id', ids)
+
+  const metaById = new Map<string, { enriched_text?: string | null }>()
+  for (const row of data || []) {
+    metaById.set(String(row.id), { enriched_text: row.enriched_text as string | null })
+  }
+
+  return products.map(product => {
+    const enrichedText = metaById.get(product.id)?.enriched_text || ''
+    const bundleItems = parseBundleItems(enrichedText)
+    const isBundle = /^Pack\s*\/\s*bundle/i.test(enrichedText) || bundleItems.length > 0 || /\bpack\b/i.test(product.name)
+
+    return {
+      ...product,
+      is_bundle: isBundle,
+      bundle_items: bundleItems,
+    }
+  })
+}
+
+export async function createEmbeddingMap(queries: string[]): Promise<EmbeddingMap> {
+  const uniqueQueries = Array.from(new Set(
+    queries.map(query => query.trim()).filter(Boolean)
+  ))
+
+  if (uniqueQueries.length === 0) return new Map()
+
+  const embRes = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: uniqueQueries,
+  })
+
+  const map: EmbeddingMap = new Map()
+  for (const row of embRes.data) {
+    const query = uniqueQueries[row.index]
+    if (query) map.set(query, row.embedding)
+  }
+  return map
+}
+
+// Recherche vectorielle + texte : OpenAI text-embedding-3-small → Supabase RPC search_products.
+export async function rpcSearch(query: string, limit = 20, embeddingOverride?: number[]): Promise<Product[]> {
+  const cleanedQuery = query.trim()
+  if (!cleanedQuery) return []
+
+  const supabase = getSupabaseAdmin()
+  let embedding = embeddingOverride
+
+  if (!embedding) {
+    const embRes = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: cleanedQuery,
+    })
+    embedding = embRes.data[0].embedding
+  }
+
+  const { data, error } = await supabase.rpc('search_products', {
+    query_text: cleanedQuery,
+    query_embedding: JSON.stringify(embedding),
+    match_count: limit,
+  })
+
+  if (error || !data?.length) return []
+  return (data as Product[]).filter(p => (p.similarity || 0) >= MIN_SIMILARITY)
+}
+
+export async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Product[]> {
+  const supabase = getSupabaseAdmin()
+  const tokens = significantTokens(`${item.raw} ${item.query}`)
+
+  // Prioritize model/reference tokens first. Searching all tokens blindly is how we get nonsense.
+  const anchors = Array.from(new Set([
+    ...importantModelTokens(item),
+    ...tokens.filter(t => t.length >= 3).slice(0, 6),
+  ])).slice(0, 8)
+
+  const found: Product[] = []
+  const phrases = Array.from(new Set([
+    stripQuantityPrefix(item.raw),
+    stripQuantityPrefix(item.query),
+  ].map(phrase => phrase.trim()).filter(phrase => phrase.length >= 3))).slice(0, 3)
+
+  for (const phrase of phrases) {
+    const safePhrase = phrase.replace(/[%,]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!safePhrase) continue
+
+    const { data: byName } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .eq('show_in_store', true)
+      .ilike('name', `%${safePhrase}%`)
+      .limit(limit)
+
+    if (byName?.length) {
+      found.push(...byName as Product[])
+      continue
+    }
+
+    // Fallback plus large, mais uniquement si le nom exact ne remonte rien.
+    const { data: byText } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .eq('show_in_store', true)
+      .or(`description.ilike.%${safePhrase}%,enriched_text.ilike.%${safePhrase}%`)
+      .limit(Math.min(6, limit))
+
+    if (byText?.length) found.push(...byText as Product[])
+  }
+
+  for (const anchor of anchors) {
+    const { data } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .eq('show_in_store', true)
+      .ilike('name', `%${anchor}%`)
+      .limit(limit)
+
+    if (data?.length) found.push(...data as Product[])
+  }
+
+  return dedupeProducts(found)
+}
+
+export async function signalProductSearch(item: ExtractedItem, signals: CatalogSignal[], limit = 8): Promise<Product[]> {
+  const matches = matchingSignalsForItem(item, signals).filter(signal => !isInstructionOnlySignal(signal))
+  if (matches.length === 0) return []
+
+  const supabase = getSupabaseAdmin()
+  const found: Product[] = []
+  const ids = Array.from(new Set(matches.map(signal => signal.product_id).filter(Boolean))) as string[]
+
+  if (ids.length > 0) {
+    const { data } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .eq('show_in_store', true)
+      .in('id', ids)
+
+    if (data?.length) found.push(...(data as Product[]).map(product => ({ ...product, signal_match: true })))
+  }
+
+  for (const signal of matches) {
+    const productName = String(signal.product_name || '').trim()
+    if (!productName) continue
+
+    const signalItem: ExtractedItem = {
+      raw: productName,
+      query: productName,
+      quantity: 1,
+      section: null,
+    }
+
+    const [direct, semantic] = await Promise.all([
+      directNameSearch(signalItem, limit),
+      rpcSearch(productName, limit),
+    ])
+
+    found.push(...dedupeProducts([...direct, ...semantic]).map(product => ({
+      ...product,
+      signal_match: signalNameMatchesProduct(productName, product),
+    })))
+  }
+
+  return dedupeProducts(found).slice(0, limit)
+}
+
+export async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap, signals: CatalogSignal[] = []): Promise<Product[]> {
+  const cleanedRaw = stripQuantityPrefix(item.raw).trim()
+  const expandedEmbedding = embeddingMap?.get(item.query.trim())
+  const rawEmbedding = embeddingMap?.get(cleanedRaw)
+
+  const [signalResults, expandedResults, rawResults, directResults] = await Promise.all([
+    signalProductSearch(item, signals, 8),
+    rpcSearch(item.query, 24, expandedEmbedding),
+    rpcSearch(cleanedRaw, 12, rawEmbedding),
+    directNameSearch(item, 20),
+  ])
+
+  const signalIds = new Set(signalResults.filter(product => product.signal_match).map(product => product.id))
+  const candidates = dedupeProducts([...signalResults, ...directResults, ...expandedResults, ...rawResults])
+    .map(product => ({
+      product,
+      score: deterministicScore(product, item) + (signalIds.has(product.id) || product.signal_match ? 3 : 0),
+    }))
+    .filter(({ product, score }) => {
+      if (candidateIsUnsafe(product, item)) return false
+      if (signalIds.has(product.id) || product.signal_match) return true
+
+      const important = importantModelTokens(item)
+      // If the request has strong references, require at least one in the candidate text.
+      if (important.length >= 1 && !queryHasAllTokens(product, important.slice(0, 2))) {
+        return score >= 0.9
+      }
+      return score >= 0.12
+    })
+    .sort((a, b) => {
+      const signalDelta = Number(signalIds.has(b.product.id) || b.product.signal_match) - Number(signalIds.has(a.product.id) || a.product.signal_match)
+      if (signalDelta !== 0) return signalDelta
+      return b.score - a.score
+    })
+    .slice(0, 10)
+    .map(({ product }) => product)
+
+  return candidates
+}

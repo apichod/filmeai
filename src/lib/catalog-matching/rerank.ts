@@ -1,0 +1,56 @@
+import { openai } from './openai'
+import type { CandidateSet, RerankResult, RerankSelection } from './types'
+
+export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: string): Promise<RerankSelection[]> {
+  const context = candidateSets.map((set, index) => ({
+    index,
+    raw: set.item.raw,
+    query: set.item.query,
+    quantity: set.item.quantity,
+    section: set.item.section,
+    top_candidates: set.candidates.slice(0, 5).map(candidate => ({
+      id: candidate.id,
+      name: candidate.name,
+      description: (candidate.description || '').slice(0, 320),
+      similarity: candidate.similarity || null,
+      is_bundle: candidate.is_bundle || false,
+    })),
+  }))
+
+  const payload = candidateSets.map((set, index) => ({
+    index,
+    raw: set.item.raw,
+    query: set.item.query,
+    quantity: set.item.quantity,
+    section: set.item.section,
+    candidates: set.candidates.map(candidate => ({
+      id: candidate.id,
+      name: candidate.name,
+      price_per_day: candidate.price_per_day,
+      description: (candidate.description || '').slice(0, 320),
+      similarity: candidate.similarity || null,
+      is_bundle: candidate.is_bundle || false,
+    })),
+  }))
+
+  const rerankRes = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: rerankPrompt,
+      },
+      { role: 'user', content: JSON.stringify({ context, items: payload }) },
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0,
+    max_tokens: 2600,
+  })
+
+  try {
+    const parsed = JSON.parse(rerankRes.choices[0].message.content || '{}') as RerankResult
+    return parsed.selections || []
+  } catch {
+    return []
+  }
+}

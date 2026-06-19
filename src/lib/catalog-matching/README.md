@@ -1,32 +1,49 @@
 # Catalog matching engine — FilmeAI
 
-Ce dossier contient la “boîte grise” du matching catalogue utilisé par `/requests/new`.
+Ce dossier contient la “boîte grise” du matching catalogue utilisé par `/requests/new` et par le chat quand il traite une demande de devis sur liste.
 
 ## Point d’entrée
 
-- `quoteMatchingEngine.ts`
+- `quoteMatchingEngine.ts` : orchestrateur principal.
 
-La route suivante ne fait plus que recevoir la requête HTTP et appeler ce moteur :
+La route HTTP suivante ne fait plus que recevoir la requête et appeler ce moteur :
 
 - `src/app/api/parse-request/route.ts`
 
-## Ce que fait le moteur
+## Modules
 
-1. Charge les prompts éditables depuis `assistant_settings`.
-2. Charge les signaux validés depuis `catalog_signals`.
-3. Injecte les signaux dans le prompt d’extraction.
-4. Extrait les lignes matériel dans l’ordre exact de la demande.
-5. Cherche les candidats dans `products_cache` :
-   - signaux validés,
-   - recherche directe par nom,
-   - recherche hybride vectorielle / texte via `search_products`.
-6. Applique les garde-fous bas niveau :
-   - modèles sacrés (`FX3`, `FX6`, `24-70`, etc.),
-   - familles produit (`Vari ND` ≠ `Pro-Mist`),
-   - pack signalé ≠ produit nu,
-   - caméra demandée ≠ cage / rig / accessoire.
-7. Lance le reranking IA sur les candidats déjà filtrés.
-8. Retourne les items, alternatives et le diagnostic IA copiable dans l’interface.
+- `extract.ts` : extraction des lignes matériel depuis le message client, via le prompt “Extraction liste”.
+- `signals.ts` : chargement et application des signaux / alias validés dans `/assistant/knowledge`.
+- `search.ts` : recherche catalogue.
+  - recherche par signaux ;
+  - recherche directe par nom ;
+  - recherche vectorielle + texte via OpenAI embeddings + Supabase RPC `search_products`.
+- `rerank.ts` : reranking IA des candidats déjà trouvés, via le prompt “Reranking catalogue”.
+- `safety.ts` : garde-fous bas niveau contre les matchs dangereux.
+  - modèle/focale/monture incohérents ;
+  - famille produit incompatible ;
+  - caméra demandée ≠ cage/rig/accessoire ;
+  - signal pack ≠ produit nu.
+- `diagnostics.ts` : construction du résultat final, des alternatives et du diagnostic IA copiable.
+- `prompts.ts` : lecture des prompts éditables dans `assistant_settings`.
+- `db.ts` : client Supabase service role + organisation par défaut.
+- `openai.ts` : client OpenAI partagé.
+- `text.ts` : normalisation texte, quantités, tokens importants.
+- `types.ts` : types et seuils partagés.
+
+## Recherche vectorielle
+
+Elle est dans `search.ts` :
+
+- `createEmbeddingMap()` crée les embeddings avec `text-embedding-3-small`.
+- `rpcSearch()` appelle Supabase `search_products(query_text, query_embedding, match_count)`.
+
+Cette recherche vectorielle est combinée avec :
+
+- les signaux validés ;
+- la recherche directe par nom ;
+- le score déterministe ;
+- le reranking IA.
 
 ## Règle importante
 
@@ -36,4 +53,4 @@ Les règles métier doivent rester autant que possible dans :
 - les signaux visibles dans `/assistant/knowledge`,
 - les migrations SQL de signaux.
 
-Le code ici doit surtout servir de garde-fou technique pour éviter les matchs dangereux.
+Le code ici doit surtout servir de garde-fou technique et rendre le raisonnement inspectable via le diagnostic IA.
