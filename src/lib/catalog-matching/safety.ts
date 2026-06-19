@@ -41,13 +41,14 @@ export function productLooksLikeAccessoryOnly(product: Product): boolean {
 export function importantModelTokens(item: ExtractedItem): string[] {
   const text = normalizeText(`${item.raw} ${item.query}`)
   const tokens = significantTokens(text)
+  const hasFocalRange = tokens.some(token => /^\d{2,3}-\d{2,3}(mm)?$/.test(token))
   const important = tokens.filter(token =>
     /^(fx3|fx6|fx9|fx30|b10x|b10|d2|prohead|profoto|atem|ntg3|c1|r5|r6|rj45|bpu|bpu60|bpu90|vmount|vlock|v-lock|indie|shogun|sachtler|magliner|macbook|aputure|600x|1200d)$/.test(token) ||
     /^(c50|c70|c80|c300|c400|r5c|rf|rs3|rs4)$/.test(token) ||
     /^\d{2,3}-\d{2,3}(mm)?$/.test(token) ||
     /^f\d(?:\.\d)?$/.test(token) ||
     /^\d\.\d$/.test(token) ||
-    /^\d{2,3}$/.test(token) ||
+    (!hasFocalRange && /^\d{2,3}$/.test(token)) ||
     /^\d{2,3}mm$/.test(token) ||
     /^\d{2,3}gb$/.test(token) ||
     /^\d{2,3}go$/.test(token) ||

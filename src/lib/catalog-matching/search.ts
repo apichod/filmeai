@@ -13,6 +13,45 @@ function productContainsToken(product: Product, token: string): boolean {
   return haystack.includes(tokenNorm) || compactText(haystack).includes(compactText(tokenNorm))
 }
 
+
+function flexibleSqlPatterns(phrase: string): string[] {
+  const clean = phrase.replace(/[%,]/g, ' ').replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim()
+  if (!clean) return []
+
+  const patterns = new Set<string>()
+  patterns.add(`%${clean}%`)
+
+  const focal = clean.match(/\b(12|14|15|16|24|70)\s*-\s*(24|35|70|105|200)\s*(?:mm)?\b/i)
+  const aperture = clean.match(/\bf?\s*(1\.2|1\.4|1\.8|2\.8|4)\b/i)?.[1]
+  const mount = clean.match(/\b(fe|rf|ef|pl|e)\b/i)?.[1]
+  const brand = clean.match(/\b(sony|canon|sigma|tamron)\b/i)?.[1]
+
+  if (focal) {
+    const start = focal[1]
+    const end = focal[2]
+    patterns.add(`%${start}%${end}%`)
+    patterns.add(`%${start}%${end}%mm%`)
+    if (aperture) {
+      patterns.add(`%${start}%${end}%${aperture}%`)
+      patterns.add(`%${start}%${end}%F${aperture}%`)
+      patterns.add(`%${start}%${end}%f${aperture}%`)
+    }
+    if (mount) patterns.add(`%${mount}%${start}%${end}%`)
+    if (brand) patterns.add(`%${brand}%${start}%${end}%`)
+  }
+
+  if (/\brs\s*3\b/i.test(clean) || /\brs3\b/i.test(clean)) {
+    patterns.add('%Ronin%RS%3%')
+    patterns.add('%Ronin%RS3%')
+  }
+  if (/\brs\s*4\b/i.test(clean) || /\brs4\b/i.test(clean)) {
+    patterns.add('%Ronin%RS%4%')
+    patterns.add('%Ronin%RS4%')
+  }
+
+  return Array.from(patterns).filter(pattern => pattern.replace(/%/g, '').length >= 2)
+}
+
 function expandSearchPhrase(phrase: string): string[] {
   const clean = phrase.replace(/[%,]/g, ' ').replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim()
   if (!clean) return []
@@ -153,18 +192,19 @@ export async function directNameSearch(item: ExtractedItem, limit = 16): Promise
     const safePhrase = phrase.replace(/[%,]/g, ' ').replace(/\s+/g, ' ').trim()
     if (!safePhrase) continue
 
-    const { data: byName } = await supabase
-      .from('products_cache')
-      .select('id, name, description, price_per_day, deposit, photo_url')
-      .eq('archived', false)
-      .eq('show_in_store', true)
-      .ilike('name', `%${safePhrase}%`)
-      .limit(limit)
+    for (const pattern of flexibleSqlPatterns(safePhrase)) {
+      const { data: byName } = await supabase
+        .from('products_cache')
+        .select('id, name, description, price_per_day, deposit, photo_url')
+        .eq('archived', false)
+        .eq('show_in_store', true)
+        .ilike('name', pattern)
+        .limit(limit)
 
-    if (byName?.length) {
-      found.push(...byName as Product[])
-      continue
+      if (byName?.length) found.push(...byName as Product[])
     }
+
+    if (found.length) continue
 
     // Fallback plus large, mais uniquement si le nom exact ne remonte rien.
     const { data: byText } = await supabase
@@ -179,15 +219,17 @@ export async function directNameSearch(item: ExtractedItem, limit = 16): Promise
   }
 
   for (const anchor of anchors) {
-    const { data } = await supabase
-      .from('products_cache')
-      .select('id, name, description, price_per_day, deposit, photo_url')
-      .eq('archived', false)
-      .eq('show_in_store', true)
-      .ilike('name', `%${anchor}%`)
-      .limit(limit)
+    for (const pattern of flexibleSqlPatterns(anchor)) {
+      const { data } = await supabase
+        .from('products_cache')
+        .select('id, name, description, price_per_day, deposit, photo_url')
+        .eq('archived', false)
+        .eq('show_in_store', true)
+        .ilike('name', pattern)
+        .limit(limit)
 
-    if (data?.length) found.push(...data as Product[])
+      if (data?.length) found.push(...data as Product[])
+    }
   }
 
   return dedupeProducts(found)
