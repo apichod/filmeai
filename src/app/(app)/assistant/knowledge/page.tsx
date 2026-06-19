@@ -127,6 +127,8 @@ export default function AssistantKnowledgePage() {
   const [editSignalTerm, setEditSignalTerm] = useState('')
   const [editSignalProduct, setEditSignalProduct] = useState('')
   const [signalEditSaving, setSignalEditSaving] = useState(false)
+  const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   /* ── Load FAQ ── */
   const loadFaq = useCallback(async () => {
@@ -413,6 +415,42 @@ export default function AssistantKnowledgePage() {
       setSignals(prev => prev.filter(signal => signal.id !== id))
     } catch (err) {
       setSignalError(err instanceof Error ? err.message : 'Suppression impossible.')
+    }
+  }
+
+  function toggleSignalSelect(id: string) {
+    setSelectedSignals(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
+      return next
+    })
+  }
+
+  function toggleAllSignals() {
+    if (selectedSignals.size === signals.length) {
+      setSelectedSignals(new Set())
+    } else {
+      setSelectedSignals(new Set(signals.map(s => s.id)))
+    }
+  }
+
+  async function deleteSelectedSignals() {
+    if (!selectedSignals.size) return
+    if (!confirm(`Supprimer ${selectedSignals.size} signal${selectedSignals.size > 1 ? 's' : ''} ?`)) return
+    setBulkDeleting(true)
+    setSignalError('')
+    try {
+      await Promise.all(
+        Array.from(selectedSignals).map(id =>
+          fetch(`/api/catalog-signals/${id}`, { method: 'DELETE' })
+        )
+      )
+      setSignals(prev => prev.filter(s => !selectedSignals.has(s.id)))
+      setSelectedSignals(new Set())
+    } catch {
+      setSignalError('Erreur lors de la suppression groupée.')
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -906,6 +944,20 @@ export default function AssistantKnowledgePage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {selectedSignals.size > 0 && (
+                  <>
+                    <span className="text-xs text-gray-500">{selectedSignals.size} sélectionné{selectedSignals.size > 1 ? 's' : ''}</span>
+                    <button
+                      onClick={() => void deleteSelectedSignals()}
+                      disabled={bulkDeleting}
+                      className="flex items-center gap-1 text-xs bg-red-600 text-white rounded-lg px-3 py-2 hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      <IconTrash className="w-3.5 h-3.5" />
+                      {bulkDeleting ? 'Suppression…' : `Supprimer (${selectedSignals.size})`}
+                    </button>
+                    <button onClick={() => setSelectedSignals(new Set())} className="text-xs text-gray-400 hover:text-gray-700">Annuler</button>
+                  </>
+                )}
                 <button
                   onClick={exportSignalsSQL}
                   disabled={signals.length === 0}
@@ -977,8 +1029,19 @@ export default function AssistantKnowledgePage() {
               </div>
             ) : (
               <div className="divide-y divide-gray-50">
+                {signals.length > 0 && (
+                  <div className="px-6 py-2 flex items-center gap-2 bg-gray-50/60 border-b border-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={selectedSignals.size === signals.length}
+                      onChange={toggleAllSignals}
+                      className="rounded border-gray-300 accent-gray-900 cursor-pointer"
+                    />
+                    <span className="text-xs text-gray-400">Tout sélectionner</span>
+                  </div>
+                )}
                 {signals.map(signal => (
-                  <div key={signal.id} className="px-6 py-3 flex items-center justify-between gap-4">
+                  <div key={signal.id} className={`px-6 py-3 flex items-center justify-between gap-4 ${selectedSignals.has(signal.id) ? 'bg-blue-50/40' : ''}`}>
                     {editingSignalId === signal.id ? (
                       <div className="flex-1 grid md:grid-cols-[1fr_1fr_auto] gap-2">
                         <input
@@ -1011,7 +1074,13 @@ export default function AssistantKnowledgePage() {
                       </div>
                     ) : (
                       <>
-                        <div className="min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedSignals.has(signal.id)}
+                          onChange={() => toggleSignalSelect(signal.id)}
+                          className="rounded border-gray-300 accent-gray-900 cursor-pointer shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm text-gray-900">
                             <span className="font-semibold">“{signal.term}”</span>
                             <span className="text-gray-400 mx-2">→</span>
