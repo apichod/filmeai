@@ -2,16 +2,10 @@ import { getSupabaseAdmin } from './db'
 import { openai } from './openai'
 import { isInstructionOnlySignal, matchingSignalsForItem, signalNameMatchesProduct } from './signals'
 import { candidateIsUnsafe, deterministicScore, importantModelTokens, queryHasAllTokens } from './safety'
-import { compactText, normalizeText, significantTokens, spacedModelVariant, stripQuantityPrefix } from './text'
+import { normalizeText, significantTokens, spacedModelVariant, stripQuantityPrefix } from './text'
 import { MIN_SIMILARITY } from './types'
-import type { CatalogSignal, EmbeddingMap, ExtractedItem, Product } from './types'
+import type { CatalogSignal, EmbeddingMap, ExtractedItem, Product, SearchDebug } from './types'
 
-
-function productContainsToken(product: Product, token: string): boolean {
-  const haystack = normalizeText(`${product.name} ${product.description || ''}`)
-  const tokenNorm = normalizeText(token)
-  return haystack.includes(tokenNorm) || compactText(haystack).includes(compactText(tokenNorm))
-}
 
 
 function flexibleSqlPatterns(phrase: string): string[] {
@@ -279,7 +273,7 @@ export async function signalProductSearch(item: ExtractedItem, signals: CatalogS
   return dedupeProducts(found).slice(0, limit)
 }
 
-export async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap, signals: CatalogSignal[] = []): Promise<Product[]> {
+export async function candidateSearchWithDebug(item: ExtractedItem, embeddingMap?: EmbeddingMap, signals: CatalogSignal[] = []): Promise<{ products: Product[]; debug: SearchDebug }> {
   const cleanedRaw = stripQuantityPrefix(item.raw).trim()
   const expandedEmbedding = embeddingMap?.get(item.query.trim())
   const rawEmbedding = embeddingMap?.get(cleanedRaw)
@@ -292,21 +286,39 @@ export async function candidateSearch(item: ExtractedItem, embeddingMap?: Embedd
   ])
 
   const signalIds = new Set(signalResults.filter(product => product.signal_match).map(product => product.id))
-  const candidates = dedupeProducts([...signalResults, ...directResults, ...expandedResults, ...rawResults])
+  const allCandidates = dedupeProducts([...signalResults, ...directResults, ...expandedResults, ...rawResults])
+
+  let removedUnsafe = 0
+  let removedWeak = 0
+
+  const candidates = allCandidates
     .map(product => ({
       product,
       score: deterministicScore(product, item) + (signalIds.has(product.id) || product.signal_match ? 3 : 0),
     }))
     .filter(({ product, score }) => {
-      if (candidateIsUnsafe(product, item)) return false
+      // Idée d'hier soir : les signaux validés priment, puis l'IA rerank parmi
+      // une petite liste plausible. Les garde-fous ne doivent pas vider la liste
+      // avant que le diagnostic/reranker ne puissent travailler.
       if (signalIds.has(product.id) || product.signal_match) return true
 
-      const important = importantModelTokens(item)
-      // If the request has strong references, require at least one in the candidate text.
-      if (important.length >= 1 && !important.slice(0, 3).every(token => productContainsToken(product, token)) && !queryHasAllTokens(product, important.slice(0, 2))) {
-        return score >= 0.9
+      if (candidateIsUnsafe(product, item)) {
+        removedUnsafe += 1
+        return false
       }
-      return score >= 0.12
+
+      const important = importantModelTokens(item)
+      // Si une référence forte existe, on exige au moins le début de cohérence,
+      // pas une correspondance parfaite de tous les tokens. Sinon on casse les
+      // cas “24-70 F2.8” / “RS3” / “Sony FX3” avant le reranking.
+      if (important.length >= 1 && !queryHasAllTokens(product, important.slice(0, 1))) {
+        const keep = score >= 0.9
+        if (!keep) removedWeak += 1
+        return keep
+      }
+      const keep = score >= 0.12
+      if (!keep) removedWeak += 1
+      return keep
     })
     .sort((a, b) => {
       const signalDelta = Number(signalIds.has(b.product.id) || b.product.signal_match) - Number(signalIds.has(a.product.id) || a.product.signal_match)
@@ -316,5 +328,21 @@ export async function candidateSearch(item: ExtractedItem, embeddingMap?: Embedd
     .slice(0, 10)
     .map(({ product }) => product)
 
-  return candidates
+  return {
+    products: candidates,
+    debug: {
+      signalResults: signalResults.length,
+      directResults: directResults.length,
+      semanticExpandedResults: expandedResults.length,
+      semanticRawResults: rawResults.length,
+      candidatesBeforeFilter: allCandidates.length,
+      candidatesAfterFilter: candidates.length,
+      removedUnsafe,
+      removedWeak,
+    },
+  }
+}
+
+export async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap, signals: CatalogSignal[] = []): Promise<Product[]> {
+  return (await candidateSearchWithDebug(item, embeddingMap, signals)).products
 }

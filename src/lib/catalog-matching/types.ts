@@ -28,9 +28,21 @@ export type ExtractedItem = {
   section: string | null
 }
 
+export type SearchDebug = {
+  signalResults: number
+  directResults: number
+  semanticExpandedResults: number
+  semanticRawResults: number
+  candidatesBeforeFilter: number
+  candidatesAfterFilter: number
+  removedUnsafe: number
+  removedWeak: number
+}
+
 export type CandidateSet = {
   item: ExtractedItem
   candidates: Product[]
+  searchDebug?: SearchDebug
 }
 
 export type RerankSelection = {

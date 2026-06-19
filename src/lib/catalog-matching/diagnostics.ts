@@ -113,6 +113,7 @@ const rawItems = candidateSets.map((set, index) => {
         productName: deterministic.product.name,
         score: Math.round(deterministic.score * 100) / 100,
       } : null,
+      search: set.searchDebug || null,
       preferredPack: preferredPack ? {
         productId: preferredPack.product.id,
         productName: preferredPack.product.name,

@@ -8,7 +8,7 @@ import { buildMatchedQuoteItems } from './diagnostics'
 import { extractItems } from './extract'
 import { getQuotePrompts } from './prompts'
 import { rerankAll } from './rerank'
-import { candidateSearch, createEmbeddingMap } from './search'
+import { candidateSearchWithDebug, createEmbeddingMap } from './search'
 import { buildCatalogSignalsGlossary, getApprovedCatalogSignals } from './signals'
 import { stripQuantityPrefix } from './text'
 import type { CandidateSet, ParseQuoteRequestBody } from './types'
@@ -55,10 +55,14 @@ ${learnedGlossary}`
   )
 
   const candidateSets: CandidateSet[] = await Promise.all(
-    extractedItems.map(async item => ({
-      item,
-      candidates: await candidateSearch(item, embeddingMap, approvedSignals),
-    }))
+    extractedItems.map(async item => {
+      const result = await candidateSearchWithDebug(item, embeddingMap, approvedSignals)
+      return {
+        item,
+        candidates: result.products,
+        searchDebug: result.debug,
+      }
+    })
   )
 
   const selections = await rerankAll(candidateSets, rerankPrompt)
