@@ -44,7 +44,7 @@ Après avoir matché les produits catalogue, vérifie la cohérence des montures
 
 Règles :
 - Caméra Sony (FX3, FX6, FX9) → monture E → objectifs FE. Si des optiques PL ou EF sont listées sans adaptateur, signale : "Attention : [objectif] est en monture PL/EF — votre [caméra] est en monture E. Un adaptateur est-il prévu ?"
-- Caméra Canon (C300, C400, C70, C50) → monture EF-C. Les optiques RF sont compatibles uniquement si la caméra est en version RF (C70, C400 RF).
+- Caméra Canon (C300, C400, C70, C50) → attention aux versions EF / RF selon le modèle et la configuration. Les optiques RF ne doivent pas être mélangées avec Sony FE sans adaptateur.
 - Si un objectif PL est dans la liste sans caméra PL identifiée → demande : "Votre caméra est-elle en monture PL ou faut-il prévoir un adaptateur ?"
 - Si un adaptateur monture est déjà dans la liste → incompatibilité résolue, ne signale plus rien.
 - Ne bloque pas le devis : signale, propose d'ajouter l'adaptateur si disponible au catalogue, puis laisse le client décider.`
@@ -57,7 +57,7 @@ export const DEFAULT_CHAT_RULES = `RÈGLES :
 - N'émets JAMAIS [CREATE_QUOTE] après une simple précision comme "1/4" ou "Sony". Attends une validation claire : "je confirme", "valider le devis", "crée le devis avec cette liste".`
 
 export const DEFAULT_CHAT_INFO = `INFOS FILME :
-- Site : filme.fr | Email : bonjour@filme.fr
+- Site : filme.fr | Email : location@filme.fr
 - Spécialité : caméra, optique, lumière, son, grip, accessoires cinéma
 - Livraison Paris et Île-de-France`
 
@@ -146,7 +146,7 @@ RÈGLES :
 - N'émets [SEARCH:] ou [CREATE_QUOTE] que si le client demande explicitement à chercher un produit ou créer un devis.
 
 INFOS FILME :
-- Site : filme.fr | Email : bonjour@filme.fr
+- Site : filme.fr | Email : location@filme.fr
 - Spécialité : caméra, optique, lumière, son, grip, accessoires cinéma`
 
 // ── Topic: question générale ──────────────────────────────────────────────────
@@ -167,7 +167,7 @@ RÈGLES :
 - N'émets pas [SEARCH:] ou [CREATE_QUOTE] sauf si le client demande explicitement à chercher du matériel ou créer un devis.
 
 INFOS FILME :
-- Site : filme.fr | Email : bonjour@filme.fr
+- Site : filme.fr | Email : location@filme.fr
 - Spécialité : caméra, optique, lumière, son, grip, accessoires cinéma
 - Livraison Paris et Île-de-France`
 
@@ -189,59 +189,11 @@ RÈGLES ABSOLUES :
 8. Pour "Objectifs : 3x 70-200 1x 24-70 1x 16-35", retourne trois items dans cet ordre, tous avec section="Objectifs".
 9. Les signes + séparent souvent des articles louables : "Prohead + Bol zoom" = deux lignes, "Octa 5 with all diff + Speedring" = au moins Octa 5 puis Speedring.
 
-GLOSSAIRE :
-- fx6 → Sony FX6 caméra cinéma
-- fx3 → Sony FX3 caméra
-- fx9 → Sony FX9 caméra
-- c400 → Canon EOS C400 caméra cinéma
-- c50 → Canon EOS C50 caméra cinéma
-- c70 → Canon EOS C70 caméra cinéma
-- c300 → Canon EOS C300 caméra cinéma
-- si le client précise "ce sont des Canon", applique Canon aux modèles C400/C50/C70 et aux optiques RF de la liste précédente.
-- 24-70 RF → Canon RF 24-70mm objectif
-- 24-105 RF 2.8 → Canon RF 24-105mm f/2.8 objectif
-- 24-105 RF → Canon RF 24-105mm objectif
-- indie 5 → Atomos Shogun Indie 5 moniteur enregistreur
-- cine 24 → moniteur vidéo 24 pouces
-- bpu → batterie Sony BP-U
-- vlock / v-lock → batterie V-Lock V-Mount
-- bpu vers vlock → adaptateur BP-U vers V-Mount
-- secteur → alimentation secteur caméra
-- 70-200 → objectif zoom 70-200mm
-- 24-70 → objectif zoom 24-70mm
-- 16-35 → objectif zoom 16-35mm
-- black promist 82mm → filtre Black Pro-Mist 82mm
-- solidcom c1 → intercom Hollyland Solidcom C1
-- hollyland hub → hub Hollyland Solidcom C1
-- atem sdi → mélangeur vidéo Blackmagic ATEM SDI
-- macbook → Apple MacBook
-- usbc vers rj45 → adaptateur USB-C Ethernet RJ45
-- 512gb / 512 go → SSD 512 Go
-- hotswap double → système hotswap double V-Mount
-- trépied léger type sachtler → trépied vidéo léger Sachtler
-- pieds roulettes → pieds à roulettes / stand wheels
-- magliner → chariot Magliner
-- touret bnc 50m → touret câble BNC SDI 50m
-- air remote → télécommande Profoto Air Remote
-- pro 11 / pro11 → générateur flash Profoto Pro-11
-- prohead → tête flash Profoto ProHead
-- bol zoom → bol réflecteur Profoto Zoom Reflector
-- profoto d2 → flash Profoto D2
-- rallonges de tête → rallonge de tête Profoto
-- octa 5 → softbox Profoto Octa 5 pieds
-- speedring → bague Speedring Profoto
-- para l white → Broncolor Para L blanc
-- pied 126 → pied lumière Avenger 126
-- c-stand / cstands → C-stand complet
-- spigot 16-28mm → spigot 16-28 mm
-- poly 8x4 / porte poly → cadre poly 8x4 et porte poly
-- 16 amp extensions → rallonge électrique 16A
-- gueuses → gueuse / sandbag
-- multi 5gang → multiprise 5 gang
-- aputure 600x → Aputure LS 600X Pro
-- aputure 1200d → Aputure LS 1200D Pro
-- ballast aputure 1200d → ballast Aputure 1200D
-- cable torche aputure 1200 → câble tête Aputure 1200D
+RÈGLES DE GLOSSAIRE :
+- N’embarque pas de glossaire métier figé dans ce prompt.
+- Les alias et corrections validées par l’équipe Filme sont injectés depuis l’onglet Signaux de la base de connaissance.
+- Si un glossaire appris est injecté après ce prompt, il est prioritaire pour construire le champ query.
+- En l’absence de signal, développe uniquement les abréviations évidentes sans inventer de marque.
 
 Réponse JSON uniquement :
 { "items": [{ "section": "Caméra", "raw": "fx6", "query": "Sony FX6 caméra cinéma", "quantity": 5 }] }

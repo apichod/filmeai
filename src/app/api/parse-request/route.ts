@@ -66,40 +66,51 @@ async function getQuotePrompts(): Promise<{ extractionPrompt: string; rerankProm
   }
 }
 
-async function getCatalogSignalsGlossary(): Promise<string> {
+type CatalogSignal = {
+  term: string
+  normalized_term: string | null
+  product_id: string | null
+  product_name: string
+  occurrences: number | null
+}
+
+async function getApprovedCatalogSignals(): Promise<CatalogSignal[]> {
   try {
     const organizationId = await getDefaultOrganizationId()
-    if (!organizationId) return ''
+    if (!organizationId) return []
 
     const supabase = getSupabaseAdmin()
     const { data, error } = await supabase
       .from('catalog_signals')
-      .select('term, product_name, occurrences')
+      .select('term, normalized_term, product_id, product_name, occurrences')
       .eq('organization_id', organizationId)
       .eq('approved', true)
       .order('occurrences', { ascending: false })
       .order('updated_at', { ascending: false })
-      .limit(150)
+      .limit(500)
 
-    if (error || !data?.length) return ''
-
-    const lines = data
-      .map(row => {
-        const term = String(row.term || '').trim()
-        const productName = String(row.product_name || '').trim()
-        if (!term || !productName) return null
-        return `- ${term} → ${productName}`
-      })
-      .filter(Boolean)
-      .join('\n')
-
-    return lines
-      ? `GLOSSAIRE APPRIS DEPUIS L'INTERFACE :\n${lines}\n\nSi un terme client correspond à une entrée de ce glossaire appris, utilise cette association dans le champ query.`
-      : ''
+    if (error || !data?.length) return []
+    return data as CatalogSignal[]
   } catch (err) {
-    console.warn('Catalog signals glossary fallback:', err instanceof Error ? err.message : String(err))
-    return ''
+    console.warn('Catalog signals fallback:', err instanceof Error ? err.message : String(err))
+    return []
   }
+}
+
+function buildCatalogSignalsGlossary(signals: CatalogSignal[]): string {
+  const lines = signals
+    .map(row => {
+      const term = String(row.term || '').trim()
+      const productName = String(row.product_name || '').trim()
+      if (!term || !productName) return null
+      return `- ${term} → ${productName}`
+    })
+    .filter(Boolean)
+    .join('\n')
+
+  return lines
+    ? `GLOSSAIRE APPRIS DEPUIS L'INTERFACE :\n${lines}\n\nSi un terme client correspond à une entrée de ce glossaire appris, utilise cette association dans le champ query. Ce glossaire est prioritaire sur les déductions générales.`
+    : ''
 }
 
 type Product = {
@@ -110,6 +121,7 @@ type Product = {
   deposit: number | null
   photo_url: string | null
   similarity?: number
+  signal_match?: boolean
   is_bundle?: boolean
   bundle_items?: string[]
 }
@@ -177,6 +189,52 @@ function stripQuantityPrefix(value: string): string {
     .trim()
 }
 
+function normalizedSignalTerm(value: string): string {
+  return normalizeText(stripQuantityPrefix(value))
+}
+
+function isInstructionOnlySignal(signal: CatalogSignal): boolean {
+  const productName = normalizeText(signal.product_name || '')
+  return productName.startsWith('appliquer ') || productName.startsWith('utiliser ')
+}
+
+function signalMatchesItem(signal: CatalogSignal, item: ExtractedItem): boolean {
+  const signalTerm = normalizedSignalTerm(signal.normalized_term || signal.term)
+  if (!signalTerm) return false
+
+  const raw = normalizedSignalTerm(item.raw)
+  const query = normalizedSignalTerm(item.query)
+  const itemText = normalizeText(`${item.raw} ${item.query}`)
+
+  if (signalTerm === raw || signalTerm === query) return true
+
+  // Les signaux courts (FX3, FX6, C70…) doivent matcher exactement.
+  // Les expressions longues peuvent matcher en inclusion.
+  if (signalTerm.length < 4) return false
+  return raw.includes(signalTerm) || query.includes(signalTerm) || itemText.includes(signalTerm)
+}
+
+function matchingSignalsForItem(item: ExtractedItem, signals: CatalogSignal[]): CatalogSignal[] {
+  return signals
+    .filter(signal => signalMatchesItem(signal, item))
+    .sort((a, b) => Number(b.occurrences || 0) - Number(a.occurrences || 0))
+    .slice(0, 6)
+}
+
+function signalNameMatchesProduct(signalProductName: string, product: Product): boolean {
+  const signalName = normalizeText(signalProductName)
+  const productName = normalizeText(product.name)
+  if (!signalName || !productName) return false
+  if (productName.includes(signalName) || signalName.includes(productName)) return true
+
+  const tokens = significantTokens(signalProductName)
+    .filter(token => !STOPWORDS.has(token) && token.length >= 3)
+  if (tokens.length === 0) return false
+
+  const matched = tokens.filter(token => productName.includes(token)).length
+  return matched / tokens.length >= 0.75
+}
+
 function significantTokens(value: string): string[] {
   const norm = normalizeText(stripQuantityPrefix(value))
   const rawTokens = norm.match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) || []
@@ -200,11 +258,13 @@ function queryHasAllTokens(product: Product, tokens: string[]): boolean {
 }
 
 function requestWantsPack(item: ExtractedItem): boolean {
-  // On se base sur la demande brute, pas sur la query enrichie.
-  // Exemple : "Canon C400" devient "Canon EOS C400 caméra cinéma" en query,
-  // mais "caméra cinéma" décrit le type de produit, pas une demande de pack.
   const raw = normalizeText(item.raw)
-  return /\b(pack|kit|serie|série|set|duo|reportage|standard|essentiel|multicam)\b/.test(raw)
+  const query = normalizeText(item.query)
+  const packPattern = /\b(pack|kit|serie|série|set|duo|reportage|standard|essentiel|multicam)\b/
+
+  // La demande brute prime. Exception utile : une association “Signaux” peut
+  // injecter explicitement un nom de pack dans query.
+  return packPattern.test(raw) || packPattern.test(query)
 }
 
 function productLooksLikePack(product: Product): boolean {
@@ -241,6 +301,82 @@ function importantModelTokens(item: ExtractedItem): string[] {
   return Array.from(new Set(important))
 }
 
+function productNameText(product: Product): string {
+  return normalizeText(product.name)
+}
+
+function requestText(item: ExtractedItem): string {
+  return normalizeText(`${item.raw} ${item.query}`)
+}
+
+function requestHasFamilyMismatch(product: Product, item: ExtractedItem): boolean {
+  if (product.signal_match) return false
+
+  const req = requestText(item)
+  const name = productNameText(product)
+
+  // Les références modèle/focales doivent apparaître dans le nom produit, pas
+  // seulement dans une description ou dans “packs apparentés”.
+  const exactNameFamilies: Array<[RegExp, RegExp]> = [
+    [/\bfx3\b/, /\bfx3\b/],
+    [/\bfx6\b/, /\bfx6\b/],
+    [/\bfx9\b/, /\bfx9\b/],
+    [/\bfx30\b/, /\bfx30\b/],
+    [/\bc400\b/, /\bc400\b/],
+    [/\bc50\b/, /\bc50\b/],
+    [/\bc70\b/, /\bc70\b/],
+    [/\bc300\b/, /\bc300\b/],
+    [/\bb10x\s*plus\b/, /\bb10x\s*plus\b/],
+    [/\bpro\s*-?\s*11\b/, /\bpro\s*-?\s*11\b/],
+    [/\bronin\s*rs\s*4\b/, /\bronin\s*rs\s*4\b/],
+    [/\b300x\b/, /\b300x\b/],
+    [/\b600x\b/, /\b600x\b/],
+    [/\b1200d\b/, /\b1200d\b/],
+    [/\b16\s*-?\s*35\b/, /\b16\s*-?\s*35\b/],
+    [/\b24\s*-?\s*70\b/, /\b24\s*-?\s*70\b/],
+    [/\b24\s*-?\s*105\b/, /\b24\s*-?\s*105\b/],
+    [/\b70\s*-?\s*200\b/, /\b70\s*-?\s*200\b/],
+  ]
+
+  for (const [requestPattern, productPattern] of exactNameFamilies) {
+    if (requestPattern.test(req) && !productPattern.test(name)) return true
+  }
+
+  // Familles filtres : Vari ND / ND / Pro-Mist / pola ne sont pas interchangeables.
+  if (/\bvari\s*nd\b|\bvariable\s*nd\b/.test(req)) {
+    if (/\bpro\s*-?\s*mist\b|\bblack\s*pro\s*-?\s*mist\b|\bhollywood\s*black\s*magic\b/.test(name)) return true
+    if (!(/\bvari\s*nd\b|\bvariable\s*nd\b/.test(name))) return true
+  }
+
+  if (/\bpro\s*-?\s*mist\b|\bblack\s*promist\b|\bblack\s*pro\s*-?\s*mist\b/.test(req)) {
+    if (/\bvari\s*nd\b|\bvariable\s*nd\b/.test(name)) return true
+    if (!(/\bmist\b/.test(name))) return true
+  }
+
+  if (/\bangelbird\b/.test(req) && !/\bangelbird\b/.test(name)) return true
+  if (/\b256\s*(gb|go)\b/.test(req) && !/\b256\b/.test(name)) return true
+  if (/\b512\s*(gb|go)\b/.test(req) && !/\b512\b/.test(name)) return true
+  if (/\b82\s*mm\b/.test(req) && !/\b82\s*mm\b|\b82mm\b/.test(name)) return true
+  if (/\brf\b/.test(req) && /\b(fe|e-mount|sony)\b/.test(name) && !/\brf\b/.test(name)) return true
+  if (/\bfe\b/.test(req) && /\brf\b/.test(name) && !/\bfe\b/.test(name)) return true
+
+  return false
+}
+
+function isBrandOnlyAmbiguousRequest(item: ExtractedItem): boolean {
+  const tokens = significantTokens(`${item.raw} ${item.query}`)
+  const raw = normalizeText(stripQuantityPrefix(item.raw))
+  return tokens.length === 1 && /^(atomos|sony|canon|profoto|aputure|smallhd)$/.test(tokens[0]) && raw === tokens[0]
+}
+
+function candidateIsUnsafe(product: Product, item: ExtractedItem): boolean {
+  if (product.signal_match) return false
+  if (requestHasFamilyMismatch(product, item)) return true
+  if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) return true
+  if (isBrandOnlyAmbiguousRequest(item) && productLooksLikeAccessoryOnly(product)) return true
+  return false
+}
+
 function deterministicScore(product: Product, item: ExtractedItem): number {
   const name = normalizeText(product.name)
   const haystack = normalizeText(`${product.name} ${product.description || ''}`)
@@ -250,6 +386,8 @@ function deterministicScore(product: Product, item: ExtractedItem): number {
   const important = importantModelTokens(item)
 
   let score = product.similarity || 0
+
+  if (candidateIsUnsafe(product, item)) score -= 4
 
   if (raw && name.includes(raw)) score += 1.1
   if (query && name.includes(query)) score += 0.9
@@ -456,15 +594,30 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
   for (const phrase of phrases) {
     const safePhrase = phrase.replace(/[%,]/g, ' ').replace(/\s+/g, ' ').trim()
     if (!safePhrase) continue
-    const { data } = await supabase
+
+    const { data: byName } = await supabase
       .from('products_cache')
       .select('id, name, description, price_per_day, deposit, photo_url')
       .eq('archived', false)
       .eq('show_in_store', true)
-      .or(`name.ilike.%${safePhrase}%,description.ilike.%${safePhrase}%,enriched_text.ilike.%${safePhrase}%`)
+      .ilike('name', `%${safePhrase}%`)
       .limit(limit)
 
-    if (data?.length) found.push(...data as Product[])
+    if (byName?.length) {
+      found.push(...byName as Product[])
+      continue
+    }
+
+    // Fallback plus large, mais uniquement si le nom exact ne remonte rien.
+    const { data: byText } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .eq('show_in_store', true)
+      .or(`description.ilike.%${safePhrase}%,enriched_text.ilike.%${safePhrase}%`)
+      .limit(Math.min(6, limit))
+
+    if (byText?.length) found.push(...byText as Product[])
   }
 
   for (const anchor of anchors) {
@@ -482,20 +635,72 @@ async function directNameSearch(item: ExtractedItem, limit = 16): Promise<Produc
   return dedupeProducts(found)
 }
 
-async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap): Promise<Product[]> {
+async function signalProductSearch(item: ExtractedItem, signals: CatalogSignal[], limit = 8): Promise<Product[]> {
+  const matches = matchingSignalsForItem(item, signals).filter(signal => !isInstructionOnlySignal(signal))
+  if (matches.length === 0) return []
+
+  const supabase = getSupabaseAdmin()
+  const found: Product[] = []
+  const ids = Array.from(new Set(matches.map(signal => signal.product_id).filter(Boolean))) as string[]
+
+  if (ids.length > 0) {
+    const { data } = await supabase
+      .from('products_cache')
+      .select('id, name, description, price_per_day, deposit, photo_url')
+      .eq('archived', false)
+      .eq('show_in_store', true)
+      .in('id', ids)
+
+    if (data?.length) found.push(...(data as Product[]).map(product => ({ ...product, signal_match: true })))
+  }
+
+  for (const signal of matches) {
+    const productName = String(signal.product_name || '').trim()
+    if (!productName) continue
+
+    const signalItem: ExtractedItem = {
+      raw: productName,
+      query: productName,
+      quantity: 1,
+      section: null,
+    }
+
+    const [direct, semantic] = await Promise.all([
+      directNameSearch(signalItem, limit),
+      rpcSearch(productName, limit),
+    ])
+
+    found.push(...dedupeProducts([...direct, ...semantic]).map(product => ({
+      ...product,
+      signal_match: signalNameMatchesProduct(productName, product),
+    })))
+  }
+
+  return dedupeProducts(found).slice(0, limit)
+}
+
+async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap, signals: CatalogSignal[] = []): Promise<Product[]> {
   const cleanedRaw = stripQuantityPrefix(item.raw).trim()
   const expandedEmbedding = embeddingMap?.get(item.query.trim())
   const rawEmbedding = embeddingMap?.get(cleanedRaw)
 
-  const [expandedResults, rawResults, directResults] = await Promise.all([
+  const [signalResults, expandedResults, rawResults, directResults] = await Promise.all([
+    signalProductSearch(item, signals, 8),
     rpcSearch(item.query, 24, expandedEmbedding),
     rpcSearch(cleanedRaw, 12, rawEmbedding),
     directNameSearch(item, 20),
   ])
 
-  const candidates = dedupeProducts([...directResults, ...expandedResults, ...rawResults])
-    .map(product => ({ product, score: deterministicScore(product, item) }))
+  const signalIds = new Set(signalResults.map(product => product.id))
+  const candidates = dedupeProducts([...signalResults, ...directResults, ...expandedResults, ...rawResults])
+    .map(product => ({
+      product,
+      score: deterministicScore(product, item) + (signalIds.has(product.id) || product.signal_match ? 3 : 0),
+    }))
     .filter(({ product, score }) => {
+      if (signalIds.has(product.id) || product.signal_match) return true
+      if (candidateIsUnsafe(product, item)) return false
+
       const important = importantModelTokens(item)
       // If the request has strong references, require at least one in the candidate text.
       if (important.length >= 1 && !queryHasAllTokens(product, important.slice(0, 2))) {
@@ -503,7 +708,11 @@ async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap)
       }
       return score >= 0.12
     })
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      const signalDelta = Number(signalIds.has(b.product.id) || b.product.signal_match) - Number(signalIds.has(a.product.id) || a.product.signal_match)
+      if (signalDelta !== 0) return signalDelta
+      return b.score - a.score
+    })
     .slice(0, 10)
     .map(({ product }) => product)
 
@@ -608,7 +817,8 @@ export async function POST(req: NextRequest) {
       rerankPrompt = settingsPrompts.rerankPrompt
     }
 
-    const learnedGlossary = await getCatalogSignalsGlossary()
+    const approvedSignals = await getApprovedCatalogSignals()
+    const learnedGlossary = buildCatalogSignalsGlossary(approvedSignals)
     const finalExtractionPrompt = learnedGlossary
       ? `${extractionPrompt}\n\n${learnedGlossary}`
       : extractionPrompt
@@ -623,7 +833,7 @@ export async function POST(req: NextRequest) {
     const candidateSets: CandidateSet[] = await Promise.all(
       extractedItems.map(async item => ({
         item,
-        candidates: await candidateSearch(item, embeddingMap),
+        candidates: await candidateSearch(item, embeddingMap, approvedSignals),
       }))
     )
 
@@ -642,11 +852,14 @@ export async function POST(req: NextRequest) {
           .filter(({ product, score }) => productLooksLikePack(product) && score >= 0.8)
           .sort((a, b) => b.score - a.score)[0] || null
         : null
-      const safeAiSelected = aiSelected && requestWantsCameraBody(set.item) && productLooksLikeAccessoryOnly(aiSelected)
+      const safeAiSelected = aiSelected && candidateIsUnsafe(aiSelected, set.item)
         ? null
         : aiSelected
-      const selected = preferredPack?.product || safeAiSelected || deterministic?.product || null
-      const confidence = preferredPack
+      const signalSelected = set.candidates.find(candidate => candidate.signal_match) || null
+      const selected = signalSelected || preferredPack?.product || safeAiSelected || deterministic?.product || null
+      const confidence = signalSelected
+        ? 0.96
+        : preferredPack
         ? Math.min(0.95, Math.max(0.84, preferredPack.score / 2.6))
         : safeAiSelected
         ? selection?.confidence || 0.85
@@ -662,7 +875,13 @@ export async function POST(req: NextRequest) {
         matched: selected,
         confidence,
         reason: selected
-          ? (preferredPack ? 'Pack/kit privilégié car demandé par le client' : safeAiSelected ? selection?.reason || null : 'Correspondance catalogue forte par nom/référence')
+          ? (signalSelected
+            ? 'Association validée depuis Signaux'
+            : preferredPack
+              ? 'Pack/kit privilégié car demandé par le client'
+              : safeAiSelected
+                ? selection?.reason || null
+                : 'Correspondance catalogue forte par nom/référence')
           : selection?.reason || 'Aucune correspondance catalogue assez fiable',
         alternatives: set.candidates
           .filter(candidate => candidate.id !== selected?.id)

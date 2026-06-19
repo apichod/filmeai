@@ -6,6 +6,7 @@ import {
   DEFAULT_QUOTE_EXTRACTION_PROMPT,
   DEFAULT_QUOTE_RERANK_PROMPT,
   DEFAULT_SYSTEM_PROMPT_DISPONIBILITE,
+  DEFAULT_SYSTEM_PROMPT_GENERAL,
   DEFAULT_SYSTEM_PROMPT_TECHNIQUE,
   normalizeEditablePrompt,
   splitQuoteBackendPrompt,
@@ -39,7 +40,7 @@ type Product = {
   source_type?: 'product_group' | 'bundle' | null
 }
 
-type ChatTopic = 'devis' | 'disponibilite' | 'technique'
+type ChatTopic = 'devis' | 'disponibilite' | 'technique' | 'general'
 
 type SessionData = {
   customerName?: string | null
@@ -149,6 +150,7 @@ type AssistantPromptSettings = {
   chat_system_prompt?: string | null
   chat_system_prompt_disponibilite?: string | null
   chat_system_prompt_technique?: string | null
+  chat_system_prompt_general?: string | null
   quote_extraction_prompt?: string | null
   quote_rerank_prompt?: string | null
   quote_backend_prompt?: string | null
@@ -565,6 +567,7 @@ async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
   chatSystemPromptDevis: string
   chatSystemPromptDisponibilite: string
   chatSystemPromptTechnique: string
+  chatSystemPromptGeneral: string
   quoteExtractionPrompt: string
   quoteRerankPrompt: string
   forbiddenTopics: string[] | null
@@ -587,6 +590,7 @@ async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
       chatSystemPromptDevis: normalizeEditablePrompt(settings.chat_system_prompt, DEFAULT_CHAT_SYSTEM_PROMPT),
       chatSystemPromptDisponibilite: normalizeEditablePrompt(settings.chat_system_prompt_disponibilite, DEFAULT_SYSTEM_PROMPT_DISPONIBILITE),
       chatSystemPromptTechnique: normalizeEditablePrompt(settings.chat_system_prompt_technique, DEFAULT_SYSTEM_PROMPT_TECHNIQUE),
+      chatSystemPromptGeneral: normalizeEditablePrompt(settings.chat_system_prompt_general, DEFAULT_SYSTEM_PROMPT_GENERAL),
       quoteExtractionPrompt: normalizeEditablePrompt(settings.quote_extraction_prompt, legacyPrompts.extractionPrompt),
       quoteRerankPrompt: normalizeEditablePrompt(settings.quote_rerank_prompt, legacyPrompts.rerankPrompt),
       forbiddenTopics: Array.isArray(settings.forbidden_topics) ? settings.forbidden_topics : null,
@@ -597,6 +601,7 @@ async function getAssistantPromptSettings(supabase: SupabaseAdmin): Promise<{
       chatSystemPromptDevis: DEFAULT_CHAT_SYSTEM_PROMPT,
       chatSystemPromptDisponibilite: DEFAULT_SYSTEM_PROMPT_DISPONIBILITE,
       chatSystemPromptTechnique: DEFAULT_SYSTEM_PROMPT_TECHNIQUE,
+      chatSystemPromptGeneral: DEFAULT_SYSTEM_PROMPT_GENERAL,
       quoteExtractionPrompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
       quoteRerankPrompt: DEFAULT_QUOTE_RERANK_PROMPT,
       forbiddenTopics: null,
@@ -1202,7 +1207,15 @@ export async function POST(req: NextRequest) {
         ? `${previousUserText}\nPrécision client : ${lastUserText}`
         : ''
     const supabaseAdmin = getSupabaseAdmin()
-    const { chatSystemPromptDevis, chatSystemPromptDisponibilite, chatSystemPromptTechnique, quoteExtractionPrompt, quoteRerankPrompt, forbiddenTopics } = await getAssistantPromptSettings(supabaseAdmin)
+    const {
+      chatSystemPromptDevis,
+      chatSystemPromptDisponibilite,
+      chatSystemPromptTechnique,
+      chatSystemPromptGeneral,
+      quoteExtractionPrompt,
+      quoteRerankPrompt,
+      forbiddenTopics,
+    } = await getAssistantPromptSettings(supabaseAdmin)
 
     const topic = sessionData.topic || 'devis'
     let baseSystemPrompt: string
@@ -1210,6 +1223,8 @@ export async function POST(req: NextRequest) {
       baseSystemPrompt = chatSystemPromptDisponibilite
     } else if (topic === 'technique') {
       baseSystemPrompt = chatSystemPromptTechnique
+    } else if (topic === 'general') {
+      baseSystemPrompt = chatSystemPromptGeneral
     } else {
       baseSystemPrompt = chatSystemPromptDevis
     }
