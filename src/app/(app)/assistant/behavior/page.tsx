@@ -12,6 +12,7 @@ import {
   DEFAULT_QUOTE_RERANK_PROMPT,
   DEFAULT_SYSTEM_PROMPT_DISPONIBILITE,
   DEFAULT_SYSTEM_PROMPT_TECHNIQUE,
+  DEFAULT_SYSTEM_PROMPT_GENERAL,
   assembleChatPrompt,
   splitChatPrompt,
   normalizeEditablePrompt,
@@ -19,7 +20,7 @@ import {
   type ChatSections,
 } from '@/lib/defaultAssistantPrompts'
 
-type Tab = 'devis' | 'disponibilite' | 'technique' | 'avance'
+type Tab = 'devis' | 'disponibilite' | 'technique' | 'general' | 'avance'
 
 type Settings = {
   language: string
@@ -27,6 +28,7 @@ type Settings = {
   chatSections: ChatSections
   chat_system_prompt_disponibilite: string
   chat_system_prompt_technique: string
+  chat_system_prompt_general: string
   quote_extraction_prompt: string
   quote_rerank_prompt: string
   forbidden_topics: string[]
@@ -38,6 +40,7 @@ type ApiSettings = {
   chat_system_prompt?: string | null
   chat_system_prompt_disponibilite?: string | null
   chat_system_prompt_technique?: string | null
+  chat_system_prompt_general?: string | null
   quote_extraction_prompt?: string | null
   quote_rerank_prompt?: string | null
   quote_backend_prompt?: string | null
@@ -50,6 +53,7 @@ const defaults: Settings = {
   chatSections: DEFAULT_CHAT_SECTIONS,
   chat_system_prompt_disponibilite: DEFAULT_SYSTEM_PROMPT_DISPONIBILITE,
   chat_system_prompt_technique: DEFAULT_SYSTEM_PROMPT_TECHNIQUE,
+  chat_system_prompt_general: DEFAULT_SYSTEM_PROMPT_GENERAL,
   quote_extraction_prompt: DEFAULT_QUOTE_EXTRACTION_PROMPT,
   quote_rerank_prompt: DEFAULT_QUOTE_RERANK_PROMPT,
   forbidden_topics: [],
@@ -119,6 +123,7 @@ export default function AssistantBehaviorPage() {
           chatSections: splitChatPrompt(rawChat),
           chat_system_prompt_disponibilite: normalizeEditablePrompt(d.settings?.chat_system_prompt_disponibilite, DEFAULT_SYSTEM_PROMPT_DISPONIBILITE),
           chat_system_prompt_technique: normalizeEditablePrompt(d.settings?.chat_system_prompt_technique, DEFAULT_SYSTEM_PROMPT_TECHNIQUE),
+          chat_system_prompt_general: normalizeEditablePrompt(d.settings?.chat_system_prompt_general, DEFAULT_SYSTEM_PROMPT_GENERAL),
           quote_extraction_prompt: normalizeEditablePrompt(d.settings?.quote_extraction_prompt, legacyPrompts.extractionPrompt),
           quote_rerank_prompt: normalizeEditablePrompt(d.settings?.quote_rerank_prompt, legacyPrompts.rerankPrompt),
           forbidden_topics: Array.isArray(d.settings?.forbidden_topics) ? d.settings.forbidden_topics : prev.forbidden_topics,
@@ -151,6 +156,7 @@ export default function AssistantBehaviorPage() {
           chat_system_prompt: assembleChatPrompt(s.chatSections),
           chat_system_prompt_disponibilite: s.chat_system_prompt_disponibilite,
           chat_system_prompt_technique: s.chat_system_prompt_technique,
+          chat_system_prompt_general: s.chat_system_prompt_general,
           quote_extraction_prompt: s.quote_extraction_prompt,
           quote_rerank_prompt: s.quote_rerank_prompt,
           forbidden_topics: s.forbidden_topics,
@@ -209,6 +215,7 @@ export default function AssistantBehaviorPage() {
           <TabButton id="devis" active={tab === 'devis'} label="Devis" onClick={setTab} />
           <TabButton id="disponibilite" active={tab === 'disponibilite'} label="Disponibilité" onClick={setTab} />
           <TabButton id="technique" active={tab === 'technique'} label="Question technique" onClick={setTab} />
+          <TabButton id="general" active={tab === 'general'} label="Question générale" onClick={setTab} />
           <TabButton id="avance" active={tab === 'avance'} label="Avancé" onClick={setTab} />
         </div>
 
@@ -289,6 +296,26 @@ export default function AssistantBehaviorPage() {
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-5 focus:outline-none focus:ring-2 focus:ring-black resize-y"
               />
               <p className="text-[11px] text-gray-400">{s.chat_system_prompt_technique.length.toLocaleString('fr-FR')} caractères</p>
+            </div>
+          )}
+
+          {/* ── Tab Général ───────────────────────────────────────────────── */}
+          {tab === 'general' && (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-xs text-gray-500">
+                  Activé quand le visiteur clique <strong>Question générale</strong>. L&apos;assistant répond en priorité via la base de connaissances (FAQ, pages indexées) et oriente vers <em>bonjour@filme.fr</em> si l&apos;information est absente.
+                </p>
+                <ResetButton onClick={() => set('chat_system_prompt_general', DEFAULT_SYSTEM_PROMPT_GENERAL)} />
+              </div>
+              <textarea
+                value={s.chat_system_prompt_general}
+                onChange={e => set('chat_system_prompt_general', e.target.value)}
+                rows={22}
+                spellCheck={false}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-5 focus:outline-none focus:ring-2 focus:ring-black resize-y"
+              />
+              <p className="text-[11px] text-gray-400">{s.chat_system_prompt_general.length.toLocaleString('fr-FR')} caractères</p>
             </div>
           )}
 
