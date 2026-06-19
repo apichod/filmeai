@@ -71,6 +71,8 @@ type CatalogSignal = {
   normalized_term: string | null
   product_id: string | null
   product_name: string
+  source: string | null
+  confidence: number | null
   occurrences: number | null
 }
 
@@ -82,7 +84,7 @@ async function getApprovedCatalogSignals(): Promise<CatalogSignal[]> {
     const supabase = getSupabaseAdmin()
     const { data, error } = await supabase
       .from('catalog_signals')
-      .select('term, normalized_term, product_id, product_name, occurrences')
+      .select('term, normalized_term, product_id, product_name, source, confidence, occurrences')
       .eq('organization_id', organizationId)
       .eq('approved', true)
       .order('occurrences', { ascending: false })
@@ -389,11 +391,24 @@ function isBrandOnlyAmbiguousRequest(item: ExtractedItem): boolean {
   return tokens.length === 1 && /^(atomos|sony|canon|profoto|aputure|smallhd)$/.test(tokens[0]) && raw === tokens[0]
 }
 
+function candidateUnsafeReasons(product: Product, item: ExtractedItem): string[] {
+  const reasons: string[] = []
+
+  if (requestHasFamilyMismatch(product, item)) {
+    reasons.push('Famille, modèle, focale ou monture incohérente avec la demande')
+  }
+  if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) {
+    reasons.push('Accessoire caméra détecté alors que la demande vise une caméra ou un pack caméra')
+  }
+  if (isBrandOnlyAmbiguousRequest(item) && productLooksLikeAccessoryOnly(product)) {
+    reasons.push('Demande trop générique : accessoire non retenu automatiquement')
+  }
+
+  return reasons
+}
+
 function candidateIsUnsafe(product: Product, item: ExtractedItem): boolean {
-  if (requestHasFamilyMismatch(product, item)) return true
-  if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) return true
-  if (isBrandOnlyAmbiguousRequest(item) && productLooksLikeAccessoryOnly(product)) return true
-  return false
+  return candidateUnsafeReasons(product, item).length > 0
 }
 
 function deterministicScore(product: Product, item: ExtractedItem): number {
@@ -893,6 +908,15 @@ export async function POST(req: NextRequest) {
         : aiSelected
       const signalSelected = set.candidates.find(candidate => candidate.signal_match && !candidateIsUnsafe(candidate, set.item)) || null
       const selected = signalSelected || preferredPack?.product || safeAiSelected || deterministic?.product || null
+      const selectedBy = signalSelected
+        ? 'signal'
+        : preferredPack?.product
+          ? 'pack_rule'
+          : safeAiSelected
+            ? 'rerank'
+            : deterministic?.product
+              ? 'deterministic'
+              : null
       const confidence = signalSelected
         ? 0.96
         : preferredPack
@@ -902,6 +926,22 @@ export async function POST(req: NextRequest) {
         : deterministic
           ? Math.min(0.95, Math.max(0.72, deterministic.score / 2.6))
           : selection?.confidence || 0
+      const matchingSignals = matchingSignalsForItem(set.item, approvedSignals)
+      const debugCandidates = set.candidates.slice(0, 10).map(candidate => {
+        const score = deterministicScore(candidate, set.item)
+        const unsafeReasons = candidateUnsafeReasons(candidate, set.item)
+        return {
+          id: candidate.id,
+          name: candidate.name,
+          similarity: candidate.similarity || null,
+          deterministicScore: Math.round(score * 100) / 100,
+          signalMatch: Boolean(candidate.signal_match),
+          unsafe: unsafeReasons.length > 0,
+          unsafeReasons,
+          selected: candidate.id === selected?.id,
+          rerankChoice: candidate.id === selection?.product_id,
+        }
+      })
 
       return {
         requestedName: set.item.raw,
@@ -919,6 +959,40 @@ export async function POST(req: NextRequest) {
                 ? selection?.reason || null
                 : 'Correspondance catalogue forte par nom/référence')
           : selection?.reason || 'Aucune correspondance catalogue assez fiable',
+        debug: {
+          requestedName: set.item.raw,
+          searchQuery: set.item.query,
+          section: set.item.section,
+          quantity: set.item.quantity,
+          selectedBy,
+          finalChoice: selected ? { id: selected.id, name: selected.name } : null,
+          signals: matchingSignals.map(signal => ({
+            term: signal.term,
+            normalizedTerm: signal.normalized_term,
+            productId: signal.product_id,
+            productName: signal.product_name,
+            source: signal.source,
+            confidence: signal.confidence,
+            occurrences: signal.occurrences,
+            instructionOnly: isInstructionOnlySignal(signal),
+          })),
+          rerank: selection ? {
+            productId: selection.product_id,
+            confidence: selection.confidence,
+            reason: selection.reason || null,
+          } : null,
+          deterministic: deterministic ? {
+            productId: deterministic.product.id,
+            productName: deterministic.product.name,
+            score: Math.round(deterministic.score * 100) / 100,
+          } : null,
+          preferredPack: preferredPack ? {
+            productId: preferredPack.product.id,
+            productName: preferredPack.product.name,
+            score: Math.round(preferredPack.score * 100) / 100,
+          } : null,
+          candidates: debugCandidates,
+        },
         alternatives: set.candidates
           .filter(candidate => candidate.id !== selected?.id)
           .slice(0, 4),

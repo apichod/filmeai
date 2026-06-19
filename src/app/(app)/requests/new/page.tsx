@@ -28,6 +28,39 @@ type Product = {
   description?: string | null
 }
 
+type MatchDebug = {
+  requestedName: string
+  searchQuery: string
+  section?: string | null
+  quantity: number
+  selectedBy: 'signal' | 'pack_rule' | 'rerank' | 'deterministic' | null
+  finalChoice: { id: string; name: string } | null
+  signals: Array<{
+    term: string
+    normalizedTerm?: string | null
+    productId?: string | null
+    productName: string
+    source?: string | null
+    confidence?: number | null
+    occurrences?: number | null
+    instructionOnly?: boolean
+  }>
+  rerank: { productId: string | null; confidence: number; reason?: string | null } | null
+  deterministic: { productId: string; productName: string; score: number } | null
+  preferredPack: { productId: string; productName: string; score: number } | null
+  candidates: Array<{
+    id: string
+    name: string
+    similarity?: number | null
+    deterministicScore: number
+    signalMatch: boolean
+    unsafe: boolean
+    unsafeReasons: string[]
+    selected: boolean
+    rerankChoice: boolean
+  }>
+}
+
 type QuoteItem = {
   uid: string
   type: 'product' | 'custom_charge' | 'section'
@@ -38,6 +71,7 @@ type QuoteItem = {
   section?: string | null
   confidence?: number
   reason?: string | null
+  debug?: MatchDebug
 }
 
 type ParsedItem = {
@@ -48,6 +82,7 @@ type ParsedItem = {
   quantity?: number
   confidence?: number
   reason?: string | null
+  debug?: MatchDebug
 }
 
 type Step = 'client' | 'quote'
@@ -146,6 +181,89 @@ function MatchGauge({ confidence, type, requestedName }: { confidence?: number; 
         {matchLabel(percent, type)}
         {requestedName && <span className="text-gray-400"> ({requestedName})</span>}
       </span>
+    </div>
+  )
+}
+
+function sourceLabel(source: MatchDebug['selectedBy']) {
+  if (source === 'signal') return 'Signal validé'
+  if (source === 'pack_rule') return 'Règle pack/kit'
+  if (source === 'rerank') return 'Reranking IA'
+  if (source === 'deterministic') return 'Score déterministe'
+  return 'Aucun choix automatique'
+}
+
+function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
+  return (
+    <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold text-slate-900">Diagnostic IA</p>
+          <p className="mt-1 text-slate-500">Demandé : <span className="font-medium text-slate-700">{debug.requestedName}</span></p>
+          <p className="text-slate-500">Query : <span className="font-medium text-slate-700">{debug.searchQuery}</span></p>
+        </div>
+        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+          {sourceLabel(debug.selectedBy)}
+        </span>
+      </div>
+
+      {debug.finalChoice && (
+        <div className="mt-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Choix final</p>
+          <p className="mt-0.5 font-medium text-slate-900">{debug.finalChoice.name}</p>
+        </div>
+      )}
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div>
+          <p className="font-semibold text-slate-800">Signaux utilisés</p>
+          {debug.signals.length === 0 ? (
+            <p className="mt-1 text-slate-400">Aucun signal actif pour cette ligne.</p>
+          ) : (
+            <div className="mt-1 space-y-1">
+              {debug.signals.slice(0, 4).map((signal, i) => (
+                <div key={`${signal.term}-${i}`} className="rounded-lg bg-white p-2 ring-1 ring-slate-100">
+                  <p className="font-medium text-slate-800">{signal.term} → {signal.productName}</p>
+                  <p className="text-[11px] text-slate-400">{signal.instructionOnly ? 'Instruction' : 'Association'} · {signal.source || 'source inconnue'} · occurrences {signal.occurrences ?? 0}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="font-semibold text-slate-800">Décisions moteur</p>
+          <div className="mt-1 space-y-1 text-slate-500">
+            <p>Reranking : {debug.rerank?.productId ? `${Math.round(debug.rerank.confidence * 100)}%` : 'aucun choix'}</p>
+            {debug.rerank?.reason && <p className="line-clamp-2">Raison : {debug.rerank.reason}</p>}
+            <p>Déterministe : {debug.deterministic ? `${debug.deterministic.productName} (${debug.deterministic.score})` : 'aucun'}</p>
+            <p>Pack préféré : {debug.preferredPack ? `${debug.preferredPack.productName} (${debug.preferredPack.score})` : 'aucun'}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <p className="font-semibold text-slate-800">Candidats testés</p>
+        <div className="mt-1 max-h-56 overflow-auto rounded-lg bg-white ring-1 ring-slate-200">
+          {debug.candidates.map(candidate => (
+            <div key={candidate.id} className={`border-b border-slate-100 p-2 last:border-b-0 ${candidate.selected ? 'bg-emerald-50' : candidate.unsafe ? 'bg-red-50/50' : ''}`}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium text-slate-900">{candidate.name}</p>
+                <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">score {candidate.deterministicScore}</span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-slate-400">
+                {candidate.selected ? 'Sélectionné · ' : ''}
+                {candidate.rerankChoice ? 'Choix reranker · ' : ''}
+                {candidate.signalMatch ? 'Signal · ' : ''}
+                similarité {candidate.similarity != null ? Math.round(candidate.similarity * 100) + '%' : 'n/a'}
+              </p>
+              {candidate.unsafeReasons.length > 0 && (
+                <p className="mt-1 text-[11px] text-red-600">Rejet/garde-fou : {candidate.unsafeReasons.join(' · ')}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -294,6 +412,7 @@ export default function NewRequestPage() {
 
   // ── Edit item
   const [editingUid, setEditingUid] = useState<string | null>(null)
+  const [debugUid, setDebugUid] = useState<string | null>(null)
 
   // ── Drag & drop
   const dragItem = useRef<number | null>(null)
@@ -432,6 +551,7 @@ export default function NewRequestPage() {
             section,
             confidence: parsed.confidence,
             reason: parsed.reason,
+            debug: parsed.debug,
           })
         } else {
           rowsToAdd.push({
@@ -443,6 +563,7 @@ export default function NewRequestPage() {
             section,
             confidence: parsed.confidence || 0,
             reason: parsed.reason || 'Correspondance catalogue incertaine',
+            debug: parsed.debug,
           })
         }
 
@@ -1059,6 +1180,15 @@ export default function NewRequestPage() {
                             {item.type === 'custom_charge' && item.reason && (
                               <p className="text-[11px] text-amber-700/80 mt-0.5 line-clamp-2">{item.reason}</p>
                             )}
+                            {item.debug && (
+                              <button
+                                type="button"
+                                onClick={() => setDebugUid(debugUid === item.uid ? null : item.uid)}
+                                className="mt-1 text-[11px] font-medium text-slate-400 hover:text-slate-700"
+                              >
+                                {debugUid === item.uid ? 'Masquer le diagnostic IA' : 'Afficher le diagnostic IA'}
+                              </button>
+                            )}
                           </div>
                           {/* Quantity */}
                           <div className="flex items-center gap-1 flex-shrink-0">
@@ -1093,6 +1223,9 @@ export default function NewRequestPage() {
                             <IconTrash />
                           </button>
                         </div>
+                      )}
+                      {debugUid === item.uid && item.debug && (
+                        <MatchDiagnosticPanel debug={item.debug} />
                       )}
                     </div>
                   ))}
