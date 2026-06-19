@@ -297,7 +297,6 @@ export default function NewRequestPage() {
 
   // ── Submit
   const [submitting, setSubmitting] = useState(false)
-  const [quoteResult, setQuoteResult] = useState<{ orderId: string; orderUrl: string; customerWarning?: string | null } | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   // ── Customer search
@@ -552,7 +551,7 @@ export default function NewRequestPage() {
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const res = await fetch('/api/create-quote', {
+      const res = await fetch('/api/save-quote-draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -584,18 +583,13 @@ export default function NewRequestPage() {
           stopsAt: new Date(stopsAt + 'T18:00:00').toISOString(),
         }),
       })
-      const raw = await res.text()
-      let data: { orderId?: string; orderUrl?: string; error?: string; customerWarning?: string | null }
-      try {
-        data = JSON.parse(raw) as { orderId?: string; orderUrl?: string; error?: string; customerWarning?: string | null }
-      } catch {
-        const preview = raw.replace(/\s+/g, ' ').slice(0, 500)
-        throw new Error(`Réponse non JSON de /api/create-quote (${res.status}) : ${preview}`)
-      }
+      const data = await res.json() as { conversationId?: string; error?: string }
       if (!res.ok || data.error) throw new Error(data.error || `Erreur HTTP ${res.status}`)
-      if (data.orderUrl) setQuoteResult({ orderId: data.orderId!, orderUrl: data.orderUrl, customerWarning: data.customerWarning || null })
+      if (data.conversationId) {
+        router.push('/requests/' + data.conversationId)
+      }
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Erreur lors de la création du devis')
+      setSubmitError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde du devis')
     } finally {
       setSubmitting(false)
     }
@@ -1120,47 +1114,22 @@ export default function NewRequestPage() {
 
           {/* Submit */}
           <div className="border-t border-gray-100 p-4 flex-shrink-0">
-            {quoteResult ? (
-              <div className="text-center space-y-2">
-                <p className="text-sm font-medium text-green-600">✅ Devis créé dans Booqable !</p>
-                {quoteResult.customerWarning && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
-                    {quoteResult.customerWarning}
-                  </p>
+            <>
+              {submitError && (
+                <p className="text-xs text-red-500 mb-2 text-center">{submitError}</p>
+              )}
+              <button
+                onClick={handleSubmit}
+                disabled={billableItemCount === 0 || submitting}
+                className="w-full bg-gray-900 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+              >
+                {submitting ? (
+                  <><Spinner size={16} white /> Enregistrement…</>
+                ) : (
+                  'Enregistrer le devis'
                 )}
-                <a
-                  href={quoteResult.orderUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block text-sm text-gray-600 hover:text-gray-900 underline"
-                >
-                  Voir le devis →
-                </a>
-                <button
-                  onClick={() => router.push('/requests')}
-                  className="block w-full text-xs text-gray-400 hover:text-gray-600 pt-1"
-                >
-                  Retour aux demandes
-                </button>
-              </div>
-            ) : (
-              <>
-                {submitError && (
-                  <p className="text-xs text-red-500 mb-2 text-center">{submitError}</p>
-                )}
-                <button
-                  onClick={handleSubmit}
-                  disabled={billableItemCount === 0 || submitting}
-                  className="w-full bg-gray-900 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
-                >
-                  {submitting ? (
-                    <><Spinner size={16} white /> Création du devis…</>
-                  ) : (
-                    '✓ Valider & pousser dans Booqable'
-                  )}
-                </button>
-              </>
-            )}
+              </button>
+            </>
           </div>
         </div>
 

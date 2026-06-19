@@ -81,6 +81,8 @@ export async function GET(
         quote_days,
         booqable_order_id,
         booqable_order_url,
+        booqable_customer_id,
+        contact_meta,
         closed_at,
         created_at,
         updated_at
@@ -126,6 +128,9 @@ export async function PATCH(
       expires_at?: string | null
       request_context?: string | null
       quote_items?: QuoteItem[]
+      booqable_customer_id?: string | null
+      booqable_order_id?: string | null
+      booqable_order_url?: string | null
       close?: boolean
     }
 
@@ -134,7 +139,7 @@ export async function PATCH(
       updated_at: new Date().toISOString(),
     }
 
-    for (const key of ['contact_name', 'contact_email', 'contact_phone', 'quote_status', 'starts_at', 'stops_at', 'expires_at', 'request_context'] as const) {
+    for (const key of ['contact_name', 'contact_email', 'contact_phone', 'quote_status', 'starts_at', 'stops_at', 'expires_at', 'request_context', 'booqable_customer_id', 'booqable_order_id', 'booqable_order_url'] as const) {
       if (key in body) patch[key] = body[key]
     }
 

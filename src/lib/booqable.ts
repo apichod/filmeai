@@ -1,0 +1,947 @@
+import { createClient } from '@supabase/supabase-js'
+
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
+
+export type QuoteItem = {
+  type?: 'product' | 'custom_charge' | 'section'
+  sourceType?: 'product_group' | 'bundle' | null
+  productId?: string
+  availabilityStatus?: 'available' | 'limited' | 'unavailable' | 'unknown'
+  availabilityLabel?: string | null
+  availableQuantity?: number | null
+  quantity?: number
+  name?: string
+  title?: string
+  requestedName?: string
+  section?: string | null
+  position?: number
+  unitPrice?: number | null
+  deposit?: number | null
+}
+
+export type CustomerType = 'person' | 'company'
+
+export type Customer = {
+  type?: CustomerType
+  name: string
+  email?: string
+  phone?: string
+  addressLine1?: string
+  addressLine2?: string
+  postalCode?: string
+  city?: string
+  country?: string
+  booqableId?: string
+}
+
+type JsonObject = Record<string, unknown>
+
+type CreatedCustomer = {
+  id: string
+  warning?: string | null
+}
+
+type BooqableCustomerResponse = {
+  customer?: { id: string }
+  error?: unknown
+  errors?: unknown
+}
+
+type BooqableOrderResponse = {
+  data?: { id: string }
+  order?: { id: string }
+  error?: unknown
+  errors?: unknown
+}
+
+type ResolvedBooqableItem =
+  | { kind: 'product'; id: string }
+  | { kind: 'bundle'; id: string }
+  | { kind: 'none'; reason: string }
+
+type CatalogCacheRow = {
+  id: string
+  source_type: 'product_group' | 'bundle' | null
+  name?: string | null
+}
+
+type BundleComponent = {
+  productId: string
+  productGroupId?: string | null
+  quantity: number
+}
+
+function asObject(value: unknown): JsonObject | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : null
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function cleanTitle(value: string | undefined | null, fallback: string) {
+  const title = String(value || '').trim()
+  return title.length > 0 ? title : fallback
+}
+
+function quantityOf(item: QuoteItem) {
+  return Math.max(1, Math.round(Number(item.quantity) || 1))
+}
+
+function lineNotes(item: QuoteItem, extra?: string) {
+  return [
+    extra,
+    item.availabilityStatus ? `Disponibilité : ${item.availabilityLabel || item.availabilityStatus}` : null,
+    item.availableQuantity !== undefined && item.availableQuantity !== null ? `Quantité disponible détectée : ${item.availableQuantity}` : null,
+    item.requestedName ? `Produit demandé : ${item.requestedName}` : null,
+    item.name ? `Produit suggéré : ${item.name}` : null,
+    item.productId ? `ID catalogue FilmeAI : ${item.productId}` : null,
+    item.section ? `Section : ${item.section}` : null,
+  ].filter(Boolean).join('\n')
+}
+
+export function rentalDays(startsAt: string, stopsAt: string) {
+  const start = new Date(startsAt).getTime()
+  const stop = new Date(stopsAt).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(stop)) return 1
+  return Math.max(1, Math.round((stop - start) / 86400000))
+}
+
+function quoteLineTitle(item: QuoteItem) {
+  return cleanTitle(item.title || item.name || item.requestedName, item.type === 'section' ? 'Section' : 'Produit à vérifier')
+}
+
+function shouldUseCustomChargeForAvailability(item: QuoteItem) {
+  return item.availabilityStatus === 'unavailable' || item.availabilityStatus === 'limited'
+}
+
+export function buildStoredQuoteItems(items: QuoteItem[], days: number) {
+  return (items || []).map((item, index) => {
+    const type = shouldUseCustomChargeForAvailability(item)
+      ? 'custom_charge'
+      : item.type || (item.productId ? 'product' : 'custom_charge')
+    const quantity = type === 'section' ? 1 : quantityOf(item)
+    const unitPrice = Number(item.unitPrice || 0)
+    const deposit = Number(item.deposit || 0)
+    const lineTotal = type === 'product' ? unitPrice * quantity * days : 0
+    const lineDeposit = type === 'product' ? deposit * quantity : 0
+
+    return {
+      uid: `${Date.now()}-${index}`,
+      position: index + 1,
+      type,
+      section: item.section || null,
+      productId: item.productId || null,
+      sourceType: item.sourceType || null,
+      title: quoteLineTitle(item),
+      requestedName: item.requestedName || quoteLineTitle(item),
+      name: item.name || quoteLineTitle(item),
+      quantity,
+      unitPrice,
+      deposit,
+      availabilityStatus: item.availabilityStatus || null,
+      availabilityLabel: item.availabilityLabel || null,
+      availableQuantity: item.availableQuantity ?? null,
+      lineTotal,
+      lineDeposit,
+    }
+  })
+}
+
+export function summarizeContext(customer: Customer, items: QuoteItem[], startsAt: string, stopsAt: string) {
+  const lines = items
+    .filter(item => item.type !== 'section')
+    .slice(0, 12)
+    .map(item => `${quantityOf(item)}× ${item.name || item.requestedName || item.title || 'Produit'}`)
+    .join(', ')
+
+  return [
+    `Devis généré depuis le back-office FilmeAI pour ${customer.name}.`,
+    `Location du ${new Date(startsAt).toLocaleDateString('fr-FR')} au ${new Date(stopsAt).toLocaleDateString('fr-FR')}.`,
+    lines ? `Articles : ${lines}.` : null,
+  ].filter(Boolean).join(' ')
+}
+
+async function readJson(res: Response, context: string): Promise<unknown> {
+  const text = await res.text()
+  let parsed: unknown = null
+
+  if (text.trim()) {
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      const preview = text.replace(/\s+/g, ' ').slice(0, 500)
+      throw new Error(`${context} returned non-JSON (${res.status}): ${preview}`)
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(`${context} failed (${res.status}): ${JSON.stringify(parsed)}`)
+  }
+
+  return parsed
+}
+
+async function fetchJsonOrNull(url: string, headers: Record<string, string>): Promise<unknown | null> {
+  try {
+    const res = await fetch(url, { headers })
+    if (!res.ok) return null
+    const text = await res.text()
+    return text.trim() ? JSON.parse(text) as unknown : null
+  } catch {
+    return null
+  }
+}
+
+async function postJson<T>(url: string, body: unknown, headers: Record<string, string>, context: string): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+
+  return await readJson(res, context) as T
+}
+
+function cleanOptional(value: string | undefined | null): string | undefined {
+  const clean = String(value || '').trim()
+  return clean ? clean : undefined
+}
+
+function booqableCustomerTypeCandidates(customer: Customer): string[] {
+  return customer.type === 'company' ? ['company', 'business'] : ['individual', 'person']
+}
+
+function hasCustomerDetails(customer: Customer): boolean {
+  return Boolean(
+    customer.type ||
+    cleanOptional(customer.addressLine1) ||
+    cleanOptional(customer.addressLine2) ||
+    cleanOptional(customer.postalCode) ||
+    cleanOptional(customer.city) ||
+    cleanOptional(customer.country)
+  )
+}
+
+function baseCustomerAttributes(customer: Customer): JsonObject {
+  return {
+    name: customer.name,
+    ...(cleanOptional(customer.email) ? { email: cleanOptional(customer.email) } : {}),
+    ...(cleanOptional(customer.phone) ? { phone: cleanOptional(customer.phone) } : {}),
+  }
+}
+
+function customerAddressText(customer: Customer): string | undefined {
+  const cityLine = [cleanOptional(customer.postalCode), cleanOptional(customer.city)].filter(Boolean).join(' ')
+  return [
+    cleanOptional(customer.addressLine1),
+    cleanOptional(customer.addressLine2),
+    cityLine || undefined,
+    cleanOptional(customer.country),
+  ].filter(Boolean).join('\n') || undefined
+}
+
+function customerCreateAttempts(customer: Customer): { label: string; body: { customer: JsonObject }; enriched: boolean }[] {
+  const base = baseCustomerAttributes(customer)
+  const customerTypes = booqableCustomerTypeCandidates(customer)
+  const addressLine1 = cleanOptional(customer.addressLine1)
+  const addressLine2 = cleanOptional(customer.addressLine2)
+  const postalCode = cleanOptional(customer.postalCode)
+  const city = cleanOptional(customer.city)
+  const country = cleanOptional(customer.country)
+  const addressText = customerAddressText(customer)
+
+  const attempts = [
+    ...customerTypes.map(customerType => ({
+      label: `Customer creation with customer_type/address_line/${customerType}`,
+      enriched: true,
+      body: {
+        customer: {
+          ...base,
+          customer_type: customerType,
+          ...(addressLine1 ? { address_line_1: addressLine1 } : {}),
+          ...(addressLine2 ? { address_line_2: addressLine2 } : {}),
+          ...(postalCode ? { postal_code: postalCode } : {}),
+          ...(city ? { city } : {}),
+          ...(country ? { country } : {}),
+        },
+      },
+    })),
+    ...customerTypes.map(customerType => ({
+      label: `Customer creation with customer_type/address1/${customerType}`,
+      enriched: true,
+      body: {
+        customer: {
+          ...base,
+          customer_type: customerType,
+          ...(addressLine1 ? { address1: addressLine1 } : {}),
+          ...(addressLine2 ? { address2: addressLine2 } : {}),
+          ...(postalCode ? { zipcode: postalCode } : {}),
+          ...(city ? { city } : {}),
+          ...(country ? { country } : {}),
+        },
+      },
+    })),
+    ...customerTypes.map(customerType => ({
+      label: `Customer creation with legal_type/address/${customerType}`,
+      enriched: true,
+      body: {
+        customer: {
+          ...base,
+          legal_type: customerType,
+          ...(addressText ? { address: addressText } : {}),
+        },
+      },
+    })),
+    {
+      label: 'Customer creation base',
+      enriched: false,
+      body: { customer: base },
+    },
+  ]
+
+  const seen = new Set<string>()
+  return attempts.filter(attempt => {
+    const key = JSON.stringify(attempt.body)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function createBooqableCustomer(v1: string, key: string | undefined, customer: Customer): Promise<CreatedCustomer> {
+  const attempts = customerCreateAttempts(customer)
+  const errors: string[] = []
+
+  for (const attempt of attempts) {
+    try {
+      const custData = await postJson<BooqableCustomerResponse>(
+        `${v1}/customers?api_key=${key}`,
+        attempt.body,
+        { 'Content-Type': 'application/json' },
+        attempt.label
+      )
+
+      const id = custData.customer?.id ?? ''
+      if (!id) throw new Error(`Customer creation failed: ${JSON.stringify(custData)}`)
+
+      return {
+        id,
+        warning: !attempt.enriched && hasCustomerDetails(customer)
+          ? 'Client créé, mais Booqable a refusé certains champs type/adresse. Le devis est créé ; vérifie la fiche client dans Booqable.'
+          : null,
+      }
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  throw new Error(`Customer creation failed: ${errors.join(' | ')}`)
+}
+
+function resourceId(resource: unknown): string | null {
+  const obj = asObject(resource)
+  return obj ? asString(obj.id) : null
+}
+
+function resourceType(resource: unknown): string | null {
+  const obj = asObject(resource)
+  return obj ? asString(obj.type) : null
+}
+
+function relationshipData(resource: unknown, name: string): unknown[] {
+  const obj = asObject(resource)
+  const relationships = obj ? asObject(obj.relationships) : null
+  const relation = relationships ? asObject(relationships[name]) : null
+  const data = relation ? relation.data : null
+  return Array.isArray(data) ? data : data ? [data] : []
+}
+
+function relationshipId(resource: unknown, name: string): string | null {
+  return relationshipData(resource, name).map(resourceId).find(Boolean) || null
+}
+
+function attrString(resource: unknown, name: string): string | null {
+  const obj = asObject(resource)
+  const attrs = obj ? asObject(obj.attributes) : null
+  return asString(obj?.[name]) || asString(attrs?.[name])
+}
+
+function attrNumber(resource: unknown, name: string): number | null {
+  const obj = asObject(resource)
+  const attrs = obj ? asObject(obj.attributes) : null
+  return asNumber(obj?.[name]) ?? asNumber(attrs?.[name])
+}
+
+function productBelongsToGroup(resource: unknown, productGroupId: string): boolean {
+  const obj = asObject(resource)
+  if (!obj) return false
+
+  const directGroupId = asString(obj.product_group_id)
+  if (directGroupId === productGroupId) return true
+
+  const attrs = asObject(obj.attributes)
+  if (asString(attrs?.product_group_id) === productGroupId) return true
+
+  return relationshipData(resource, 'product_group').some(rel => resourceId(rel) === productGroupId)
+}
+
+function productIdFromPayload(payload: unknown, productGroupId?: string): string | null {
+  const root = asObject(payload)
+  if (!root) return null
+
+  // v1 single product: { product: { id, product_group_id } }
+  const product = asObject(root.product)
+  if (product) {
+    if (productGroupId && asString(product.product_group_id) !== productGroupId) return null
+    return asString(product.id)
+  }
+
+  // v1 products list: { products: [...] }
+  const products = asArray(root.products)
+  if (products.length) {
+    if (productGroupId) {
+      const exact = products.find(candidate => productBelongsToGroup(candidate, productGroupId))
+      return resourceId(exact)
+    }
+    return resourceId(products[0])
+  }
+
+  // JSON:API direct data
+  const data = root.data
+  const dataArray = Array.isArray(data) ? data : data ? [data] : []
+
+  const directProduct = dataArray.find(resource => {
+    const type = resourceType(resource)
+    if (type !== 'products' && type !== 'product') return false
+    return productGroupId ? productBelongsToGroup(resource, productGroupId) : true
+  })
+  if (directProduct) return resourceId(directProduct)
+
+  // JSON:API product group relationships: data.relationships.products.data[0].id
+  for (const resource of dataArray) {
+    const relProducts = relationshipData(resource, 'products')
+    if (relProducts.length) return resourceId(relProducts[0])
+  }
+
+  // JSON:API included products. If we were resolving a specific product_group,
+  // never return an arbitrary first product: that is how bundles ended up as the
+  // same default product in Booqable.
+  const included = asArray(root.included)
+  const includedProduct = included.find(resource => {
+    const type = resourceType(resource)
+    if (type !== 'products' && type !== 'product') return false
+    return productGroupId ? productBelongsToGroup(resource, productGroupId) : true
+  })
+
+  return resourceId(includedProduct)
+}
+
+function bundleExistsInPayload(payload: unknown): boolean {
+  const root = asObject(payload)
+  if (!root) return false
+  const data = root.data
+  const dataArray = Array.isArray(data) ? data : data ? [data] : []
+  return dataArray.some(resource => {
+    const type = resourceType(resource)
+    return type === 'bundles' || type === 'bundle'
+  })
+}
+
+async function getCatalogCacheRow(id: string): Promise<CatalogCacheRow | null> {
+  try {
+    const supabase = getSupabaseAdmin()
+    const { data, error } = await supabase
+      .from('products_cache')
+      .select('id, source_type, name')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('products_cache source lookup failed:', error.message)
+      return null
+    }
+
+    return data as CatalogCacheRow | null
+  } catch (error) {
+    console.warn('products_cache source lookup exception:', error instanceof Error ? error.message : String(error))
+    return null
+  }
+}
+
+async function resolveBundleId(
+  id: string,
+  v4: string,
+  v4Headers: Record<string, string>,
+  options: { trustCache?: boolean } = {}
+): Promise<ResolvedBooqableItem> {
+  if (options.trustCache) return { kind: 'bundle', id }
+
+  const bundleV4 = await fetchJsonOrNull(`${v4}/bundles/${id}`, v4Headers)
+  if (bundleExistsInPayload(bundleV4)) return { kind: 'bundle', id }
+  return { kind: 'none', reason: `Bundle Booqable introuvable pour ${id}` }
+}
+
+function itemNameLooksLikeBundle(item: QuoteItem): boolean {
+  return /\b(pack|bundle)\b/i.test(`${item.name || ''} ${item.requestedName || ''} ${item.title || ''}`)
+}
+
+async function resolveBooqableItem(item: QuoteItem): Promise<ResolvedBooqableItem> {
+  const id = item.productId
+  if (!id) return { kind: 'none', reason: 'Pas d'ID catalogue' }
+
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v1 = `https://${subdomain}.booqable.com/api/1`
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+  const v4Headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+  const catalogRow = await getCatalogCacheRow(id)
+  const sourceType = item.sourceType || catalogRow?.source_type || null
+
+  if (sourceType === 'bundle') {
+    return await resolveBundleId(id, v4, v4Headers, { trustCache: true })
+  }
+
+  if (sourceType !== 'product_group' && itemNameLooksLikeBundle(item)) {
+    const maybeBundle = await resolveBundleId(id, v4, v4Headers)
+    if (maybeBundle.kind === 'bundle') return maybeBundle
+  }
+
+  const directV4Product = await fetchJsonOrNull(`${v4}/products/${id}`, v4Headers)
+  const directProductId = productIdFromPayload(directV4Product)
+  if (directProductId) return { kind: 'product', id: directProductId }
+
+  const directV1Product = await fetchJsonOrNull(`${v1}/products/${id}?api_key=${key}`, { 'Content-Type': 'application/json' })
+  const directV1ProductId = productIdFromPayload(directV1Product)
+  if (directV1ProductId) return { kind: 'product', id: directV1ProductId }
+
+  const productGroupV4 = await fetchJsonOrNull(`${v4}/product_groups/${id}?include=products`, v4Headers)
+  const productFromGroup = productIdFromPayload(productGroupV4, id)
+  if (productFromGroup) return { kind: 'product', id: productFromGroup }
+
+  const productsByGroupV4 = await fetchJsonOrNull(`${v4}/products?filter[product_group_id]=${id}&page[size]=25`, v4Headers)
+  const productFromFilterV4 = productIdFromPayload(productsByGroupV4, id)
+  if (productFromFilterV4) return { kind: 'product', id: productFromFilterV4 }
+
+  const productGroupV1 = await fetchJsonOrNull(`${v1}/product_groups/${id}?api_key=${key}`, { 'Content-Type': 'application/json' })
+  const productFromGroupV1 = productIdFromPayload(productGroupV1, id)
+  if (productFromGroupV1) return { kind: 'product', id: productFromGroupV1 }
+
+  const productsByGroupV1 = await fetchJsonOrNull(`${v1}/products?api_key=${key}&product_group_id=${id}&per=25`, { 'Content-Type': 'application/json' })
+  const productFromFilterV1 = productIdFromPayload(productsByGroupV1, id)
+  if (productFromFilterV1) return { kind: 'product', id: productFromFilterV1 }
+
+  const productsByGroupV1Alt = await fetchJsonOrNull(`${v1}/products?api_key=${key}&filter[product_group_id]=${id}&per=25`, { 'Content-Type': 'application/json' })
+  const productFromFilterV1Alt = productIdFromPayload(productsByGroupV1Alt, id)
+  if (productFromFilterV1Alt) return { kind: 'product', id: productFromFilterV1Alt }
+
+  const bundle = await resolveBundleId(id, v4, v4Headers)
+  if (bundle.kind === 'bundle') return bundle
+
+  return { kind: 'none', reason: `Impossible de résoudre l'ID Booqable ${id} en product ou bundle` }
+}
+
+async function createBooqableOrder(customerId: string, startsAt: string, stopsAt: string): Promise<string> {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+
+  try {
+    const orderData = await postJson<BooqableOrderResponse>(
+      `${v4}/orders`,
+      {
+        data: {
+          type: 'orders',
+          attributes: {
+            customer_id: customerId,
+            starts_at: startsAt,
+            stops_at: stopsAt,
+            status: 'draft',
+          },
+        },
+      },
+      { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      'Order creation v4'
+    )
+
+    const orderId = orderData.data?.id || orderData.order?.id
+    if (orderId) return orderId
+  } catch (error) {
+    console.warn('Order creation v4 failed, falling back to v1:', error instanceof Error ? error.message : String(error))
+  }
+
+  const v1 = `https://${subdomain}.booqable.com/api/1`
+  const orderData = await postJson<BooqableOrderResponse>(
+    `${v1}/orders?api_key=${key}`,
+    {
+      order: {
+        customer_id: customerId,
+        starts_at: startsAt,
+        stops_at: stopsAt,
+        status: 'concept',
+      },
+    },
+    { 'Content-Type': 'application/json' },
+    'Order creation v1'
+  )
+
+  const orderId = orderData.order?.id || orderData.data?.id
+  if (!orderId) throw new Error(`Order creation failed: ${JSON.stringify(orderData)}`)
+  return orderId
+}
+
+async function createCustomLine({
+  orderId,
+  item,
+  lineType,
+}: {
+  orderId: string
+  item: QuoteItem
+  lineType: 'charge' | 'section'
+}) {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+  const title = cleanTitle(item.title || item.name || item.requestedName, lineType === 'section' ? 'Section' : 'Produit à vérifier')
+  const customReason = shouldUseCustomChargeForAvailability(item)
+    ? 'Ligne custom créée par FilmeAI car le produit semble indisponible ou en quantité insuffisante sur les dates demandées. À vérifier et chiffrer dans Booqable.'
+    : 'Ligne custom créée par FilmeAI car la correspondance catalogue est incertaine. À vérifier et chiffrer dans Booqable.'
+  const attributes: JsonObject = {
+    line_type: lineType,
+    title,
+    quantity: lineType === 'section' ? 1 : quantityOf(item),
+    ...(lineType === 'charge' ? {
+      price_each_in_cents: 0,
+      extra_information: lineNotes(item, customReason),
+    } : {}),
+  }
+
+  const attempts = [
+    {
+      label: `Custom ${lineType} line owner_type orders`,
+      body: {
+        data: {
+          type: 'lines',
+          attributes: {
+            ...attributes,
+            owner_id: orderId,
+            owner_type: 'orders',
+          },
+        },
+      },
+    },
+    {
+      label: `Custom ${lineType} line owner_type Order`,
+      body: {
+        data: {
+          type: 'lines',
+          attributes: {
+            ...attributes,
+            owner_id: orderId,
+            owner_type: 'Order',
+          },
+        },
+      },
+    },
+  ]
+
+  const errors: string[] = []
+  for (const attempt of attempts) {
+    try {
+      await postJson(
+        `${v4}/lines`,
+        attempt.body,
+        { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        attempt.label
+      )
+      return
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  throw new Error(errors.join(' | '))
+}
+
+async function productIdForProductGroup(
+  productGroupId: string,
+  v1: string,
+  v4: string,
+  key: string | undefined,
+  v4Headers: Record<string, string>
+): Promise<string | null> {
+  const productGroupV4 = await fetchJsonOrNull(`${v4}/product_groups/${productGroupId}?include=products`, v4Headers)
+  const productFromGroup = productIdFromPayload(productGroupV4, productGroupId)
+  if (productFromGroup) return productFromGroup
+
+  const productsByGroupV4 = await fetchJsonOrNull(`${v4}/products?filter[product_group_id]=${productGroupId}&page[size]=25`, v4Headers)
+  const productFromFilterV4 = productIdFromPayload(productsByGroupV4, productGroupId)
+  if (productFromFilterV4) return productFromFilterV4
+
+  const productGroupV1 = await fetchJsonOrNull(`${v1}/product_groups/${productGroupId}?api_key=${key}`, { 'Content-Type': 'application/json' })
+  const productFromGroupV1 = productIdFromPayload(productGroupV1, productGroupId)
+  if (productFromGroupV1) return productFromGroupV1
+
+  const productsByGroupV1 = await fetchJsonOrNull(`${v1}/products?api_key=${key}&product_group_id=${productGroupId}&per=25`, { 'Content-Type': 'application/json' })
+  return productIdFromPayload(productsByGroupV1, productGroupId)
+}
+
+async function fetchBundleComponents(bundleId: string): Promise<BundleComponent[]> {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v1 = `https://${subdomain}.booqable.com/api/1`
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+  const v4Headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+  const urls = [
+    `${v4}/bundle_items?filter[bundle_id]=${bundleId}&include=product_group,product&page[size]=100`,
+    `${v4}/bundle_items?bundle_id=${bundleId}&include=product_group,product&page[size]=100`,
+  ]
+
+  let resources: unknown[] = []
+  for (const url of urls) {
+    const payload = await fetchJsonOrNull(url, v4Headers)
+    const root = asObject(payload)
+    const data = root ? asArray(root.data) : []
+    const filtered = data.filter(resource => {
+      const attrBundleId = attrString(resource, 'bundle_id')
+      const relBundleId = relationshipId(resource, 'bundle')
+      return attrBundleId === bundleId || relBundleId === bundleId
+    })
+
+    if (filtered.length > 0) {
+      resources = filtered
+      break
+    }
+  }
+
+  const components: BundleComponent[] = []
+  for (const resource of resources) {
+    const directProductId = attrString(resource, 'product_id') || relationshipId(resource, 'product')
+    const productGroupId = attrString(resource, 'product_group_id') || relationshipId(resource, 'product_group')
+    const quantity = Math.max(1, Math.round(attrNumber(resource, 'quantity') || 1))
+    const productId = directProductId || (productGroupId
+      ? await productIdForProductGroup(productGroupId, v1, v4, key, v4Headers)
+      : null)
+
+    if (productId) {
+      components.push({
+        productId,
+        productGroupId,
+        quantity,
+      })
+    }
+  }
+
+  return components
+}
+
+async function postOrderFulfillmentAction(action: JsonObject, context: string) {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v4 = `https://${subdomain}.booqable.com/api/4`
+
+  await postJson(
+    `${v4}/order_fulfillments`,
+    {
+      data: {
+        type: 'order_fulfillments',
+        attributes: action,
+      },
+    },
+    { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    context
+  )
+}
+
+async function bookProductById(orderId: string, productId: string, quantity: number, context: string) {
+  await postOrderFulfillmentAction({
+    order_id: orderId,
+    confirm_shortage: false,
+    actions: [
+      {
+        action: 'book_product',
+        mode: 'create_new',
+        product_id: productId,
+        quantity,
+      },
+    ],
+  }, context)
+}
+
+async function bookBundleById(orderId: string, item: QuoteItem, bundleId: string) {
+  const components = await fetchBundleComponents(bundleId)
+  const quantity = quantityOf(item)
+  const productVariations = components
+    .filter(component => component.productGroupId)
+    .map(component => ({
+      product_group_id: component.productGroupId,
+      product_id: component.productId,
+    }))
+
+  const baseAction = {
+    action: 'book_bundle',
+    bundle_id: bundleId,
+    quantity,
+  }
+
+  const attempts: { label: string; action: JsonObject }[] = [
+    {
+      label: 'book_bundle minimal',
+      action: baseAction,
+    },
+  ]
+
+  if (productVariations.length > 0) {
+    attempts.push({
+      label: 'book_bundle with product_variations',
+      action: { ...baseAction, product_variations: productVariations },
+    })
+  }
+
+  const errors: string[] = []
+  for (const attempt of attempts) {
+    try {
+      await postOrderFulfillmentAction({
+        order_id: orderId,
+        confirm_shortage: false,
+        actions: [attempt.action],
+      }, `${attempt.label} ${item.name || item.requestedName || item.productId}`)
+      return
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const componentInfo = components.length > 0
+    ? ` Le bundle contient ${components.length} composant${components.length > 1 ? 's' : ''}, mais FilmeAI ne les ajoute plus séparément pour éviter de casser la structure pack dans Booqable.`
+    : ''
+
+  throw new Error(`Bundle ${item.name || item.requestedName || bundleId} impossible à ajouter comme pack Booqable.${componentInfo} Erreurs Booqable : ${errors.join(' | ')}`)
+}
+
+async function bookResolvedItem({
+  orderId,
+  item,
+  resolved,
+}: {
+  orderId: string
+  item: QuoteItem
+  resolved: ResolvedBooqableItem
+}) {
+  if (resolved.kind === 'product') {
+    await bookProductById(
+      orderId,
+      resolved.id,
+      quantityOf(item),
+      `Book product ${item.name || item.requestedName || item.productId}`
+    )
+    return
+  }
+
+  if (resolved.kind === 'bundle') {
+    await bookBundleById(orderId, item, resolved.id)
+  }
+}
+
+async function createProductLineOrCustomFallback({
+  orderId,
+  item,
+}: {
+  orderId: string
+  item: QuoteItem
+}) {
+  const resolved = await resolveBooqableItem(item)
+
+  if (resolved.kind !== 'none') {
+    try {
+      await bookResolvedItem({ orderId, item, resolved })
+      return
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (resolved.kind === 'bundle') {
+        console.warn('Booqable bundle failed, creating custom charge:', message)
+      } else {
+        console.warn('Booqable book item failed, creating custom charge:', message)
+      }
+    }
+  }
+
+  await createCustomLine({
+    orderId,
+    lineType: 'charge',
+    item: {
+      ...item,
+      title: cleanTitle(item.name || item.requestedName, 'Produit à vérifier'),
+      requestedName: item.requestedName || item.name,
+      name: item.name,
+      type: 'custom_charge',
+      section: item.section,
+    },
+  })
+}
+
+export async function pushQuoteToBooqable(
+  customer: Customer,
+  items: QuoteItem[],
+  startsAt: string,
+  stopsAt: string
+): Promise<{ orderId: string; orderUrl: string; customerId: string; customerWarning: string | null }> {
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const v1 = `https://${subdomain}.booqable.com/api/1`
+
+  if (!key) throw new Error('BOOQABLE_API_KEY is missing')
+  if (!customer?.name?.trim()) throw new Error('Customer name is required')
+
+  // 1. Use existing customer or create new one.
+  let customerId: string
+  let customerWarning: string | null = null
+
+  if (customer.booqableId) {
+    customerId = customer.booqableId
+  } else {
+    const createdCustomer = await createBooqableCustomer(v1, key, customer)
+    customerId = createdCustomer.id
+    customerWarning = createdCustomer.warning || null
+  }
+
+  // 2. Create order.
+  const orderId = await createBooqableOrder(customerId, startsAt, stopsAt)
+
+  // 3. Add lines in the exact order from the quote builder.
+  for (const item of items || []) {
+    const type = shouldUseCustomChargeForAvailability(item)
+      ? 'custom_charge'
+      : item.type || (item.productId ? 'product' : 'custom_charge')
+
+    if (type === 'section') {
+      await createCustomLine({ orderId, item, lineType: 'section' })
+    } else if (type === 'product' && item.productId) {
+      await createProductLineOrCustomFallback({ orderId, item })
+    } else {
+      await createCustomLine({ orderId, item, lineType: 'charge' })
+    }
+  }
+
+  const orderUrl = `https://filme.booqable.com/orders/${orderId}`
+
+  return { orderId, orderUrl, customerId, customerWarning }
+}

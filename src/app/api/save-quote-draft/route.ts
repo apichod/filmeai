@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  pushQuoteToBooqable,
   buildStoredQuoteItems,
   summarizeContext,
   rentalDays,
@@ -41,22 +40,27 @@ export async function POST(req: NextRequest) {
       stopsAt: string
     }
 
-    const { orderId, orderUrl, customerId, customerWarning } = await pushQuoteToBooqable(
-      customer,
-      items,
-      startsAt,
-      stopsAt
-    )
+    if (!customer?.name?.trim()) {
+      return NextResponse.json({ error: 'Customer name is required' }, { status: 400 })
+    }
 
-    // 4. Save structured quote/request to Supabase.
     const days = rentalDays(startsAt, stopsAt)
     const storedQuoteItems = buildStoredQuoteItems(items || [], days)
     const quoteTotal = storedQuoteItems.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0)
     const quoteDeposit = storedQuoteItems.reduce((sum, item) => sum + Number(item.lineDeposit || 0), 0)
     const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString()
 
+    const contactMeta: Record<string, unknown> = {}
+    if (customer.type) contactMeta.type = customer.type
+    if (customer.addressLine1) contactMeta.addressLine1 = customer.addressLine1
+    if (customer.addressLine2) contactMeta.addressLine2 = customer.addressLine2
+    if (customer.postalCode) contactMeta.postalCode = customer.postalCode
+    if (customer.city) contactMeta.city = customer.city
+    if (customer.country) contactMeta.country = customer.country
+
     const supabase = getSupabaseAdmin()
     const organizationId = await getDefaultOrganizationId(supabase)
+
     const { data: conv, error: convError } = await supabase
       .from('conversations')
       .insert({
@@ -64,9 +68,10 @@ export async function POST(req: NextRequest) {
         contact_name: customer.name || null,
         contact_email: customer.email || null,
         contact_phone: customer.phone || null,
-        booqable_customer_id: customerId,
+        booqable_customer_id: customer.booqableId || null,
+        contact_meta: Object.keys(contactMeta).length > 0 ? contactMeta : null,
         status: 'open',
-        quote_status: 'pending_validation',
+        quote_status: 'draft',
         source: 'backoffice',
         starts_at: startsAt,
         stops_at: stopsAt,
@@ -76,27 +81,23 @@ export async function POST(req: NextRequest) {
         quote_total: quoteTotal,
         quote_deposit: quoteDeposit,
         quote_days: days,
-        booqable_order_id: orderId,
-        booqable_order_url: orderUrl,
+        booqable_order_id: null,
+        booqable_order_url: null,
       })
       .select('id')
       .single()
 
     if (convError) {
-      throw new Error(`Supabase quote save failed: ${convError.message}`)
+      throw new Error(`Supabase draft save failed: ${convError.message}`)
     }
 
     return NextResponse.json({
       success: true,
-      orderId,
-      orderUrl,
-      customerId,
-      customerWarning,
       conversationId: conv?.id || null,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('create-quote error:', msg)
+    console.error('save-quote-draft error:', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

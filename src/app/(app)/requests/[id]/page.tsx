@@ -35,6 +35,8 @@ type RequestDetail = {
   quote_days: number | null
   booqable_order_id: string | null
   booqable_order_url: string | null
+  booqable_customer_id?: string | null
+  contact_meta?: Record<string, unknown> | null
   created_at: string
   updated_at: string
   messages?: { id: string; role: string; content: string; created_at: string }[]
@@ -64,6 +66,7 @@ function money(value: number | null | undefined) {
 }
 
 function statusLabel(status: string | null | undefined) {
+  if (status === 'draft') return 'Brouillon'
   if (status === 'closed') return 'Archivée'
   if (status === 'accepted') return 'Acceptée'
   if (status === 'sent') return 'Envoyée'
@@ -71,6 +74,7 @@ function statusLabel(status: string | null | undefined) {
 }
 
 function statusClass(status: string | null | undefined) {
+  if (status === 'draft') return 'bg-amber-50 text-amber-700'
   if (status === 'closed') return 'bg-gray-100 text-gray-600'
   if (status === 'accepted') return 'bg-green-50 text-green-700'
   if (status === 'sent') return 'bg-blue-50 text-blue-700'
@@ -103,6 +107,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [pushing, setPushing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [contactName, setContactName] = useState('')
@@ -343,7 +348,12 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
 
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
-            <h2 className="text-lg font-semibold text-gray-900">Actions</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">Actions</h2>
+              {request.quote_status === 'draft' && !request.booqable_order_id && (
+                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">Brouillon</span>
+              )}
+            </div>
             {editing ? (
               <>
                 <button onClick={() => save()} disabled={saving} className="w-full bg-gray-950 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50">{saving ? 'Sauvegarde…' : 'Sauvegarder'}</button>
@@ -351,6 +361,37 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
               </>
             ) : (
               <>
+                {!request.booqable_order_id && request.quote_status === 'draft' && (
+                  <button
+                    onClick={async () => {
+                      setPushing(true)
+                      setError(null)
+                      try {
+                        const res = await fetch('/api/push-to-booqable', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ conversationId: params.id }),
+                        })
+                        const data = await res.json() as { orderId?: string; orderUrl?: string; customerWarning?: string | null; error?: string }
+                        if (!res.ok || data.error) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+                        setRequest(prev => prev ? {
+                          ...prev,
+                          booqable_order_id: data.orderId || null,
+                          booqable_order_url: data.orderUrl || null,
+                          quote_status: 'pending_validation',
+                        } : prev)
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Erreur lors du push Booqable')
+                      } finally {
+                        setPushing(false)
+                      }
+                    }}
+                    disabled={pushing}
+                    className="w-full bg-gray-950 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50 hover:bg-gray-800"
+                  >
+                    {pushing ? 'Push en cours…' : 'Pousser vers Booqable'}
+                  </button>
+                )}
                 {request.booqable_order_url && (
                   <a href={request.booqable_order_url} target="_blank" rel="noopener noreferrer" className="block w-full text-center border border-gray-200 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50">Ouvrir la commande dans Booqable</a>
                 )}
