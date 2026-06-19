@@ -118,10 +118,10 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     [/\b300x\b/, /\b300x\b/],
     [/\b600x\b/, /\b600x\b/],
     [/\b1200d\b/, /\b1200d\b/],
-    [/\b16\s*-?\s*35\b/, /\b16\s*-?\s*35\b/],
-    [/\b24\s*-?\s*70\b/, /\b24\s*-?\s*70\b/],
-    [/\b24\s*-?\s*105\b/, /\b24\s*-?\s*105\b/],
-    [/\b70\s*-?\s*200\b/, /\b70\s*-?\s*200\b/],
+    [/\b16\s*-?\s*35\s*(?:mm)?\b/, /\b16\s*-?\s*35\s*(?:mm)?\b/],
+    [/\b24\s*-?\s*70\s*(?:mm)?\b/, /\b24\s*-?\s*70\s*(?:mm)?\b/],
+    [/\b24\s*-?\s*105\s*(?:mm)?\b/, /\b24\s*-?\s*105\s*(?:mm)?\b/],
+    [/\b70\s*-?\s*200\s*(?:mm)?\b/, /\b70\s*-?\s*200\s*(?:mm)?\b/],
   ]
 
   for (const [requestPattern, productPattern] of exactNameFamilies) {
@@ -152,7 +152,7 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     : undefined
   const aperture = explicitAperture || decimalApertureNearLens
   if (aperture) {
-    const aperturePattern = new RegExp(`\\bf\\s*${aperture.replace('.', '\\.?')}\\b|\\b${aperture.replace('.', '\\.?')}\\b`)
+    const aperturePattern = new RegExp(`\\bf\\s*${aperture.replace('.', '\\.?')}\\s*l?\\b|\\b${aperture.replace('.', '\\.?')}\\s*l?\\b`)
     if (!aperturePattern.test(name)) return true
   }
 
@@ -250,10 +250,10 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
     [/\bntg3\b/, /\bntg3\b/],
     [/\bsachtler\b/, /\bsachtler\b/],
     [/\bmagliner\b/, /\bmagliner\b/],
-    [/\b70\s*-?\s*200\b/, /\b70\s*-?\s*200\b/],
-    [/\b24\s*-?\s*70\b/, /\b24\s*-?\s*70\b/],
-    [/\b24\s*-?\s*105\b/, /\b24\s*-?\s*105\b/],
-    [/\b16\s*-?\s*35\b/, /\b16\s*-?\s*35\b/],
+    [/\b70\s*-?\s*200\s*(?:mm)?\b/, /\b70\s*-?\s*200\s*(?:mm)?\b/],
+    [/\b24\s*-?\s*70\s*(?:mm)?\b/, /\b24\s*-?\s*70\s*(?:mm)?\b/],
+    [/\b24\s*-?\s*105\s*(?:mm)?\b/, /\b24\s*-?\s*105\s*(?:mm)?\b/],
+    [/\b16\s*-?\s*35\s*(?:mm)?\b/, /\b16\s*-?\s*35\s*(?:mm)?\b/],
     [/\b82\s*mm\b/, /\b82\s*mm\b/],
     [/\b512\s*(gb|go)\b/, /\b512\s*(gb|go)\b|\b512\b/],
   ]
