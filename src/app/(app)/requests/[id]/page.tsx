@@ -1,10 +1,20 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type Product = {
+  id: string
+  name: string
+  price_per_day: number | null
+  deposit?: number | null
+  description?: string | null
+}
+
 type QuoteItem = {
-  uid?: string
+  uid: string
   position?: number
   type?: 'product' | 'custom_charge' | 'section' | string
   section?: string | null
@@ -17,6 +27,8 @@ type QuoteItem = {
   deposit?: number
   lineTotal?: number
   lineDeposit?: number
+  confidence?: number
+  reason?: string | null
 }
 
 type RequestDetail = {
@@ -41,6 +53,8 @@ type RequestDetail = {
   updated_at: string
   messages?: { id: string; role: string; content: string; created_at: string }[]
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function dateInputValue(iso: string | null | undefined) {
   if (!iso) return ''
@@ -101,6 +115,155 @@ function daysBetween(start: string, stop: string) {
   return Math.max(1, Math.round((new Date(stop).getTime() - new Date(start).getTime()) / 86400000))
 }
 
+function matchPercent(confidence?: number | null) {
+  return Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)))
+}
+function matchColor(percent: number) {
+  return `hsl(${Math.round(percent * 1.2)} 78% 42%)`
+}
+function matchLabel(percent: number, type: string | undefined) {
+  if (type === 'custom_charge') return 'À vérifier'
+  if (percent >= 85) return 'Match fort'
+  if (percent >= 70) return 'Bon match'
+  if (percent >= 50) return 'Proposition à vérifier'
+  return 'Match faible'
+}
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+
+function IconEdit() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+    </svg>
+  )
+}
+function IconTrash() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+    </svg>
+  )
+}
+function IconSearch() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="11" cy="11" r="8"/>
+      <path d="m21 21-4.35-4.35"/>
+    </svg>
+  )
+}
+function IconDrag() {
+  return (
+    <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+      <circle cx="3" cy="3" r="1.5"/>
+      <circle cx="9" cy="3" r="1.5"/>
+      <circle cx="3" cy="8" r="1.5"/>
+      <circle cx="9" cy="8" r="1.5"/>
+      <circle cx="3" cy="13" r="1.5"/>
+      <circle cx="9" cy="13" r="1.5"/>
+    </svg>
+  )
+}
+function Spinner({ size = 16, white = false }: { size?: number; white?: boolean }) {
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className={`border-2 ${white ? 'border-white/30 border-t-white' : 'border-gray-200 border-t-gray-600'} rounded-full animate-spin flex-shrink-0`}
+    />
+  )
+}
+function MatchGauge({ confidence, type }: { confidence?: number; type?: string }) {
+  if (!confidence || type === 'section') return null
+  const percent = matchPercent(confidence)
+  const color = matchColor(percent)
+  return (
+    <div className="mt-1.5 flex items-center gap-2" title={`${matchLabel(percent, type)} — ${percent}%`}>
+      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-200">
+        <div className="h-full rounded-full transition-all" style={{ width: `${percent}%`, backgroundColor: color }} />
+      </div>
+      <span className="text-[11px] font-medium tabular-nums" style={{ color }}>{percent}%</span>
+      <span className="text-[11px] text-gray-400">{matchLabel(percent, type)}</span>
+    </div>
+  )
+}
+
+// ── Product search dropdown ───────────────────────────────────────────────────
+
+function ProductSearchDropdown({
+  placeholder,
+  onSelect,
+  autoFocus = false,
+}: {
+  placeholder: string
+  onSelect: (p: Product) => void
+  autoFocus?: boolean
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<Product[]>([])
+  const [loading, setLoading] = useState(false)
+  const timeout = useRef<NodeJS.Timeout | null>(null)
+
+  function handleChange(q: string) {
+    setQuery(q)
+    if (timeout.current) clearTimeout(timeout.current)
+    if (q.trim().length < 2) { setResults([]); return }
+    timeout.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/catalog-search?q=${encodeURIComponent(q.trim())}`)
+        setResults(await res.json())
+      } finally {
+        setLoading(false)
+      }
+    }, 280)
+  }
+
+  function select(p: Product) {
+    setQuery('')
+    setResults([])
+    onSelect(p)
+  }
+
+  return (
+    <div className="relative">
+      <div className="relative flex items-center">
+        <span className="absolute left-2.5 text-gray-400 pointer-events-none"><IconSearch /></span>
+        <input
+          type="text"
+          autoFocus={autoFocus}
+          value={query}
+          onChange={e => handleChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full border border-gray-200 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+        />
+        {loading && <span className="absolute right-2.5"><Spinner size={14} /></span>}
+      </div>
+      {results.length > 0 && (
+        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-52 overflow-y-auto">
+          {results.map(p => (
+            <button
+              key={p.id}
+              onMouseDown={() => select(p)}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
+            >
+              <span className="text-sm font-medium text-gray-900">{p.name}</span>
+              {p.price_per_day != null && (
+                <span className="text-xs text-gray-400 ml-2">{p.price_per_day}€/j</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function RequestDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const [request, setRequest] = useState<RequestDetail | null>(null)
@@ -117,6 +280,11 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   const [startsAt, setStartsAt] = useState('')
   const [stopsAt, setStopsAt] = useState('')
   const [items, setItems] = useState<QuoteItem[]>([])
+  const [editingUid, setEditingUid] = useState<string | null>(null)
+
+  // Drag & drop
+  const dragItem = useRef<number | null>(null)
+  const dragOver = useRef<number | null>(null)
 
   useEffect(() => {
     fetch(`/api/conversations/${params.id}`)
@@ -139,14 +307,55 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   const days = useMemo(() => daysBetween(startsAt, stopsAt), [startsAt, stopsAt])
   const recalculated = useMemo(() => items.map(item => recalcLine(item, days)), [items, days])
   const total = recalculated.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0)
-  const deposit = recalculated.reduce((sum, item) => sum + Number(item.lineDeposit || 0), 0)
+  const depositTotal = recalculated.reduce((sum, item) => sum + Number(item.lineDeposit || 0), 0)
+  const billableCount = items.filter(i => i.type !== 'section').length
 
-  function updateItem(index: number, patch: Partial<QuoteItem>) {
-    setItems(prev => prev.map((item, i) => i === index ? { ...item, ...patch } : item))
+  // ── Item mutations ────────────────────────────────────────────────────────
+
+  function removeItemByUid(uid: string) {
+    setItems(prev => prev.filter(i => i.uid !== uid))
   }
 
-  function removeItem(index: number) {
-    setItems(prev => prev.filter((_, i) => i !== index))
+  function setQuantityByUid(uid: string, delta: number) {
+    setItems(prev => prev.map(i => {
+      if (i.uid !== uid) return i
+      return { ...i, quantity: Math.max(1, (i.quantity || 1) + delta) }
+    }))
+  }
+
+  function updateItemTitle(uid: string, value: string) {
+    setItems(prev => prev.map(i => i.uid !== uid ? i : { ...i, title: value, name: value }))
+  }
+
+  function addProduct(p: Product) {
+    setItems(prev => [...prev, {
+      uid: crypto.randomUUID(),
+      type: 'product',
+      name: p.name,
+      title: p.name,
+      requestedName: p.name,
+      productId: p.id,
+      quantity: 1,
+      unitPrice: p.price_per_day || 0,
+      deposit: p.deposit || 0,
+    }])
+  }
+
+  function replaceProduct(uid: string, p: Product) {
+    setItems(prev => prev.map(i => {
+      if (i.uid !== uid) return i
+      return {
+        ...i,
+        type: 'product',
+        name: p.name,
+        title: p.name,
+        requestedName: p.name,
+        productId: p.id,
+        unitPrice: p.price_per_day || 0,
+        deposit: p.deposit || 0,
+      }
+    }))
+    setEditingUid(null)
   }
 
   function addCustomLine() {
@@ -174,6 +383,27 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
     }])
   }
 
+  // ── Drag & drop ───────────────────────────────────────────────────────────
+
+  function onDragStart(index: number) {
+    dragItem.current = index
+  }
+  function onDragEnter(index: number) {
+    dragOver.current = index
+  }
+  function onDragEnd() {
+    if (dragItem.current === null || dragOver.current === null) return
+    if (dragItem.current === dragOver.current) { dragItem.current = null; dragOver.current = null; return }
+    const next = [...items]
+    const [moved] = next.splice(dragItem.current, 1)
+    next.splice(dragOver.current, 0, moved)
+    setItems(next)
+    dragItem.current = null
+    dragOver.current = null
+  }
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+
   async function save(patchStatus?: string) {
     setSaving(true)
     setError(null)
@@ -196,6 +426,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       const data = await res.json() as { error?: string }
       if (!res.ok || data.error) throw new Error(data.error || 'Erreur sauvegarde')
       setEditing(false)
+      setEditingUid(null)
       const fresh = await fetch(`/api/conversations/${params.id}`).then(r => r.json()) as RequestDetail
       setRequest(fresh)
       setItems((fresh.quote_items || []).map((item, index) => ({ ...item, uid: item.uid || `${index}` })))
@@ -211,6 +442,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Demande de devis</h1>
@@ -235,6 +467,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
+      {/* Dates + Context */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -273,7 +506,10 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
         </div>
       </div>
 
+      {/* Quote + Sidebar */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
+
+        {/* Quote card */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
           <div className="flex items-start justify-between mb-6">
             <div>
@@ -285,54 +521,171 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
             </span>
           </div>
 
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-gray-500 border-b border-gray-200">
-                <th className="text-left py-3 font-semibold">Désignation</th>
-                <th className="text-right py-3 font-semibold w-20">Qté</th>
-                <th className="text-right py-3 font-semibold w-28">PU</th>
-                <th className="text-right py-3 font-semibold w-28">Total</th>
-                {editing && <th className="w-10" />}
-              </tr>
-            </thead>
-            <tbody>
-              {recalculated.map((item, index) => item.type === 'section' ? (
-                <tr key={item.uid || index} className="bg-gray-50">
-                  <td colSpan={editing ? 5 : 4} className="py-2 px-3 text-xs font-bold uppercase tracking-wide text-gray-500">
-                    {editing ? (
-                      <input value={item.title || ''} onChange={e => updateItem(index, { title: e.target.value, name: e.target.value })} className="border border-gray-200 rounded px-2 py-1 text-xs w-full" />
-                    ) : item.title}
-                  </td>
-                </tr>
-              ) : (
-                <tr key={item.uid || index} className="border-b border-gray-100">
-                  <td className="py-3 pr-3 font-semibold text-gray-900">
-                    {editing ? (
-                      <input value={item.name || item.title || ''} onChange={e => updateItem(index, { name: e.target.value, title: e.target.value })} className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full" />
-                    ) : item.name || item.title || item.requestedName}
-                    {item.type === 'custom_charge' && <span className="ml-2 text-[11px] text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">custom</span>}
-                  </td>
-                  <td className="py-3 text-right">
-                    {editing ? (
-                      <input type="number" min={1} value={item.quantity || 1} onChange={e => updateItem(index, { quantity: Number(e.target.value) })} className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-16 text-right" />
-                    ) : item.quantity || 1}
-                  </td>
-                  <td className="py-3 text-right text-gray-500">
-                    {editing ? (
-                      <input type="number" step="0.01" value={item.unitPrice || 0} onChange={e => updateItem(index, { unitPrice: Number(e.target.value) })} className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-24 text-right" />
-                    ) : money(item.unitPrice)}
-                  </td>
-                  <td className="py-3 text-right font-semibold text-gray-900">{money(item.lineTotal)}</td>
-                  {editing && (
-                    <td className="py-3 text-right">
-                      <button onClick={() => removeItem(index)} className="text-gray-300 hover:text-red-500">×</button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {/* Product search (edit mode only) */}
+          {editing && (
+            <div className="mb-4">
+              <ProductSearchDropdown
+                placeholder="Ajouter un produit du catalogue…"
+                onSelect={addProduct}
+              />
+            </div>
+          )}
 
+          {/* Items */}
+          <div className="space-y-1.5">
+            {items.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-8">Aucun produit dans ce devis.</p>
+            )}
+            {items.map((item, index) => (
+              <div
+                key={item.uid}
+                draggable={editing && editingUid !== item.uid}
+                onDragStart={() => onDragStart(index)}
+                onDragEnter={() => onDragEnter(index)}
+                onDragEnd={onDragEnd}
+                onDragOver={e => e.preventDefault()}
+              >
+                {item.type === 'section' ? (
+                  /* ── Section pill ── */
+                  <div className="flex items-center gap-2 py-2 group cursor-grab active:cursor-grabbing">
+                    {editing && (
+                      <span className="text-gray-300 group-hover:text-gray-400 transition-colors select-none flex-shrink-0">
+                        <IconDrag />
+                      </span>
+                    )}
+                    <div className="flex-1 border-t border-gray-200" />
+                    {editing ? (
+                      <input
+                        value={item.title || ''}
+                        onChange={e => updateItemTitle(item.uid, e.target.value)}
+                        className="text-[11px] uppercase tracking-[0.18em] font-semibold text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-center focus:outline-none focus:border-gray-400 w-40"
+                      />
+                    ) : (
+                      <span className="text-[11px] uppercase tracking-[0.18em] font-semibold text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-3 py-1">
+                        {item.title}
+                      </span>
+                    )}
+                    <div className="flex-1 border-t border-gray-200" />
+                    {editing && (
+                      <button
+                        onClick={() => removeItemByUid(item.uid)}
+                        className="text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
+                        title="Supprimer la section"
+                      >
+                        <IconTrash />
+                      </button>
+                    )}
+                  </div>
+                ) : editing && editingUid === item.uid ? (
+                  /* ── Inline edit panel ── */
+                  <div className="border border-gray-300 rounded-xl p-3 bg-gray-50 space-y-3">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Nom de la ligne :</p>
+                      <input
+                        value={item.name || item.title || ''}
+                        onChange={e => updateItemTitle(item.uid, e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-800"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 mb-2">Ou remplacer par un produit catalogue :</p>
+                      <ProductSearchDropdown
+                        placeholder="Rechercher un produit…"
+                        onSelect={p => replaceProduct(item.uid, p)}
+                        autoFocus
+                      />
+                    </div>
+                    <button
+                      onClick={() => setEditingUid(null)}
+                      className="text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                ) : (
+                  /* ── Normal card ── */
+                  <div className={`flex items-center gap-2 border rounded-xl px-3 py-2.5 group transition-colors ${editing ? 'cursor-grab active:cursor-grabbing' : ''} ${item.type === 'custom_charge' ? 'border-amber-200 bg-amber-50/60 hover:border-amber-300' : 'border-gray-100 hover:border-gray-200'}`}>
+                    {/* Drag handle (edit only) */}
+                    {editing && (
+                      <span className="text-gray-300 group-hover:text-gray-400 transition-colors select-none flex-shrink-0">
+                        <IconDrag />
+                      </span>
+                    )}
+                    {/* Product info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 leading-snug">
+                        {item.name || item.title || item.requestedName || '—'}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {item.type === 'product'
+                          ? (item.unitPrice && item.unitPrice > 0 ? `${item.unitPrice}€/jour` : 'Prix après dates')
+                          : 'Ligne custom Booqable — à vérifier'}
+                      </p>
+                      {item.confidence != null && (
+                        <MatchGauge confidence={item.confidence} type={item.type} />
+                      )}
+                      {item.type === 'custom_charge' && (
+                        <p className="text-[11px] font-semibold text-amber-700 mt-0.5">Intervention humaine requise</p>
+                      )}
+                      {item.type === 'custom_charge' && item.reason && (
+                        <p className="text-[11px] text-amber-700/80 mt-0.5 line-clamp-2">{item.reason}</p>
+                      )}
+                    </div>
+                    {/* Total (read mode) */}
+                    {!editing && item.type === 'product' && (
+                      <span className="text-sm font-semibold text-gray-900 flex-shrink-0 tabular-nums">
+                        {money(item.lineTotal)}
+                      </span>
+                    )}
+                    {/* Quantity controls (edit mode) */}
+                    {editing && item.type !== 'section' && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => setQuantityByUid(item.uid, -1)}
+                          className="w-5 h-5 flex items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-medium transition-colors bg-white"
+                        >
+                          −
+                        </button>
+                        <span className="text-sm font-medium w-4 text-center tabular-nums">{item.quantity || 1}</span>
+                        <button
+                          onClick={() => setQuantityByUid(item.uid, +1)}
+                          className="w-5 h-5 flex items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-medium transition-colors bg-white"
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
+                    {/* Edit icon */}
+                    {editing && (
+                      <button
+                        onClick={() => setEditingUid(item.uid)}
+                        className="text-gray-300 hover:text-gray-600 transition-colors flex-shrink-0"
+                        title="Modifier la ligne"
+                      >
+                        <IconEdit />
+                      </button>
+                    )}
+                    {/* Delete icon */}
+                    {editing && (
+                      <button
+                        onClick={() => removeItemByUid(item.uid)}
+                        className="text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
+                        title="Supprimer"
+                      >
+                        <IconTrash />
+                      </button>
+                    )}
+                    {/* Quantity badge (read mode) */}
+                    {!editing && item.type !== 'section' && (
+                      <span className="text-xs text-gray-400 flex-shrink-0 tabular-nums">×{item.quantity || 1}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Add buttons (edit mode) */}
           {editing && (
             <div className="flex gap-2 mt-4">
               <button onClick={addSection} className="border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium hover:bg-gray-50">+ Section</button>
@@ -340,14 +693,30 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
             </div>
           )}
 
-          <div className="border-t border-gray-200 mt-6 pt-4 space-y-2 text-sm">
-            <div className="flex justify-between text-gray-500"><span>Sous-total</span><span>{money(total)}</span></div>
-            <div className="flex justify-between text-gray-500"><span>Caution</span><span>{money(deposit)}</span></div>
-            <div className="flex justify-between text-lg font-bold text-gray-900"><span>Total</span><span>{money(total)}</span></div>
-          </div>
+          {/* Totals */}
+          {billableCount > 0 && (
+            <div className="border-t border-gray-200 mt-6 pt-4 space-y-2 text-sm">
+              <div className="flex justify-between text-gray-500">
+                <span>{days} jour{days > 1 ? 's' : ''} de location</span>
+                <span className="tabular-nums">{money(total / days)}/jour</span>
+              </div>
+              {depositTotal > 0 && (
+                <div className="flex justify-between text-gray-500">
+                  <span>Caution</span>
+                  <span className="tabular-nums">{money(depositTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-lg font-bold text-gray-900">
+                <span>Total estimé</span>
+                <span className="tabular-nums">{money(total)}</span>
+              </div>
+            </div>
+          )}
         </div>
 
+        {/* Sidebar */}
         <div className="space-y-4">
+          {/* Actions */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold text-gray-900">Actions</h2>
@@ -357,11 +726,28 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
             </div>
             {editing ? (
               <>
-                <button onClick={() => save()} disabled={saving} className="w-full bg-gray-950 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50">{saving ? 'Sauvegarde…' : 'Sauvegarder'}</button>
-                <button onClick={() => setEditing(false)} className="w-full border border-gray-200 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50">Annuler</button>
+                <button
+                  onClick={() => save()}
+                  disabled={saving}
+                  className="w-full bg-gray-950 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {saving ? <><Spinner size={14} white /> Sauvegarde…</> : 'Sauvegarder'}
+                </button>
+                <button
+                  onClick={() => { setEditing(false); setEditingUid(null) }}
+                  className="w-full border border-gray-200 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50"
+                >
+                  Annuler
+                </button>
               </>
             ) : (
               <>
+                <button
+                  onClick={() => setEditing(true)}
+                  className="w-full border border-gray-200 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50"
+                >
+                  ✏️ Modifier le devis
+                </button>
                 {!request.booqable_order_id && request.quote_status === 'draft' && (
                   <button
                     onClick={async () => {
@@ -388,18 +774,26 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
                       }
                     }}
                     disabled={pushing}
-                    className="w-full bg-gray-950 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50 hover:bg-gray-800"
+                    className="w-full bg-gray-950 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50 hover:bg-gray-800 flex items-center justify-center gap-2"
                   >
-                    {pushing ? 'Push en cours…' : 'Pousser vers Booqable'}
+                    {pushing ? <><Spinner size={14} white /> Push en cours…</> : 'Pousser vers Booqable'}
                   </button>
                 )}
                 {request.booqable_order_url && (
-                  <a href={request.booqable_order_url} target="_blank" rel="noopener noreferrer" className="block w-full text-center border border-gray-200 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50">Ouvrir la commande dans Booqable</a>
+                  <a
+                    href={request.booqable_order_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full text-center border border-gray-200 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50"
+                  >
+                    Ouvrir dans Booqable
+                  </a>
                 )}
               </>
             )}
           </div>
 
+          {/* Client */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Client</h2>
             {editing ? (
@@ -417,6 +811,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
             )}
           </div>
 
+          {/* Conversation source */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <h2 className="text-lg font-semibold text-gray-900 mb-3">Conversation source</h2>
             <a href={`/inbox/${request.id}`} className="text-sm font-semibold text-gray-800 hover:underline">Ouvrir la conversation</a>
