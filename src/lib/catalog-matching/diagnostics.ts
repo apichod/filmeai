@@ -54,6 +54,14 @@ const rawItems = candidateSets.map((set, index) => {
       ? Math.min(0.95, Math.max(0.72, deterministic.score / 2.6))
       : selection?.confidence || 0
   const matchingSignals = matchingSignalsForItem(set.item, approvedSignals)
+  const queryInfluences = [
+    ...(set.item.queryDebug?.influences || []),
+    ...matchingSignals.map(signal => ({
+      source: 'frontend_signal' as const,
+      label: isInstructionOnlySignal(signal) ? 'Signal front : instruction' : 'Signal front : association catalogue',
+      detail: `${signal.term} → ${signal.product_name}`,
+    })),
+  ]
   const debugCandidates = set.candidates.slice(0, 10).map(candidate => {
     const score = deterministicScore(candidate, set.item)
     const unsafeReasons = candidateUnsafeReasons(candidate, set.item)
@@ -91,7 +99,22 @@ const rawItems = candidateSets.map((set, index) => {
       searchQuery: set.item.query,
       section: set.item.section,
       quantity: set.item.quantity,
+      query: {
+        requestedFromPrompt: set.item.queryDebug?.requestedFromPrompt || set.item.raw,
+        queryFromPrompt: set.item.queryDebug?.queryFromPrompt || set.item.query,
+        finalRequested: set.item.raw,
+        finalQuery: set.item.query,
+        changed: Boolean(set.item.queryDebug?.changed) || set.item.raw.trim() !== set.item.query.trim(),
+        influences: queryInfluences,
+      },
       selectedBy,
+      decisionPriority: ['signal', 'pack_rule', 'rerank', 'deterministic'],
+      decisionCandidates: {
+        signal: signalSelected ? { id: signalSelected.id, name: signalSelected.name } : null,
+        packRule: preferredPack ? { id: preferredPack.product.id, name: preferredPack.product.name, score: Math.round(preferredPack.score * 100) / 100 } : null,
+        rerank: safeAiSelected ? { id: safeAiSelected.id, name: safeAiSelected.name, confidence: selection?.confidence || null } : null,
+        deterministic: deterministic ? { id: deterministic.product.id, name: deterministic.product.name, score: Math.round(deterministic.score * 100) / 100 } : null,
+      },
       finalChoice: selected ? { id: selected.id, name: selected.name } : null,
       signals: matchingSignals.map(signal => ({
         term: signal.term,

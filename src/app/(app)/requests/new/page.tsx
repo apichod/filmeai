@@ -33,7 +33,26 @@ type MatchDebug = {
   searchQuery: string
   section?: string | null
   quantity: number
+  query?: {
+    requestedFromPrompt: string
+    queryFromPrompt: string
+    finalRequested: string
+    finalQuery: string
+    changed: boolean
+    influences: Array<{
+      source: string
+      label: string
+      detail: string
+    }>
+  }
   selectedBy: 'signal' | 'pack_rule' | 'rerank' | 'deterministic' | null
+  decisionPriority?: string[]
+  decisionCandidates?: {
+    signal?: { id: string; name: string } | null
+    packRule?: { id: string; name: string; score?: number } | null
+    rerank?: { id: string; name: string; confidence?: number | null } | null
+    deterministic?: { id: string; name: string; score?: number } | null
+  }
   finalChoice: { id: string; name: string } | null
   signals: Array<{
     term: string
@@ -48,6 +67,16 @@ type MatchDebug = {
   rerank: { productId: string | null; confidence: number; reason?: string | null } | null
   deterministic: { productId: string; productName: string; score: number } | null
   preferredPack: { productId: string; productName: string; score: number } | null
+  search?: {
+    signalResults: number
+    directResults: number
+    semanticExpandedResults: number
+    semanticRawResults: number
+    candidatesBeforeFilter: number
+    candidatesAfterFilter: number
+    removedUnsafe: number
+    removedWeak: number
+  } | null
   candidates: Array<{
     id: string
     name: string
@@ -200,10 +229,24 @@ function formatDiagnosticForCopy(debug: MatchDebug) {
   lines.push('')
   lines.push(`Demandé : ${debug.requestedName}`)
   lines.push(`Query : ${debug.searchQuery}`)
+  if (debug.query) {
+    lines.push(`Query prompt initiale : ${debug.query.queryFromPrompt}`)
+    lines.push(`Query modifiée : ${debug.query.changed ? 'oui' : 'non'}`)
+  }
   if (debug.section) lines.push(`Section : ${debug.section}`)
   lines.push(`Quantité : ${debug.quantity}`)
   lines.push(`Source du choix : ${sourceLabel(debug.selectedBy)}`)
   lines.push(`Choix final : ${debug.finalChoice?.name || 'aucun'}`)
+
+  lines.push('')
+  lines.push('QUERY — INFLUENCES')
+  if (!debug.query?.influences?.length) {
+    lines.push('- aucune influence détaillée')
+  } else {
+    debug.query.influences.forEach(influence => {
+      lines.push(`- ${influence.label} [${influence.source}] : ${influence.detail}`)
+    })
+  }
 
   lines.push('')
   lines.push('SIGNAUX UTILISÉS')
@@ -216,7 +259,23 @@ function formatDiagnosticForCopy(debug: MatchDebug) {
   }
 
   lines.push('')
+  lines.push('RECHERCHE CATALOGUE')
+  if (debug.search) {
+    lines.push(`- Signaux : ${debug.search.signalResults}`)
+    lines.push(`- Direct nom/texte : ${debug.search.directResults}`)
+    lines.push(`- Vectoriel query : ${debug.search.semanticExpandedResults}`)
+    lines.push(`- Vectoriel demandé : ${debug.search.semanticRawResults}`)
+    lines.push(`- Candidats avant filtre : ${debug.search.candidatesBeforeFilter}`)
+    lines.push(`- Candidats après filtre : ${debug.search.candidatesAfterFilter}`)
+    lines.push(`- Supprimés garde-fous : ${debug.search.removedUnsafe}`)
+    lines.push(`- Supprimés score faible : ${debug.search.removedWeak}`)
+  } else {
+    lines.push('- non disponible')
+  }
+
+  lines.push('')
   lines.push('DÉCISIONS MOTEUR')
+  if (debug.decisionPriority?.length) lines.push(`- Ordre de priorité : ${debug.decisionPriority.join(' → ')}`)
   lines.push(`- Reranking : ${debug.rerank?.productId ? `${Math.round(debug.rerank.confidence * 100)}%` : 'aucun choix'}`)
   if (debug.rerank?.reason) lines.push(`- Raison reranking : ${debug.rerank.reason}`)
   lines.push(`- Déterministe : ${debug.deterministic ? `${debug.deterministic.productName} (${debug.deterministic.score})` : 'aucun'}`)
@@ -272,6 +331,23 @@ function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
         </div>
       </div>
 
+      {debug.query && (
+        <div className="mt-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Pourquoi cette query ?</p>
+          <p className="mt-1 text-slate-500">Prompt initial : <span className="font-medium text-slate-700">{debug.query.queryFromPrompt}</span></p>
+          <p className="text-slate-500">Modifiée après extraction : <span className="font-medium text-slate-700">{debug.query.changed ? 'oui' : 'non'}</span></p>
+          {debug.query.influences.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {debug.query.influences.slice(0, 5).map((influence, i) => (
+                <p key={`${influence.source}-${i}`} className="rounded bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
+                  <span className="font-semibold text-slate-700">{influence.label}</span> — {influence.detail}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {debug.finalChoice && (
         <div className="mt-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
           <p className="text-[11px] uppercase tracking-wide text-slate-400">Choix final</p>
@@ -299,6 +375,7 @@ function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
         <div>
           <p className="font-semibold text-slate-800">Décisions moteur</p>
           <div className="mt-1 space-y-1 text-slate-500">
+            {debug.decisionPriority?.length && <p>Priorité : {debug.decisionPriority.join(' → ')}</p>}
             <p>Reranking : {debug.rerank?.productId ? `${Math.round(debug.rerank.confidence * 100)}%` : 'aucun choix'}</p>
             {debug.rerank?.reason && <p className="line-clamp-2">Raison : {debug.rerank.reason}</p>}
             <p>Déterministe : {debug.deterministic ? `${debug.deterministic.productName} (${debug.deterministic.score})` : 'aucun'}</p>
@@ -306,6 +383,22 @@ function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
           </div>
         </div>
       </div>
+
+      {debug.search && (
+        <div className="mt-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
+          <p className="font-semibold text-slate-800">Recherche catalogue</p>
+          <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-500 md:grid-cols-4">
+            <p>Signaux : <span className="font-medium text-slate-700">{debug.search.signalResults}</span></p>
+            <p>Direct : <span className="font-medium text-slate-700">{debug.search.directResults}</span></p>
+            <p>Vectoriel query : <span className="font-medium text-slate-700">{debug.search.semanticExpandedResults}</span></p>
+            <p>Vectoriel demandé : <span className="font-medium text-slate-700">{debug.search.semanticRawResults}</span></p>
+            <p>Avant filtre : <span className="font-medium text-slate-700">{debug.search.candidatesBeforeFilter}</span></p>
+            <p>Après filtre : <span className="font-medium text-slate-700">{debug.search.candidatesAfterFilter}</span></p>
+            <p>Garde-fous : <span className="font-medium text-red-600">{debug.search.removedUnsafe}</span></p>
+            <p>Score faible : <span className="font-medium text-amber-600">{debug.search.removedWeak}</span></p>
+          </div>
+        </div>
+      )}
 
       <div className="mt-3">
         <p className="font-semibold text-slate-800">Candidats testés</p>

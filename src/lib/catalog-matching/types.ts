@@ -21,11 +21,27 @@ export type Product = {
   bundle_items?: string[]
 }
 
+export type QueryInfluence = {
+  source: 'extraction_prompt' | 'frontend_signal' | 'backend_preserve_brand' | 'backend_preserve_aperture' | 'section_context'
+  label: string
+  detail: string
+}
+
+export type QueryDebug = {
+  requestedFromPrompt: string
+  queryFromPrompt: string
+  finalRequested: string
+  finalQuery: string
+  changed: boolean
+  influences: QueryInfluence[]
+}
+
 export type ExtractedItem = {
   raw: string
   query: string
   quantity: number
   section: string | null
+  queryDebug?: QueryDebug
 }
 
 export type SearchDebug = {

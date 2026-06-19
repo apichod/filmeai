@@ -1,7 +1,6 @@
 import { openai } from './openai'
 import { normalizeText, stripQuantityPrefix } from './text'
-import type { ExtractedItem } from './types'
-
+import type { ExtractedItem, QueryInfluence } from './types'
 
 function appendTokenIfMissing(value: string, token: string): string {
   const norm = normalizeText(value)
@@ -9,7 +8,7 @@ function appendTokenIfMissing(value: string, token: string): string {
   return norm.includes(tokenNorm) ? value : `${value} ${token}`.trim()
 }
 
-function restoreExplicitBrand(raw: string, message: string): string {
+function restoreExplicitBrand(raw: string, message: string): { raw: string; influence?: QueryInfluence } {
   const cleanRaw = normalizeText(raw)
   const rules: Array<{ raw: RegExp; message: RegExp; label: string }> = [
     { raw: /^fx3$/, message: /\bsony\s+fx3\b/i, label: 'Sony FX3' },
@@ -25,7 +24,16 @@ function restoreExplicitBrand(raw: string, message: string): string {
   ]
 
   const match = rules.find(rule => rule.raw.test(cleanRaw) && rule.message.test(message))
-  return match ? match.label : raw
+  if (!match || match.label === raw) return { raw }
+
+  return {
+    raw: match.label,
+    influence: {
+      source: 'backend_preserve_brand',
+      label: 'Correction technique : marque explicite conservée',
+      detail: `Le message original contient “${match.label}”, alors que l'extraction avait raccourci en “${raw}”.`,
+    },
+  }
 }
 
 function findApertureNearFocal(message: string, item: ExtractedItem): string | null {
@@ -42,16 +50,65 @@ function findApertureNearFocal(message: string, item: ExtractedItem): string | n
 }
 
 function restoreOriginalHints(item: ExtractedItem, message: string): ExtractedItem {
-  let raw = restoreExplicitBrand(item.raw, message)
-  let query = item.query
-  const aperture = findApertureNearFocal(message, { ...item, raw })
+  const requestedFromPrompt = item.raw
+  const queryFromPrompt = item.query
+  const influences: QueryInfluence[] = []
 
-  if (aperture) {
-    raw = appendTokenIfMissing(raw, aperture)
-    query = appendTokenIfMissing(query, aperture)
+  if (normalizeText(requestedFromPrompt) !== normalizeText(queryFromPrompt)) {
+    influences.push({
+      source: 'extraction_prompt',
+      label: 'Prompt Extraction liste',
+      detail: `L'extraction a transformé “${requestedFromPrompt}” en query “${queryFromPrompt}”.`,
+    })
+  } else {
+    influences.push({
+      source: 'extraction_prompt',
+      label: 'Prompt Extraction liste',
+      detail: `L'extraction a conservé la query proche du demandé : “${queryFromPrompt}”.`,
+    })
   }
 
-  return { ...item, raw, query }
+  if (item.section) {
+    influences.push({
+      source: 'section_context',
+      label: 'Contexte de section',
+      detail: `La ligne est dans la section “${item.section}”.`,
+    })
+  }
+
+  const restoredBrand = restoreExplicitBrand(item.raw, message)
+  let raw = restoredBrand.raw
+  let query = item.query
+  if (restoredBrand.influence) influences.push(restoredBrand.influence)
+
+  const aperture = findApertureNearFocal(message, { ...item, raw })
+  if (aperture) {
+    const previousRaw = raw
+    const previousQuery = query
+    raw = appendTokenIfMissing(raw, aperture)
+    query = appendTokenIfMissing(query, aperture)
+    if (raw !== previousRaw || query !== previousQuery) {
+      influences.push({
+        source: 'backend_preserve_aperture',
+        label: 'Correction technique : ouverture conservée',
+        detail: `Le message original précise “${aperture}” près de la focale ; je le conserve dans raw/query.`,
+      })
+    }
+  }
+
+  return {
+    ...item,
+    raw,
+    query,
+    queryDebug: {
+      requestedFromPrompt,
+      queryFromPrompt,
+      finalRequested: raw,
+      finalQuery: query,
+      changed: normalizeText(requestedFromPrompt) !== normalizeText(raw) || normalizeText(queryFromPrompt) !== normalizeText(query),
+      influences,
+    },
+  }
 }
 
 export async function extractItems(message: string, quoteBackendPrompt: string): Promise<ExtractedItem[]> {
