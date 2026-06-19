@@ -2,6 +2,7 @@ import { hydrateProductMetadata } from './search'
 import { isInstructionOnlySignal, matchingSignalsForItem } from './signals'
 import {
   candidateIsUnsafe,
+  candidateMatchesImportantTokens,
   candidateUnsafeReasons,
   deterministicAutoSelect,
   deterministicScore,
@@ -27,7 +28,12 @@ const rawItems = candidateSets.map((set, index) => {
   const preferredPack = requestWantsPack(set.item)
     ? set.candidates
       .map(product => ({ product, score: deterministicScore(product, set.item) }))
-      .filter(({ product, score }) => productLooksLikePack(product) && score >= 0.8)
+      .filter(({ product, score }) =>
+        productLooksLikePack(product) &&
+        !candidateIsUnsafe(product, set.item) &&
+        candidateMatchesImportantTokens(product, set.item) &&
+        score >= 0.8
+      )
       .sort((a, b) => b.score - a.score)[0] || null
     : null
   const safeAiSelected = aiSelected && candidateIsUnsafe(aiSelected, set.item)

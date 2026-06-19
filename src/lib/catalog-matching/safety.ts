@@ -44,11 +44,12 @@ export function importantModelTokens(item: ExtractedItem): string[] {
   const hasFocalRange = tokens.some(token => /^\d{2,3}-\d{2,3}(mm)?$/.test(token))
   const important = tokens.filter(token =>
     /^(fx3|fx6|fx9|fx30|b10x|b10|d2|prohead|profoto|atem|ntg3|c1|r5|r6|rj45|bpu|bpu60|bpu90|vmount|vlock|v-lock|indie|shogun|sachtler|magliner|macbook|aputure|600x|1200d)$/.test(token) ||
-    /^(c50|c70|c80|c300|c400|r5c|rf|rs3|rs4)$/.test(token) ||
+    /^(c50|c70|c80|c300|c400|r5c|rf|rs3|rs4|teradek|bolt|tx|rx|blackmagic|sdi|iso|extreme)$/.test(token) ||
     /^\d{2,3}-\d{2,3}(mm)?$/.test(token) ||
     /^f\d(?:\.\d)?$/.test(token) ||
     /^\d\.\d$/.test(token) ||
     (!hasFocalRange && /^\d{2,3}$/.test(token)) ||
+    (!hasFocalRange && /^\d{4}$/.test(token)) ||
     /^\d{2,3}mm$/.test(token) ||
     /^\d{2,3}gb$/.test(token) ||
     /^\d{2,3}go$/.test(token) ||
@@ -87,6 +88,34 @@ function productFilterDensities(product: Product): string[] {
 
 function productHasFilterDensity(product: Product, density: string): boolean {
   return productFilterDensities(product).includes(density)
+}
+
+function requestWantsGmVersionTwo(item: ExtractedItem): boolean {
+  const text = normalizeText(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
+  const compact = compactText(text)
+  return /\bgm\s*(ii|2)\b/.test(text) || /\bgm\s*mark\s*(ii|2)\b/.test(text) || /gm(?:ii|2)\b/.test(compact)
+}
+
+function productHasGmVersionTwo(product: Product): boolean {
+  const name = productNameText(product)
+  const compact = compactText(name)
+  return /\bgm\s*(ii|2)\b/.test(name) || /\bgm\s*mark\s*(ii|2)\b/.test(name) || /gm(?:ii|2)\b/.test(compact)
+}
+
+function requestedBoltDistance(item: ExtractedItem): string | null {
+  const text = requestText(item)
+  return text.match(/\bbolt\s*(?:4k\s*)?(3000|1500|750|500)\b/)?.[1] || null
+}
+
+function productHasBoltDistance(product: Product, distance: string): boolean {
+  const name = productNameText(product)
+  return new RegExp(`\\b${distance}\\b`).test(name)
+}
+
+export function candidateMatchesImportantTokens(product: Product, item: ExtractedItem): boolean {
+  const haystack = normalizeText(`${product.name} ${product.description || ''}`)
+  const important = importantModelTokens(item)
+  return important.length === 0 || important.every(token => haystack.includes(normalizeText(token)))
 }
 
 export function requestWantsTripod(item: ExtractedItem): boolean {
@@ -139,6 +168,8 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     [/\b300x\b/, /\b300x\b/],
     [/\b600x\b/, /\b600x\b/],
     [/\b1200d\b/, /\b1200d\b/],
+    [/\bteradek\b/, /\bteradek\b/],
+    [/\bbolt\b/, /\bbolt\b/],
     [/\b16\s*-?\s*35\s*(?:mm)?\b/, /\b16\s*-?\s*35\s*(?:mm)?\b/],
     [/\b24\s*-?\s*70\s*(?:mm)?\b/, /\b24\s*-?\s*70\s*(?:mm)?\b/],
     [/\b24\s*-?\s*105\s*(?:mm)?\b/, /\b24\s*-?\s*105\s*(?:mm)?\b/],
@@ -168,12 +199,32 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
   // Famille Glimmerglass : ne pas accepter un ND, pola ou Pro-Mist uniquement parce que 82mm matche.
   if (/\bglimmer\s*glass\b|\bglimmerglass\b/.test(req) && !(/\bglimmer\s*glass\b|\bglimmerglass\b/.test(name))) return true
 
+  // Versions/générations : GM et GM II ne sont pas interchangeables.
+  if (requestWantsGmVersionTwo(item) && !productHasGmVersionTwo(product)) return true
+
+  // Transmission vidéo : un kit Teradek Bolt TX/RX doit rester un Teradek Bolt
+  // complet et respecter la portée/référence demandée si elle est indiquée.
+  const boltDistance = requestedBoltDistance(item)
+  if (boltDistance && !productHasBoltDistance(product, boltDistance)) return true
+  if (/\btx\b/.test(req) && /\brx\b/.test(req) && (!/\btx\b/.test(name) || !/\brx\b/.test(name))) return true
+
+  // Régie Blackmagic ATEM : SDI / ISO / Extreme / Pro ne sont pas des variantes
+  // marketing interchangeables. "ATEM Mini Extreme ISO SDI" doit donc matcher
+  // un ATEM SDI Extreme ISO, pas la version HDMI/non-SDI.
+  if (/\batem\b/.test(req)) {
+    if (/\bsdi\b/.test(req) && !/\bsdi\b/.test(name)) return true
+    if (/\biso\b/.test(req) && !/\biso\b/.test(name)) return true
+    if (/\bextreme\b/.test(req) && !/\bextreme\b/.test(name)) return true
+    if (/\bpro\b/.test(req) && !/\bpro\b/.test(name) && !/\bextreme\b/.test(req)) return true
+  }
+
   if (/\bangelbird\b/.test(req) && !/\bangelbird\b/.test(name)) return true
   if (/\b256\s*(gb|go)\b/.test(req) && !/\b256\b/.test(name)) return true
   if (/\b512\s*(gb|go)\b/.test(req) && !/\b512\b/.test(name)) return true
   if (/\b82\s*mm\b/.test(req) && !/\b82\s*mm\b|\b82mm\b/.test(name)) return true
   if (/\brf\b/.test(req) && /\b(fe|e-mount|sony)\b/.test(name) && !/\brf\b/.test(name)) return true
-  if (/\bfe\b/.test(req) && /\brf\b/.test(name) && !/\bfe\b/.test(name)) return true
+  if (/\bfe\b/.test(req) && /\b(rf|ef|canon)\b/.test(name) && !/\bfe\b/.test(name)) return true
+  if (/\bsony\b/.test(req) && /\bcanon\b/.test(name)) return true
 
   const explicitAperture = req.match(/\bf\s*\/?\s*(1\.2|1\.4|1\.8|2\.8|4)\b/)?.[1]
   const decimalApertureNearLens = /\b(12\s*-?\s*24|14\s*-?\s*24|15\s*-?\s*35|16\s*-?\s*35|24\s*-?\s*70|24\s*-?\s*105|70\s*-?\s*200)\b/.test(req)
@@ -203,6 +254,24 @@ export function candidateUnsafeReasons(product: Product, item: ExtractedItem): s
   const requestedDensities = requestedFilterDensities(item)
   if (requestedDensities.length > 0 && !requestedDensities.every(density => productHasFilterDensity(product, density))) {
     reasons.push(`Densité filtre demandée ${requestedDensities.join(', ')} absente du produit`)
+  }
+  if (requestWantsGmVersionTwo(item) && !productHasGmVersionTwo(product)) {
+    reasons.push('Version demandée GM II absente du produit')
+  }
+  const boltDistance = requestedBoltDistance(item)
+  if (boltDistance && !productHasBoltDistance(product, boltDistance)) {
+    reasons.push(`Référence Teradek Bolt ${boltDistance} absente du produit`)
+  }
+  const req = requestText(item)
+  const name = productNameText(product)
+  if (/\btx\b/.test(req) && /\brx\b/.test(req) && (!/\btx\b/.test(name) || !/\brx\b/.test(name))) {
+    reasons.push('Kit TX/RX demandé : produit incomplet TX/RX')
+  }
+  if (/\batem\b/.test(req)) {
+    if (/\bsdi\b/.test(req) && !/\bsdi\b/.test(name)) reasons.push('Version ATEM SDI demandée absente du produit')
+    if (/\biso\b/.test(req) && !/\biso\b/.test(name)) reasons.push('Version ATEM ISO demandée absente du produit')
+    if (/\bextreme\b/.test(req) && !/\bextreme\b/.test(name)) reasons.push('Version ATEM Extreme demandée absente du produit')
+    if (/\bpro\b/.test(req) && !/\bpro\b/.test(name) && !/\bextreme\b/.test(req)) reasons.push('Version ATEM Pro demandée absente du produit')
   }
   if (requestHasFamilyMismatch(product, item)) {
     reasons.push('Famille, modèle, focale, densité ou monture incohérente avec la demande')
@@ -253,6 +322,11 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
   if (requestedDensities.length > 0) {
     const matchedDensities = requestedDensities.filter(density => productHasFilterDensity(product, density)).length
     score += matchedDensities * 1.2
+  }
+
+  if (requestWantsGmVersionTwo(item)) {
+    if (productHasGmVersionTwo(product)) score += 1.35
+    else score -= 1.35
   }
 
   if (/\bold\b/i.test(product.name)) score -= 0.35
@@ -337,4 +411,3 @@ export function deterministicAutoSelect(set: CandidateSet): { product: Product; 
 
   return null
 }
-
