@@ -52,7 +52,7 @@ function itemsSummary(items: QuoteItem[] | null | undefined): string {
 
 function statusLabel(status: string | null | undefined): string {
   if (status === 'draft') return 'Brouillon'
-  if (status === 'pending_validation') return 'En attente'
+  if (status === 'pending_validation') return 'Poussée'
   if (status === 'closed') return 'Archivée'
   if (status === 'accepted') return 'Acceptée'
   if (status === 'sent') return 'Envoyée'
@@ -61,7 +61,7 @@ function statusLabel(status: string | null | undefined): string {
 
 function statusClass(status: string | null | undefined): string {
   if (status === 'draft') return 'bg-amber-50 text-amber-700'
-  if (status === 'pending_validation') return 'bg-blue-50 text-blue-700'
+  if (status === 'pending_validation') return 'bg-green-50 text-green-700'
   if (status === 'closed') return 'bg-gray-100 text-gray-600'
   if (status === 'accepted') return 'bg-green-50 text-green-700'
   if (status === 'sent') return 'bg-blue-50 text-blue-700'
