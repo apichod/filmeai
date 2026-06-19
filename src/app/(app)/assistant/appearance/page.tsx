@@ -184,11 +184,14 @@ type QuoteMatch = {
   userResolved?: boolean
 }
 
+type ChatTopic = 'devis' | 'disponibilite' | 'technique' | 'general'
+
 type ChatSessionData = {
   selectedProductIds: string[]
   quoteMatches?: QuoteMatch[]
   conversationId: string | null
   quoteMode?: 'immediate' | 'manual' | null
+  topic?: ChatTopic | null
 }
 
 // ── Interactive chat widget ───────────────────────────────────────────────────
@@ -222,7 +225,7 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
   const manualSearchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const color = safeColor(s.primary_color)
 
-  const chips = ['Faire un devis', 'Disponibilité ?', 'Question technique']
+  const chips = ['Faire un devis', 'Disponibilité ?', 'Question technique', 'Question générale']
 
   function scrollBottom() {
     setTimeout(() => {
@@ -857,7 +860,13 @@ function ChatWidget({ s, height = 480, onClose }: { s: Settings; height?: number
             <div className="flex flex-wrap gap-1.5 justify-center">
               {chips.map(chip => (
                 <button key={chip}
-                  onClick={() => chip === 'Faire un devis' ? setShowDevisChoice(true) : void send(chip)}
+                  onClick={() => {
+                    if (chip === 'Faire un devis') { setShowDevisChoice(true); return; }
+                    const topicMap: Record<string, ChatTopic> = { 'Disponibilité ?': 'disponibilite', 'Question technique': 'technique', 'Question générale': 'general' }
+                    const next: ChatSessionData = { ...sessionData, topic: topicMap[chip] ?? 'devis' }
+                    setSessionData(next)
+                    void send(chip, next)
+                  }}
                   className="text-xs bg-white border border-gray-200 rounded-full px-2.5 py-1 text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
                   {chip}
                 </button>
