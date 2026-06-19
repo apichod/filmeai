@@ -249,14 +249,28 @@ function signalNameMatchesProduct(signalProductName: string, product: Product): 
   const signalName = normalizeText(signalProductName)
   const productName = normalizeText(product.name)
   if (!signalName || !productName) return false
-  if (productName.includes(signalName) || signalName.includes(productName)) return true
+
+  const packTerms = ['pack', 'kit', 'serie', 'série', 'set', 'duo']
+  const packVariantTerms = ['essentiel', 'standard', 'reportage', 'stabilisateur', 'multicam', 'mode', 'cine', 'ciné', 'cinema', 'cinéma']
+  const signalWantsPack = packTerms.some(term => signalName.includes(term)) || packVariantTerms.some(term => signalName.includes(term))
+  const productIsPack = packTerms.some(term => productName.includes(term))
+
+  // A signal that points to “Sony FX3 – pack essentiel” must not validate the bare “Sony FX3”.
+  if (signalWantsPack && !productIsPack) return false
+
+  // If the signal targets a specific pack variant, require that same variant in the candidate.
+  const requiredVariant = packVariantTerms.find(term => signalName.includes(term))
+  if (requiredVariant && !productName.includes(requiredVariant)) return false
+
+  // Direction matters: a product can be more specific than the signal, but not less specific.
+  if (productName === signalName || productName.includes(signalName)) return true
 
   const tokens = significantTokens(signalProductName)
     .filter(token => !STOPWORDS.has(token) && token.length >= 3)
   if (tokens.length === 0) return false
 
   const matched = tokens.filter(token => productName.includes(token)).length
-  return matched / tokens.length >= 0.75
+  return matched / tokens.length >= 0.9
 }
 
 function significantTokens(value: string): string[] {
@@ -725,7 +739,7 @@ async function candidateSearch(item: ExtractedItem, embeddingMap?: EmbeddingMap,
     directNameSearch(item, 20),
   ])
 
-  const signalIds = new Set(signalResults.map(product => product.id))
+  const signalIds = new Set(signalResults.filter(product => product.signal_match).map(product => product.id))
   const candidates = dedupeProducts([...signalResults, ...directResults, ...expandedResults, ...rawResults])
     .map(product => ({
       product,
