@@ -30,6 +30,7 @@ const ALLOWED_FIELDS = new Set([
   'chat_system_prompt',
   'chat_system_prompt_disponibilite',
   'chat_system_prompt_technique',
+  'chat_system_prompt_general',
   'quote_extraction_prompt',
   'quote_rerank_prompt',
   // Ancien champ conservé pour compatibilité.
@@ -37,6 +38,7 @@ const ALLOWED_FIELDS = new Set([
   'forbidden_topics',
 
   // Conditions
+  'opening_hours',
   'delivery_enabled',
   'delivery_pricing',
   'round_trip',
