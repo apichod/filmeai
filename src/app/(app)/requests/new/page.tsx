@@ -127,7 +127,7 @@ function Spinner({ size = 16, white = false }: { size?: number; white?: boolean 
     />
   )
 }
-function MatchGauge({ confidence, type }: { confidence?: number; type: QuoteItem['type'] }) {
+function MatchGauge({ confidence, type, requestedName }: { confidence?: number; type: QuoteItem['type']; requestedName?: string }) {
   if (type === 'section') return null
   const percent = matchPercent(confidence)
   const color = matchColor(percent)
@@ -142,7 +142,10 @@ function MatchGauge({ confidence, type }: { confidence?: number; type: QuoteItem
       <span className="text-[11px] font-medium tabular-nums" style={{ color }}>
         {percent}%
       </span>
-      <span className="text-[11px] text-gray-400">{matchLabel(percent, type)}</span>
+      <span className="text-[11px] text-gray-400">
+        {matchLabel(percent, type)}
+        {requestedName && <span className="text-gray-400"> ({requestedName})</span>}
+      </span>
     </div>
   )
 }
@@ -1038,7 +1041,7 @@ export default function NewRequestPage() {
                             <IconDrag />
                           </span>
                           {/* Product info */}
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-0 select-text cursor-auto">
                             <p className="text-sm font-medium text-gray-900 leading-snug">
                               {item.type === 'product' ? item.product?.name : item.title || item.requestedName}
                             </p>
@@ -1048,7 +1051,7 @@ export default function NewRequestPage() {
                                 : 'Ligne custom Booqable — à vérifier'}
                             </p>
                             {item.confidence != null && (
-                              <MatchGauge confidence={item.confidence} type={item.type} />
+                              <MatchGauge confidence={item.confidence} type={item.type} requestedName={item.requestedName} />
                             )}
                             {item.type === 'custom_charge' && (
                               <p className="text-[11px] font-semibold text-amber-700 mt-0.5">Intervention humaine requise</p>
