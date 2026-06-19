@@ -71,6 +71,24 @@ export function requestText(item: ExtractedItem): string {
 }
 
 
+function filterDensityFractions(value: string): string[] {
+  const text = stripQuantityPrefix(value).replace(/[,;]/g, ' ')
+  const matches = text.match(/\b1\s*\/\s*(?:8|4|2)\b/g) || []
+  return Array.from(new Set(matches.map(match => match.replace(/\s+/g, ''))))
+}
+
+function requestedFilterDensities(item: ExtractedItem): string[] {
+  return filterDensityFractions(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
+}
+
+function productFilterDensities(product: Product): string[] {
+  return filterDensityFractions(product.name)
+}
+
+function productHasFilterDensity(product: Product, density: string): boolean {
+  return productFilterDensities(product).includes(density)
+}
+
 export function requestWantsTripod(item: ExtractedItem): boolean {
   const text = requestText(item)
   return /\b(trepied|trépied|tripod)\b/.test(text)
@@ -142,6 +160,14 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     if (!(/\bmist\b/.test(name))) return true
   }
 
+  // Densités de filtres : 1/8, 1/4, 1/2 ne sont pas interchangeables.
+  // On travaille sur le texte original parce que normalizeText transforme "1/4" en "1 4".
+  const requestedDensities = requestedFilterDensities(item)
+  if (requestedDensities.length > 0 && !requestedDensities.every(density => productHasFilterDensity(product, density))) return true
+
+  // Famille Glimmerglass : ne pas accepter un ND, pola ou Pro-Mist uniquement parce que 82mm matche.
+  if (/\bglimmer\s*glass\b|\bglimmerglass\b/.test(req) && !(/\bglimmer\s*glass\b|\bglimmerglass\b/.test(name))) return true
+
   if (/\bangelbird\b/.test(req) && !/\bangelbird\b/.test(name)) return true
   if (/\b256\s*(gb|go)\b/.test(req) && !/\b256\b/.test(name)) return true
   if (/\b512\s*(gb|go)\b/.test(req) && !/\b512\b/.test(name)) return true
@@ -174,8 +200,12 @@ export function isBrandOnlyAmbiguousRequest(item: ExtractedItem): boolean {
 export function candidateUnsafeReasons(product: Product, item: ExtractedItem): string[] {
   const reasons: string[] = []
 
+  const requestedDensities = requestedFilterDensities(item)
+  if (requestedDensities.length > 0 && !requestedDensities.every(density => productHasFilterDensity(product, density))) {
+    reasons.push(`Densité filtre demandée ${requestedDensities.join(', ')} absente du produit`)
+  }
   if (requestHasFamilyMismatch(product, item)) {
-    reasons.push('Famille, modèle, focale ou monture incohérente avec la demande')
+    reasons.push('Famille, modèle, focale, densité ou monture incohérente avec la demande')
   }
   if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) {
     reasons.push('Accessoire caméra détecté alors que la demande vise une caméra ou un pack caméra')
@@ -218,6 +248,14 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
 
   const matchedImportant = important.filter(token => haystack.includes(normalizeText(token))).length
   if (important.length) score += (matchedImportant / important.length) * 1.4
+
+  const requestedDensities = requestedFilterDensities(item)
+  if (requestedDensities.length > 0) {
+    const matchedDensities = requestedDensities.filter(density => productHasFilterDensity(product, density)).length
+    score += matchedDensities * 1.2
+  }
+
+  if (/\bold\b/i.test(product.name)) score -= 0.35
 
   // Business rule: if the client asks for a pack/kit/series, prefer the pack over
   // the naked product when the model family is otherwise equivalent.
