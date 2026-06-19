@@ -123,6 +123,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       .then(r => r.json())
       .then((data: RequestDetail) => {
         setRequest(data)
+        if (data.quote_status === 'draft') setEditing(true)
         setContactName(data.contact_name || '')
         setContactEmail(data.contact_email || '')
         setContactPhone(data.contact_phone || '')
