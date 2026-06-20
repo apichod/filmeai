@@ -22,7 +22,7 @@ export type Product = {
 }
 
 export type QueryInfluence = {
-  source: 'extraction_prompt' | 'frontend_signal' | 'backend_preserve_brand' | 'backend_preserve_aperture' | 'section_context' | 'original_client_text'
+  source: 'extraction_prompt' | 'frontend_signal' | 'backend_preserve_brand' | 'backend_preserve_aperture' | 'backend_preserve_focal' | 'section_context' | 'original_client_text'
   label: string
   detail: string
 }

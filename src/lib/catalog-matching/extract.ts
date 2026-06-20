@@ -132,6 +132,25 @@ function findApertureNearFocal(message: string, item: ExtractedItem): string | n
   return match?.[1] ? `F${match[1]}` : null
 }
 
+function restoreFocalInQuery(item: ExtractedItem): { query: string; influence?: QueryInfluence } {
+  const rawNorm = normalizeText(item.raw)
+  const queryNorm = normalizeText(item.query)
+  // Détecte une plage focale du type 70-200, 24-70, 16-35, etc.
+  const focalMatch = rawNorm.match(/\b(\d{2,3}\s*-\s*\d{2,3})\b/)
+  if (!focalMatch) return { query: item.query }
+  const focal = focalMatch[1].replace(/\s+/g, '')
+  // Si la query contient déjà la focale, rien à faire
+  if (queryNorm.replace(/\s+/g, '').includes(focal)) return { query: item.query }
+  return {
+    query: `${item.query} ${focal}`.trim(),
+    influence: {
+      source: 'backend_preserve_focal',
+      label: 'Correction technique : plage focale conservée',
+      detail: `La query "${item.query}" ne contenait pas la focale "${focal}" présente dans "${item.raw}". Elle a été ajoutée pour éviter les matchs génériques.`,
+    },
+  }
+}
+
 function restoreOriginalHints(item: ExtractedItem, message: string): ExtractedItem {
   const requestedFromPrompt = item.raw
   const queryFromPrompt = item.query
@@ -186,6 +205,12 @@ function restoreOriginalHints(item: ExtractedItem, message: string): ExtractedIt
         detail: `Le message original précise “${aperture}” près de la focale ; je le conserve dans raw/query.`,
       })
     }
+  }
+
+  const focalRestore = restoreFocalInQuery({ ...item, raw, query })
+  if (focalRestore.query !== query) {
+    query = focalRestore.query
+    if (focalRestore.influence) influences.push(focalRestore.influence)
   }
 
   return {
