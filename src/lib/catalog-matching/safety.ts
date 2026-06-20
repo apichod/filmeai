@@ -173,11 +173,6 @@ function productMatchesRsModel(product: Product, model: '3' | '4'): boolean {
 }
 
 export function requestHasFamilyMismatch(product: Product, item: ExtractedItem): boolean {
-  // Une association validée dans Signaux est une décision métier : elle ne doit
-  // pas être invalidée par les garde-fous bas niveau, sinon le front dit une chose
-  // et le moteur fait l'inverse.
-  if (product.signal_match) return false
-
   const req = requestText(item)
   const name = productNameText(product)
 
@@ -340,7 +335,6 @@ export function candidateUnsafeReasons(product: Product, item: ExtractedItem): s
 }
 
 export function candidateIsUnsafe(product: Product, item: ExtractedItem): boolean {
-  if (product.signal_match) return false
   return candidateUnsafeReasons(product, item).length > 0
 }
 

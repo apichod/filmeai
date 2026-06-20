@@ -5,6 +5,7 @@ import type { CandidateSet, RerankResult, RerankSelection } from './types'
 export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: string): Promise<RerankSelection[]> {
   const context = candidateSets.map((set, index) => ({
     index,
+    requested: set.item.displayRaw || set.item.raw,
     raw: set.item.raw,
     query: set.item.query,
     quantity: set.item.quantity,
@@ -20,6 +21,7 @@ export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: str
 
   const payload = candidateSets.map((set, index) => ({
     index,
+    requested: set.item.displayRaw || set.item.raw,
     raw: set.item.raw,
     query: set.item.query,
     quantity: set.item.quantity,
