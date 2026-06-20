@@ -10,8 +10,8 @@ export type CameraMount = 'FE' | 'RF' | 'EF' | 'PL' | null
 /**
  * Analyse la liste complète des items extraits et déduit la monture probable.
  * Sony FX3/FX6/FX9/FX30 → E mount → FE
- * Canon C400/C70 RF config → RF
- * Canon C300/C70 EF config → EF
+ * Canon C400/C50/C80 → RF
+ * Canon C300/C70 → EF (défaut)
  * Si plusieurs caméras de montures différentes → null (ambiguïté)
  */
 export function detectCameraMount(items: ExtractedItem[]): CameraMount {
@@ -59,16 +59,10 @@ export function requestWantsPack(item: ExtractedItem): boolean {
   const raw = normalizeText(item.raw)
   const query = normalizeText(item.query)
   const packPattern = /\b(pack|kit|serie|série|set|duo|reportage|standard|essentiel|multicam)\b/
-
-  // La demande brute prime. Exception utile : une association “Signaux” peut
-  // injecter explicitement un nom de pack dans query.
   return packPattern.test(raw) || packPattern.test(query)
 }
 
 export function productLooksLikePack(product: Product): boolean {
-  // Important : on se base surtout sur le NOM. Les descriptions contiennent souvent
-  // "Packs apparentés", ce qui faisait remonter des accessoires type cage/rig
-  // comme si c'étaient des packs.
   const name = normalizeText(product.name)
   return Boolean(product.is_bundle) || /\b(pack|kit|serie|série|set|duo)\b/.test(name)
 }
@@ -131,83 +125,6 @@ function productLooksLikeCameraOrCameraPack(product: Product): boolean {
   return hasCameraModel && (productLooksLikePack(product) || !productLooksLikeAccessoryOnly(product))
 }
 
-function requestWantsReceiverProduct(item: ExtractedItem): boolean {
-  const text = requestText(item)
-  return /\b(recepteur|récepteur|receiver|rx)\b/.test(text)
-}
-
-function productLooksLikeReceiverProduct(product: Product): boolean {
-  const name = productNameText(product)
-  return /\b(recepteur|récepteur|receiver|rx)\b/.test(name)
-}
-
-function productLooksLikeReceiverAccessory(product: Product): boolean {
-  const name = productNameText(product)
-  return /\b(antenne|antennes|batterie|battery|chargeur|cable|câble|adaptateur|base\s*plate|plate|support|commande|focus)\b/.test(name)
-}
-
-
-function filterDensityFractions(value: string): string[] {
-  const text = stripQuantityPrefix(value).replace(/[,;]/g, ' ')
-  const matches = text.match(/\b1\s*\/\s*(?:8|4|2)\b/g) || []
-  return Array.from(new Set(matches.map(match => match.replace(/\s+/g, ''))))
-}
-
-function requestedFilterDensities(item: ExtractedItem): string[] {
-  return filterDensityFractions(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
-}
-
-function productFilterDensities(product: Product): string[] {
-  return filterDensityFractions(product.name)
-}
-
-function productHasFilterDensity(product: Product, density: string): boolean {
-  return productFilterDensities(product).includes(density)
-}
-
-function requestWantsGmVersionTwo(item: ExtractedItem): boolean {
-  const text = normalizeText(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
-  const compact = compactText(text)
-  return /\bgm\s*(ii|2)\b/.test(text) || /\bgm\s*mark\s*(ii|2)\b/.test(text) || /gm(?:ii|2)\b/.test(compact)
-}
-
-function productHasGmVersionTwo(product: Product): boolean {
-  const name = productNameText(product)
-  const compact = compactText(name)
-  return /\bgm\s*(ii|2)\b/.test(name) || /\bgm\s*mark\s*(ii|2)\b/.test(name) || /gm(?:ii|2)\b/.test(compact)
-}
-
-function requestedBoltDistance(item: ExtractedItem): string | null {
-  const text = requestText(item)
-  return text.match(/\bbolt\s*(?:4k\s*)?(3000|1500|750|500)\b/)?.[1] || null
-}
-
-function productHasBoltDistance(product: Product, distance: string): boolean {
-  const name = productNameText(product)
-  return new RegExp(`\\b${distance}\\b`).test(name)
-}
-
-export function candidateMatchesImportantTokens(product: Product, item: ExtractedItem): boolean {
-  const haystack = normalizeText(`${product.name} ${product.description || ''}`)
-  const important = importantModelTokens(item)
-  return important.length === 0 || important.every(token => haystack.includes(normalizeText(token)))
-}
-
-export function requestWantsTripod(item: ExtractedItem): boolean {
-  const text = requestText(item)
-  return /\b(trepied|trépied|tripod)\b/.test(text)
-}
-
-export function productLooksLikeTripod(product: Product): boolean {
-  const name = productNameText(product)
-  return /\b(trepied|trépied|tripod)\b/.test(name)
-}
-
-export function requestWantsStabilizer(item: ExtractedItem): boolean {
-  const text = requestText(item)
-  return /\b(ronin|rs\s*3|rs3|rs\s*4|rs4|stabilisateur|gimbal)\b/.test(text)
-}
-
 function productMatchesRsModel(product: Product, model: '3' | '4'): boolean {
   const name = productNameText(product)
   const compact = compactText(name)
@@ -216,12 +133,20 @@ function productMatchesRsModel(product: Product, model: '3' | '4'): boolean {
   return spacedPattern.test(name) || compactPattern.test(compact)
 }
 
+/**
+ * Garde de sécurité structurelle : retourne true si le produit appartient
+ * manifestement à la mauvaise famille pour cet item.
+ *
+ * Les règles domain-spécifiques (GM II, ATEM variantes, Bolt distance, densité
+ * filtre, TX/RX, types filtre) sont traitées par le prompt de reranking, éditable
+ * dans /assistant/behavior. Ce code ne gère que les incohérences structurelles
+ * (modèle caméra, plage focale, monture, ouverture).
+ */
 export function requestHasFamilyMismatch(product: Product, item: ExtractedItem): boolean {
   const req = requestText(item)
   const name = productNameText(product)
 
-  // Les références modèle/focales doivent apparaître dans le nom produit, pas
-  // seulement dans une description ou dans “packs apparentés”.
+  // Familles caméra et focales exactes — structurelles
   const exactNameFamilies: Array<[RegExp, RegExp]> = [
     [/\bfx3\b/, /\bfx3\b/],
     [/\bfx6\b/, /\bfx6\b/],
@@ -250,62 +175,15 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     if (requestPattern.test(req) && !productPattern.test(name)) return true
   }
 
-  // Familles filtres : Vari ND / ND / Pro-Mist / pola ne sont pas interchangeables.
-  if (/\bvari\s*nd\b|\bvariable\s*nd\b/.test(req)) {
-    if (/\bpro\s*-?\s*mist\b|\bblack\s*pro\s*-?\s*mist\b|\bhollywood\s*black\s*magic\b/.test(name)) return true
-    if (!(/\bvari\s*nd\b|\bvariable\s*nd\b/.test(name))) return true
-  }
-
-  if (/\bpro\s*-?\s*mist\b|\bblack\s*promist\b|\bblack\s*pro\s*-?\s*mist\b/.test(req)) {
-    if (/\bvari\s*nd\b|\bvariable\s*nd\b/.test(name)) return true
-    if (!(/\bmist\b/.test(name))) return true
-  }
-
-  // Densités de filtres : 1/8, 1/4, 1/2 ne sont pas interchangeables.
-  // On travaille sur le texte original parce que normalizeText transforme "1/4" en "1 4".
-  const requestedDensities = requestedFilterDensities(item)
-  if (requestedDensities.length > 0 && !requestedDensities.every(density => productHasFilterDensity(product, density))) return true
-
-  // Famille Glimmerglass : ne pas accepter un ND, pola ou Pro-Mist uniquement parce que 82mm matche.
-  if (/\bglimmer\s*glass\b|\bglimmerglass\b/.test(req) && !(/\bglimmer\s*glass\b|\bglimmerglass\b/.test(name))) return true
-
-  // Versions/générations : GM et GM II ne sont pas interchangeables.
-  if (requestWantsGmVersionTwo(item) && !productHasGmVersionTwo(product)) return true
-
-  // Si la demande vise un accessoire pour caméra, ne pas substituer la caméra
-  // ou son pack prêt-à-tourner simplement parce que le modèle FX6/FX3 est cité.
-  if (requestLooksLikeCameraAccessory(item) && productLooksLikeCameraOrCameraPack(product)) return true
-
-  // Récepteur / RX : c'est une intention produit générique. Ne pas remplacer un
-  // récepteur demandé par ses accessoires (antennes, batteries, chargeurs, etc.).
-  if (requestWantsReceiverProduct(item) && productLooksLikeReceiverAccessory(product)) {
-    return true
-  }
-
-  // Transmission vidéo : un kit Teradek Bolt TX/RX doit rester un Teradek Bolt
-  // complet et respecter la portée/référence demandée si elle est indiquée.
-  const boltDistance = requestedBoltDistance(item)
-  if (boltDistance && !productHasBoltDistance(product, boltDistance)) return true
-  if (/\btx\b/.test(req) && /\brx\b/.test(req) && (!/\btx\b/.test(name) || !/\brx\b/.test(name))) return true
-
-  // Régie Blackmagic ATEM : SDI / ISO / Extreme / Pro ne sont pas des variantes
-  // marketing interchangeables. "ATEM Mini Extreme ISO SDI" doit donc matcher
-  // un ATEM SDI Extreme ISO, pas la version HDMI/non-SDI.
-  if (/\batem\b/.test(req)) {
-    if (/\bsdi\b/.test(req) && !/\bsdi\b/.test(name)) return true
-    if (/\biso\b/.test(req) && !/\biso\b/.test(name)) return true
-    if (/\bextreme\b/.test(req) && !/\bextreme\b/.test(name)) return true
-    if (/\bpro\b/.test(req) && !/\bpro\b/.test(name) && !/\bextreme\b/.test(req)) return true
-  }
-
-  if (/\bangelbird\b/.test(req) && !/\bangelbird\b/.test(name)) return true
-  if (/\b256\s*(gb|go)\b/.test(req) && !/\b256\b/.test(name)) return true
-  if (/\b512\s*(gb|go)\b/.test(req) && !/\b512\b/.test(name)) return true
-  if (/\b82\s*mm\b/.test(req) && !/\b82\s*mm\b|\b82mm\b/.test(name)) return true
+  // Monture : RF/FE/EF sont structurellement incompatibles
   if (/\brf\b/.test(req) && /\b(fe|e-mount|sony)\b/.test(name) && !/\brf\b/.test(name)) return true
   if (/\bfe\b/.test(req) && /\b(rf|ef|canon)\b/.test(name) && !/\bfe\b/.test(name)) return true
   if (/\bsony\b/.test(req) && /\bcanon\b/.test(name)) return true
 
+  // Accessoire pour caméra ≠ caméra ou pack caméra
+  if (requestLooksLikeCameraAccessory(item) && productLooksLikeCameraOrCameraPack(product)) return true
+
+  // Ouverture explicite
   const explicitAperture = req.match(/\bf\s*\/?\s*(1\.2|1\.4|1\.8|2\.8|4)\b/)?.[1]
   const decimalApertureNearLens = /\b(12\s*-?\s*24|14\s*-?\s*24|15\s*-?\s*35|16\s*-?\s*35|24\s*-?\s*70|24\s*-?\s*105|70\s*-?\s*200)\b/.test(req)
     ? req.match(/\b(1\.2|1\.4|1\.8|2\.8)\b/)?.[1]
@@ -328,39 +206,19 @@ export function isBrandOnlyAmbiguousRequest(item: ExtractedItem): boolean {
   return tokens.length === 1 && /^(atomos|sony|canon|profoto|aputure|smallhd)$/.test(tokens[0]) && raw === tokens[0]
 }
 
+/**
+ * Raisons structurelles pour lesquelles un candidat est unsafe.
+ * Les variantes domain-spécifiques (GM II, ATEM, Bolt, densité filtre, types filtre)
+ * sont gérées par le reranker LLM via le prompt éditable /assistant/behavior.
+ */
 export function candidateUnsafeReasons(product: Product, item: ExtractedItem): string[] {
   const reasons: string[] = []
-  const req = requestText(item)
-  const name = productNameText(product)
 
-  const requestedDensities = requestedFilterDensities(item)
-  if (requestedDensities.length > 0 && !requestedDensities.every(density => productHasFilterDensity(product, density))) {
-    reasons.push(`Densité filtre demandée ${requestedDensities.join(', ')} absente du produit`)
-  }
-  if (requestWantsGmVersionTwo(item) && !productHasGmVersionTwo(product)) {
-    reasons.push('Version demandée GM II absente du produit')
-  }
   if (requestLooksLikeCameraAccessory(item) && productLooksLikeCameraOrCameraPack(product)) {
     reasons.push('Accessoire caméra demandé : caméra ou pack caméra non retenu automatiquement')
   }
-  if (requestWantsReceiverProduct(item) && productLooksLikeReceiverAccessory(product)) {
-    reasons.push('Récepteur demandé : accessoire non retenu automatiquement')
-  }
-  const boltDistance = requestedBoltDistance(item)
-  if (boltDistance && !productHasBoltDistance(product, boltDistance)) {
-    reasons.push(`Référence Teradek Bolt ${boltDistance} absente du produit`)
-  }
-  if (/\btx\b/.test(req) && /\brx\b/.test(req) && (!/\btx\b/.test(name) || !/\brx\b/.test(name))) {
-    reasons.push('Kit TX/RX demandé : produit incomplet TX/RX')
-  }
-  if (/\batem\b/.test(req)) {
-    if (/\bsdi\b/.test(req) && !/\bsdi\b/.test(name)) reasons.push('Version ATEM SDI demandée absente du produit')
-    if (/\biso\b/.test(req) && !/\biso\b/.test(name)) reasons.push('Version ATEM ISO demandée absente du produit')
-    if (/\bextreme\b/.test(req) && !/\bextreme\b/.test(name)) reasons.push('Version ATEM Extreme demandée absente du produit')
-    if (/\bpro\b/.test(req) && !/\bpro\b/.test(name) && !/\bextreme\b/.test(req)) reasons.push('Version ATEM Pro demandée absente du produit')
-  }
   if (requestHasFamilyMismatch(product, item)) {
-    reasons.push('Famille, modèle, focale, densité ou monture incohérente avec la demande')
+    reasons.push('Famille, modèle, focale ou monture incohérente avec la demande')
   }
   if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) {
     reasons.push('Accessoire caméra détecté alors que la demande vise une caméra ou un pack caméra')
@@ -380,6 +238,27 @@ export function candidateUnsafeReasons(product: Product, item: ExtractedItem): s
 
 export function candidateIsUnsafe(product: Product, item: ExtractedItem): boolean {
   return candidateUnsafeReasons(product, item).length > 0
+}
+
+export function candidateMatchesImportantTokens(product: Product, item: ExtractedItem): boolean {
+  const haystack = normalizeText(`${product.name} ${product.description || ''}`)
+  const important = importantModelTokens(item)
+  return important.length === 0 || important.every(token => haystack.includes(normalizeText(token)))
+}
+
+export function requestWantsTripod(item: ExtractedItem): boolean {
+  const text = requestText(item)
+  return /\b(trepied|trépied|tripod)\b/.test(text)
+}
+
+export function productLooksLikeTripod(product: Product): boolean {
+  const name = productNameText(product)
+  return /\b(trepied|trépied|tripod)\b/.test(name)
+}
+
+export function requestWantsStabilizer(item: ExtractedItem): boolean {
+  const text = requestText(item)
+  return /\b(ronin|rs\s*3|rs3|rs\s*4|rs4|stabilisateur|gimbal)\b/.test(text)
 }
 
 export function deterministicScore(product: Product, item: ExtractedItem): number {
@@ -403,46 +282,27 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
   const matchedImportant = important.filter(token => haystack.includes(normalizeText(token))).length
   if (important.length) score += (matchedImportant / important.length) * 1.4
 
-  const requestedDensities = requestedFilterDensities(item)
-  if (requestedDensities.length > 0) {
-    const matchedDensities = requestedDensities.filter(density => productHasFilterDensity(product, density)).length
-    score += matchedDensities * 1.2
-  }
-
-  if (requestWantsGmVersionTwo(item)) {
-    if (productHasGmVersionTwo(product)) score += 1.35
-    else score -= 1.35
-  }
-
-  if (requestWantsReceiverProduct(item)) {
-    if (productLooksLikeReceiverProduct(product)) score += 1.5
-    if (productLooksLikeReceiverAccessory(product)) score -= 1.5
-  }
-
   if (/\bold\b/i.test(product.name)) score -= 0.35
 
-  // Business rule: if the client asks for a pack/kit/series, prefer the pack over
-  // the naked product when the model family is otherwise equivalent.
+  // Règle métier : pack demandé → favoriser le pack ; sinon pénaliser les packs.
   if (requestWantsPack(item)) {
     if (productLooksLikePack(product)) score += 2.25
     else score -= 1.25
   } else if (productLooksLikePack(product)) {
-    // Si le client n'a pas demandé de pack, on préfère le produit nu à modèle égal.
     score -= 0.95
   }
 
-  // “Sony FX6 pack caméra” means camera/pack, not an accessory compatible with FX6.
+  // Caméra/boîtier demandé → pénaliser les accessoires seuls.
   if (requestWantsCameraBody(item) && productLooksLikeAccessoryOnly(product)) {
     score -= 2.4
   }
 
-  // Hard-ish penalties: if a model/reference is present in the request but absent from the candidate,
-  // the candidate is usually dangerous. This prevents “x5 fx6” → “Insta360 X5”, etc.
+  // Pénalité par token important absent du candidat.
   for (const token of important) {
     if (!haystack.includes(normalizeText(token))) score -= 0.85
   }
 
-  // Product family sanity checks
+  // Cohérence famille / modèle / focale.
   const familyRules: Array<[RegExp, RegExp]> = [
     [/\bfx6\b/, /\bfx6\b/],
     [/\bfx3\b/, /\bfx3\b/],
@@ -463,9 +323,9 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
     [/\b512\s*(gb|go)\b/, /\b512\s*(gb|go)\b|\b512\b/],
   ]
 
-  const requestText = normalizeText(`${item.raw} ${item.query}`)
+  const reqText = normalizeText(`${item.raw} ${item.query}`)
   for (const [requestPattern, productPattern] of familyRules) {
-    if (requestPattern.test(requestText) && !productPattern.test(haystack)) score -= 1.2
+    if (requestPattern.test(reqText) && !productPattern.test(haystack)) score -= 1.2
   }
 
   return score
@@ -495,7 +355,7 @@ export function deterministicAutoSelect(set: CandidateSet, cameraMount?: CameraM
       if (mountMatch) return mountMatch
     }
 
-    // Aucun discriminant → ne pas choisir arbitrairement
+    // Aucun discriminant → laisser le reranker décider
     if (!hasBrand && !hasMount && !hasAperture) return null
   }
 

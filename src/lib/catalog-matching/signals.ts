@@ -1,5 +1,6 @@
 // Doctrine matching: lire ./DOCTRINE.md avant modification. Généraliser l'intention, éviter les exceptions produit.
 import { getDefaultOrganizationId, getSupabaseAdmin } from './db'
+import { CAMERA_MODELS_RE } from './constants'
 import { hasPreciseReference, normalizeText, normalizedSignalTerm, significantTokens, STOPWORDS } from './text'
 import type { CatalogSignal, ExtractedItem, Product } from './types'
 
@@ -60,7 +61,7 @@ function isCameraModelToPackSignal(signal: CatalogSignal): boolean {
 
 function itemLooksLikeCameraAccessoryRequest(item: ExtractedItem): boolean {
   const text = normalizeText(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
-  const hasCameraModel = /\b(fx3|fx6|fx9|fx30|c50|c70|c80|c300|c400|komodo|pyxis)\b/.test(text)
+  const hasCameraModel = CAMERA_MODELS_RE.test(text)
   const hasAccessoryHead = /\b(cable|câble|declencheur|déclencheur|trigger|poignee|poignée|cage|rig|support|adaptateur|adapter|alim|alimentation|batterie|battery|chargeur|plate|plaque)\b/.test(text)
   const explicitlyAsksCamera = /\b(camera|caméra|boitier|boîtier|body|pack|kit)\b/.test(text)
   return hasCameraModel && hasAccessoryHead && !explicitlyAsksCamera
@@ -97,10 +98,30 @@ export function signalMatchesItem(signal: CatalogSignal, item: ExtractedItem): b
 }
 
 export function matchingSignalsForItem(item: ExtractedItem, signals: CatalogSignal[]): CatalogSignal[] {
-  return signals
-    .filter(signal => signalMatchesItem(signal, item))
+  // Pré-normalise les termes une seule fois pour éviter de recalculer à chaque comparaison.
+  const normalizedSignals = signals.map(signal => ({
+    signal,
+    normalizedTerm: normalizedSignalTerm(signal.normalized_term || signal.term),
+  }))
+
+  return normalizedSignals
+    .filter(({ signal, normalizedTerm }) => signalMatchesItemWithNorm(signal, normalizedTerm, item))
+    .map(({ signal }) => signal)
     .sort((a, b) => Number(b.occurrences || 0) - Number(a.occurrences || 0))
     .slice(0, 6)
+}
+
+function signalMatchesItemWithNorm(signal: CatalogSignal, signalTerm: string, item: ExtractedItem): boolean {
+  if (!signalTerm) return false
+  const raw = normalizedSignalTerm(item.raw)
+  const query = normalizedSignalTerm(item.query)
+  const itemText = normalizeText(`${item.raw} ${item.query}`)
+  if (isCameraModelToPackSignal(signal) && itemLooksLikeCameraAccessoryRequest(item)) return false
+  if (signalTerm === raw || signalTerm === query) return true
+  if (isBroadSignalTerm(signalTerm)) return false
+  if (hasPreciseReference(itemText) && !hasPreciseReference(signalTerm)) return false
+  if (signalTerm.length < 4) return false
+  return raw.includes(signalTerm) || query.includes(signalTerm) || itemText.includes(signalTerm)
 }
 
 export function signalNameMatchesProduct(signalProductName: string, product: Product): boolean {

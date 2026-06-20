@@ -91,6 +91,5 @@ export type ParseQuoteRequestBody = {
   quoteBackendPrompt?: string
 }
 
-export const MIN_SIMILARITY = 0.16
-export const MIN_RERANK_CONFIDENCE = 0.5
-export const MIN_DETERMINISTIC_ACCEPT = 1.25
+// Les seuils sont désormais dans constants.ts — re-exportés ici pour rétrocompatibilité.
+export { MIN_SIMILARITY, MIN_RERANK_CONFIDENCE, MIN_DETERMINISTIC_ACCEPT } from './constants'

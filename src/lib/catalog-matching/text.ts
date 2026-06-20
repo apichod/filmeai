@@ -1,6 +1,6 @@
 export const STOPWORDS = new Set([
   'avec', 'pour', 'vers', 'plus', 'moins', 'sans', 'de', 'du', 'des', 'la', 'le', 'les',
-  'en', 'et', 'ou', 'sur', 'un', 'une', 'au', 'aux', 'camera', 'caméra', 'objectif',
+  'en', 'et', 'ou', 'sur', 'un', 'une', 'au', 'aux', 'camera', 'objectif',
   'objectifs', 'moniteur', 'energie', 'énergie', 'data', 'machine', 'machinerie', 'type',
   'with', 'all', 'and', 'the', 'kit', 'complet', 'complets',
 ])
@@ -30,9 +30,11 @@ export function normalizedSignalTerm(value: string): string {
   return normalizeText(stripQuantityPrefix(value))
 }
 
+import { CAMERA_MODELS_RE } from './constants'
+
 export function hasPreciseReference(value: string): boolean {
   const text = normalizeText(value)
-  return /\b(fx3|fx6|fx9|fx30|c50|c70|c80|c300|c400|r5c|r5|komodo|pyxis)\b/.test(text) ||
+  return CAMERA_MODELS_RE.test(text) ||
     /\b\d{2,3}\s*-\s*\d{2,3}\b/.test(text) ||
     /\b\d{2,4}\s*(mm|gb|go|wh|w)\b/.test(text) ||
     /\b\d+\s*\/\s*\d+\b/.test(text) ||

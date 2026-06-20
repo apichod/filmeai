@@ -1,10 +1,17 @@
 import { createClient } from '@supabase/supabase-js'
 
+// Singleton — évite de créer un nouveau pool de connexions à chaque appel.
+let _supabaseAdmin: ReturnType<typeof createClient> | null = null
+
 export function getSupabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+  }
+  return _supabaseAdmin
 }
 
 export async function getDefaultOrganizationId(): Promise<string | null> {
