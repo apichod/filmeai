@@ -93,9 +93,19 @@ export function importantModelTokens(item: ExtractedItem): string[] {
     /^\d{2,3}wh$/.test(token)
   )
 
+  // Codes modèle génériques : lettres + chiffres (ex: rs4, a7, z9, xt4, r5)
+  // Capturés depuis le texte compact pour gérer les espaces ("RS 4" → "rs4")
   const compact = compactText(text)
-  if (/roninrs3|rs3/.test(compact)) important.push('rs3')
-  if (/roninrs4|rs4/.test(compact)) important.push('rs4')
+  const modelCodeRe = /[a-z]{1,3}\d{1,3}[a-z]{0,2}/g
+  const existingSet = new Set(important)
+  let mc: RegExpExecArray | null
+  while ((mc = modelCodeRe.exec(compact)) !== null) {
+    const t = mc[0]
+    if (!/^f\d/.test(t) && !existingSet.has(t)) {
+      important.push(t)
+      existingSet.add(t)
+    }
+  }
 
   return Array.from(new Set(important))
 }
@@ -152,7 +162,8 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
 export function isBrandOnlyAmbiguousRequest(item: ExtractedItem): boolean {
   const tokens = significantTokens(`${item.raw} ${item.query}`)
   const raw = normalizeText(stripQuantityPrefix(item.raw))
-  return tokens.length === 1 && /^(atomos|sony|canon|profoto|aputure|smallhd)$/.test(tokens[0]) && raw === tokens[0]
+  // Un seul token significatif = demande trop vague pour auto-sélectionner un accessoire
+  return tokens.length === 1 && raw === tokens[0]
 }
 
 export function candidateUnsafeReasons(product: Product, item: ExtractedItem): string[] {
@@ -199,7 +210,7 @@ export function productLooksLikeTripod(product: Product): boolean {
 
 export function requestWantsStabilizer(item: ExtractedItem): boolean {
   const text = requestText(item)
-  return /\b(ronin|rs\s*3|rs3|rs\s*4|rs4|stabilisateur|gimbal)\b/.test(text)
+  return /\b(stabilisateur|gimbal)\b/.test(text)
 }
 
 export function deterministicScore(product: Product, item: ExtractedItem): number {
@@ -271,16 +282,15 @@ export function deterministicAutoSelect(set: CandidateSet, cameraMount?: CameraM
   if (tied.length >= 2) {
     const raw = normalizeText(stripQuantityPrefix(set.item.raw))
     const query = normalizeText(set.item.query)
-    const hasBrand = /\b(sony|canon|sigma|zeiss|tamron|fuji|nikon|leica)\b/.test(raw) || /\b(sony|canon|sigma|zeiss|tamron|fuji|nikon|leica)\b/.test(query)
     const hasMount = /\b(fe|rf|ef|pl|e-mount|mft|f-mount)\b/.test(raw) || /\b(fe|rf|ef|pl|e-mount|mft|f-mount)\b/.test(query)
     const hasAperture = /\bf\s*\/?\s*(1\.2|1\.4|1\.8|2\.8|4)\b/.test(raw) || /\b(1\.2|1\.4|1\.8|2\.8)\b/.test(raw)
 
-    if (!hasBrand && !hasMount && !hasAperture && cameraMount) {
+    if (!hasMount && !hasAperture && cameraMount) {
       const mountMatch = tied.find(r => productMatchesMount(r.product, cameraMount))
       if (mountMatch) return mountMatch
     }
 
-    if (!hasBrand && !hasMount && !hasAperture) return null
+    if (!hasMount && !hasAperture) return null
   }
 
   const haystack = normalizeText(`${best.product.name} ${best.product.description || ''}`)
