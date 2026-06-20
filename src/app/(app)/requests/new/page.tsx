@@ -341,11 +341,11 @@ function formatDiagnosticForCopy(debug: MatchDebug, operatorProductName?: string
 
   // ── Étape 5 : Décision finale ─────────────────────────────────────────────
   lines.push('ÉTAPE 5 — DÉCISION FINALE')
-  lines.push('  Ordre de priorité : signal → pack/kit → reranking → déterministe (fallback)')
-  lines.push(`  Signal        : ${debug.decisionCandidates?.signal?.name || 'aucun'}`)
-  lines.push(`  Pack/kit      : ${debug.decisionCandidates?.packRule?.name || 'aucun'} (règle safety.ts : priorité si demande explicite pack/kit)`)
-  lines.push(`  Reranking IA  : ${debug.decisionCandidates?.rerank?.name || 'aucun'}`)
-  lines.push(`  Déterministe  : ${debug.decisionCandidates?.deterministic?.name || 'aucun'} (fallback si reranker échoue, seuil score ≥ 1.25)`)
+  lines.push('  Ordre de priorité : signal → pack/kit → reranking → déterministe')
+  lines.push(`  Signal      : ${debug.decisionCandidates?.signal?.name || 'aucun'}`)
+  lines.push(`  Pack/kit    : ${debug.decisionCandidates?.packRule?.name || 'aucun'}`)
+  lines.push(`  Reranking   : ${debug.decisionCandidates?.rerank?.name || 'aucun'}`)
+  lines.push(`  Déterministe: ${debug.decisionCandidates?.deterministic?.name || 'aucun'}`)
   lines.push(`  → SÉLECTIONNÉ : ${debug.finalChoice?.name || 'aucun'}`)
   lines.push('')
 
