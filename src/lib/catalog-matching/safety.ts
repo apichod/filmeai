@@ -94,16 +94,20 @@ export function importantModelTokens(item: ExtractedItem): string[] {
   )
 
   // Codes modèle génériques : lettres + chiffres (ex: rs4, a7, z9, xt4, r5)
-  // Capturés depuis le texte compact pour gérer les espaces ("RS 4" → "rs4")
-  const compact = compactText(text)
-  const modelCodeRe = /[a-z]{1,3}\d{1,3}[a-z]{0,2}/g
+  // Traités token par token + paires adjacentes pour gérer "RS 4" → "rs4"
+  // sans fusionner les mots voisins ("roninrs4" capturerait "rs4r" à tort).
+  const words = text.split(/\s+/).filter(Boolean)
+  const modelCodeRe = /^[a-z]{1,3}\d{1,3}[a-z]{0,2}$/
   const existingSet = new Set(important)
-  let mc: RegExpExecArray | null
-  while ((mc = modelCodeRe.exec(compact)) !== null) {
-    const t = mc[0]
-    if (!/^f\d/.test(t) && !existingSet.has(t)) {
-      important.push(t)
-      existingSet.add(t)
+  const parts: string[] = []
+  for (let i = 0; i < words.length; i++) {
+    parts.push(compactText(words[i]))
+    if (i + 1 < words.length) parts.push(compactText(words[i] + words[i + 1]))
+  }
+  for (const part of parts) {
+    if (modelCodeRe.test(part) && !/^f\d/.test(part) && !existingSet.has(part)) {
+      important.push(part)
+      existingSet.add(part)
     }
   }
 
