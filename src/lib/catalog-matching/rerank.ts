@@ -10,7 +10,6 @@ export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: str
     raw: set.item.raw,
     query: set.item.query,
     quantity: set.item.quantity,
-    section: set.item.section,
     candidates: set.candidates.map(candidate => ({
       id: candidate.id,
       name: candidate.name,

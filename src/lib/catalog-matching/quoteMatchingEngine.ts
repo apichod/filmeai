@@ -63,7 +63,6 @@ ${learnedGlossary}`
       query: i.query,
       queryChanged: i.queryDebug?.changed,
       qty: i.quantity,
-      section: i.section,
     })),
   })
 

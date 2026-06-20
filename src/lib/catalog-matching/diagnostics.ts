@@ -109,7 +109,6 @@ const rawItems = candidateSets.map((set, index) => {
       requestedName: displayRequestedName,
       matchingRaw: set.item.raw,
       searchQuery: set.item.query,
-      section: set.item.section,
       quantity: set.item.quantity,
       query: {
         requestedFromPrompt: set.item.queryDebug?.requestedFromPrompt || set.item.raw,
