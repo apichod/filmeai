@@ -260,6 +260,37 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function DELETE(req: NextRequest) {
+  try {
+    const authClient = getAuthClient(req)
+    const { data: { user }, error: userError } = await authClient.auth.getUser()
+    if (userError || !user) return json({ error: 'Non autorisé.' }, { status: 401 })
+
+    const body = await req.json() as { ids?: unknown }
+    const ids = Array.isArray(body.ids)
+      ? body.ids.filter((id): id is string => typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id))
+      : []
+    if (ids.length === 0) return json({ error: 'Aucun id valide fourni.' }, { status: 400 })
+    if (ids.length > 100) return json({ error: 'Maximum 100 suppressions à la fois.' }, { status: 400 })
+
+    const supabase = getSupabase()
+    const orgId = await getOrgId(supabase)
+    if (!orgId) return json({ error: 'Organisation introuvable.' }, { status: 404 })
+
+    const { error } = await supabase
+      .from('catalog_correction_events')
+      .delete()
+      .eq('organization_id', orgId)
+      .in('id', ids)
+
+    if (error) return json({ error: error.message }, { status: 500 })
+    return json({ deleted: ids.length })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return json({ error: message }, { status: 500 })
+  }
+}
+
 export async function OPTIONS() {
   return new Response(null, { headers: CORS_HEADERS })
 }
