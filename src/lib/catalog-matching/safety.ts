@@ -1,6 +1,12 @@
 // Doctrine matching: lire ./DOCTRINE.md avant modification. Généraliser l'intention, éviter les exceptions produit.
 import { MIN_DETERMINISTIC_ACCEPT } from './types'
 import { compactText, normalizeText, significantTokens, stripQuantityPrefix } from './text'
+
+/** Vérifie si haystack contient le token, avec ou sans espaces (pour gérer "RS 4" vs "rs4"). */
+function haystackContainsToken(haystack: string, token: string): boolean {
+  const norm = normalizeText(token)
+  return haystack.includes(norm) || compactText(haystack).includes(compactText(norm))
+}
 import type { CandidateSet, ExtractedItem, Product } from './types'
 
 // ── Contexte caméra global ────────────────────────────────────────────────────
@@ -235,7 +241,8 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
   const matchedTokens = tokens.filter(token => haystack.includes(normalizeText(token))).length
   if (tokens.length) score += (matchedTokens / tokens.length) * 0.8
 
-  const matchedImportant = important.filter(token => haystack.includes(normalizeText(token))).length
+  // Comparaison avec compactText pour gérer "RS 4" (haystack) vs "rs4" (token)
+  const matchedImportant = important.filter(token => haystackContainsToken(haystack, token)).length
   if (important.length) score += (matchedImportant / important.length) * 1.4
 
   if (/\bold\b/i.test(product.name)) score -= 0.35
@@ -252,7 +259,7 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
   }
 
   for (const token of important) {
-    if (!haystack.includes(normalizeText(token))) score -= 0.85
+    if (!haystackContainsToken(haystack, token)) score -= 0.85
   }
 
   // Cohérence focale et stockage — structurelles
