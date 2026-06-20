@@ -16,6 +16,10 @@
     try { return new URL('/api/catalog-signals', API_URL).toString(); }
     catch (e) { return 'https://filmeai.vercel.app/api/catalog-signals'; }
   })();
+  var CATALOG_CORRECTIONS_URL = script.getAttribute('data-corrections-url') || (function () {
+    try { return new URL('/api/catalog-corrections', API_URL).toString(); }
+    catch (e) { return 'https://filmeai.vercel.app/api/catalog-corrections'; }
+  })();
   var WIDGET_SETTINGS_URL = script.getAttribute('data-settings-url') || (function () {
     try { return new URL('/api/widget-settings', API_URL).toString(); }
     catch (e) { return 'https://filmeai.vercel.app/api/widget-settings'; }
@@ -538,6 +542,40 @@
     } catch (e) {}
   }
 
+  function recordCatalogCorrection(item, correctionType, product, metadata) {
+    if (!item || !correctionType) return;
+    var debug = item.debug || null;
+    var correctedName = product ? displayProductName(product).trim() : null;
+
+    try {
+      fetch(CATALOG_CORRECTIONS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'chat_widget',
+          correctionType: correctionType,
+          conversationId: sessionData.conversationId || null,
+          quoteItemUid: item.clientIndex != null ? String(item.clientIndex) : null,
+          requestedText: item.requestedName || item.searchQuery || null,
+          matchingRaw: debug && debug.matchingRaw ? debug.matchingRaw : null,
+          searchQuery: item.searchQuery || (debug && debug.searchQuery ? debug.searchQuery : null),
+          section: item.section || (debug && debug.section ? debug.section : null),
+          quantity: item.quantity || null,
+          aiSelectedProductId: debug && debug.finalChoice ? debug.finalChoice.id : (item.matched ? item.matched.id : null),
+          aiSelectedProductName: debug && debug.finalChoice ? debug.finalChoice.name : (item.matched ? displayProductName(item.matched) : null),
+          aiConfidence: item.confidence || null,
+          aiSelectedBy: debug && debug.selectedBy ? debug.selectedBy : null,
+          aiReason: item.reason || (debug && debug.rerank ? debug.rerank.reason : null),
+          correctedProductId: product && product.id ? product.id : null,
+          correctedProductName: correctedName,
+          diagnostic: debug,
+          candidates: debug && debug.candidates ? debug.candidates : null,
+          metadata: metadata || {}
+        })
+      }).catch(function() {});
+    } catch (e) {}
+  }
+
   function searchCatalogForMatch(index, query) {
     var item = sessionData.quoteMatches[index];
     if (!item) return;
@@ -733,6 +771,9 @@
         (sessionData.quoteMatches || []).forEach(function(match) {
           if (isMatchUnresolved(match)) {
             missing += 1;
+            recordCatalogCorrection(match, 'confirm_leave_to_filme', null, {
+              previousSelectedProductId: match.selectedProductId || null
+            });
             match.selectedProductId = null;
             match.userResolved = true;
             match.leaveToFilme = true;
@@ -740,6 +781,9 @@
           } else {
             var selectedProduct = findChoice(match, match.selectedProductId) || match.matched;
             if (selectedProduct) {
+              recordCatalogCorrection(match, 'confirm_product', selectedProduct, {
+                previousMatchedProductId: match.matched ? match.matched.id : null
+              });
               match.matched = selectedProduct;
               match.confidence = Math.max(Number(match.confidence || 0), 0.8);
             }
@@ -761,23 +805,39 @@
       if (!item) return;
 
       if (action === 'remove') {
+        recordCatalogCorrection(item, 'delete_line', null, {
+          previousSelectedProductId: item.selectedProductId || null,
+          previousMatchedProductId: item.matched ? item.matched.id : null
+        });
         sessionData.quoteMatches.splice(index, 1);
       } else if (action === 'edit') {
         item.editing = !item.editing;
       } else if (action === 'validate') {
         if (item.selectedProductId) {
-          recordCatalogSignal(item, findChoice(item, item.selectedProductId) || item.matched);
+          var validatedProduct = findChoice(item, item.selectedProductId) || item.matched;
+          recordCatalogSignal(item, validatedProduct);
+          recordCatalogCorrection(item, 'validate_product', validatedProduct, {
+            previousMatchedProductId: item.matched ? item.matched.id : null
+          });
           item.userResolved = true;
           item.leaveToFilme = false;
           item.editing = false;
         }
       } else if (action === 'choose') {
         item.selectedProductId = target.getAttribute('data-product-id');
-        recordCatalogSignal(item, findChoice(item, item.selectedProductId) || item.matched);
+        var chosenProduct = findChoice(item, item.selectedProductId) || item.matched;
+        recordCatalogSignal(item, chosenProduct);
+        recordCatalogCorrection(item, 'choose_product', chosenProduct, {
+          previousMatchedProductId: item.matched ? item.matched.id : null
+        });
         item.userResolved = true;
         item.leaveToFilme = false;
         item.editing = false;
       } else if (action === 'filme') {
+        recordCatalogCorrection(item, 'leave_to_filme', null, {
+          previousSelectedProductId: item.selectedProductId || null,
+          previousMatchedProductId: item.matched ? item.matched.id : null
+        });
         item.selectedProductId = null;
         item.userResolved = true;
         item.leaveToFilme = true;

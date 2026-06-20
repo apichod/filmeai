@@ -764,6 +764,10 @@ export default function NewRequestPage() {
     ))
   }
   function removeItem(uid: string) {
+    const previous = items.find(item => item.uid === uid)
+    if (previous && previous.type !== 'section') {
+      logCatalogCorrection(previous, 'delete_line', null)
+    }
     setItems(prev => prev.filter(item => item.uid !== uid))
     if (editingUid === uid) setEditingUid(null)
   }
@@ -782,9 +786,50 @@ export default function NewRequestPage() {
       }),
     }).catch(() => {})
   }
+  function logCatalogCorrection(
+    item: QuoteItem,
+    correctionType: string,
+    correctedProduct?: Product | null,
+    metadata?: Record<string, unknown>
+  ) {
+    if (item.type === 'section') return
+    const debug = item.debug || null
+
+    void fetch('/api/catalog-corrections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'backoffice_quote',
+        correctionType,
+        quoteItemUid: item.uid,
+        requestedText: item.requestedName || item.title || null,
+        matchingRaw: debug?.matchingRaw || null,
+        searchQuery: debug?.searchQuery || null,
+        section: item.section || debug?.section || null,
+        quantity: item.quantity,
+        aiSelectedProductId: debug?.finalChoice?.id || item.product?.id || null,
+        aiSelectedProductName: debug?.finalChoice?.name || item.product?.name || item.title || null,
+        aiConfidence: item.confidence ?? null,
+        aiSelectedBy: debug?.selectedBy || null,
+        aiReason: item.reason || debug?.rerank?.reason || null,
+        correctedProductId: correctedProduct?.id || null,
+        correctedProductName: correctedProduct?.name || null,
+        diagnostic: debug,
+        candidates: debug?.candidates || null,
+        metadata: metadata || {},
+      }),
+    }).catch(() => {})
+  }
   function replaceProduct(uid: string, product: Product) {
     const previous = items.find(item => item.uid === uid)
-    if (previous) recordCatalogSignal(previous.requestedName || previous.title || product.name, product)
+    if (previous) {
+      recordCatalogSignal(previous.requestedName || previous.title || product.name, product)
+      logCatalogCorrection(previous, 'replace_product', product, {
+        previousType: previous.type,
+        previousProductId: previous.product?.id || null,
+        previousProductName: previous.product?.name || previous.title || null,
+      })
+    }
 
     setItems(prev => prev.map(item => item.uid === uid ? {
       ...item,
