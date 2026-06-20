@@ -557,6 +557,7 @@
           conversationId: sessionData.conversationId || null,
           quoteItemUid: item.clientIndex != null ? String(item.clientIndex) : null,
           requestedText: item.requestedName || item.searchQuery || null,
+          requestContext: debug && debug.requestContext ? debug.requestContext : null,
           matchingRaw: debug && debug.matchingRaw ? debug.matchingRaw : null,
           searchQuery: item.searchQuery || (debug && debug.searchQuery ? debug.searchQuery : null),
           section: item.section || (debug && debug.section ? debug.section : null),

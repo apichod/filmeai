@@ -9,6 +9,7 @@ type CatalogCorrection = {
   source: string
   correction_type: string
   requested_text: string | null
+  request_context: string | null
   matching_raw: string | null
   search_query: string | null
   section: string | null
@@ -78,6 +79,10 @@ function buildCopyText(row: CatalogCorrection) {
     `Date : ${formatDate(row.created_at)}`,
     `Source : ${labelFor(SOURCE_LABELS, row.source)}`,
     `Type : ${labelFor(TYPE_LABELS, row.correction_type)}`,
+    '',
+    row.request_context ? 'CONTEXTE GLOBAL REÇU' : null,
+    row.request_context || null,
+    row.request_context ? '' : null,
     `Demandé : ${row.requested_text || '—'}`,
     row.matching_raw ? `Terme matching : ${row.matching_raw}` : null,
     row.search_query ? `Query : ${row.search_query}` : null,
@@ -93,7 +98,7 @@ function buildCopyText(row: CatalogCorrection) {
     '',
     'DIAGNOSTIC JSON',
     stringifyJson(row.diagnostic),
-  ].filter(Boolean)
+  ].filter((line): line is string => line !== null)
 
   return lines.join('\n')
 }
@@ -235,6 +240,9 @@ export default function AssistantCorrectionsPage() {
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{row.requested_text || '—'}</p>
                     <p className="mt-0.5 text-xs text-gray-400">{[row.section, row.search_query].filter(Boolean).join(' · ')}</p>
+                    {row.request_context && (
+                      <p className="mt-1 line-clamp-2 text-xs text-gray-500">{row.request_context}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-700">{row.ai_selected_product_name || 'Aucun choix'}</p>

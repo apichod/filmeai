@@ -59,6 +59,7 @@ type FinalChoice = {
 }
 
 type DiagnosticShape = {
+  requestContext?: string | null
   requestedName?: string | null
   matchingRaw?: string | null
   searchQuery?: string | null
@@ -80,6 +81,7 @@ type CorrectionBody = {
   quoteDraftId?: string | null
   quoteItemUid?: string | null
   requestedText?: string | null
+  requestContext?: string | null
   matchingRaw?: string | null
   searchQuery?: string | null
   section?: string | null
@@ -176,6 +178,7 @@ export async function GET(req: NextRequest) {
       const pattern = `%${safeQuery}%`
       request = request.or([
         `requested_text.ilike.${pattern}`,
+        `request_context.ilike.${pattern}`,
         `matching_raw.ilike.${pattern}`,
         `search_query.ilike.${pattern}`,
         `ai_selected_product_name.ilike.${pattern}`,
@@ -213,6 +216,7 @@ export async function POST(req: NextRequest) {
     const candidatesFromDiagnostic = diagnostic && 'candidates' in diagnostic ? diagnostic.candidates : null
 
     const requestedText = cleanText(body.requestedText, 800) || cleanText(diagnostic?.requestedName, 800)
+    const requestContext = cleanText(body.requestContext, 12000) || cleanText(diagnostic?.requestContext, 12000)
     const matchingRaw = cleanText(body.matchingRaw, 800) || cleanText(diagnostic?.matchingRaw, 800)
     const searchQuery = cleanText(body.searchQuery, 800) || cleanText(diagnostic?.searchQuery, 800)
     const quantity = cleanNumber(body.quantity) ?? cleanNumber(diagnostic?.quantity)
@@ -228,6 +232,7 @@ export async function POST(req: NextRequest) {
         quote_draft_id: cleanUuid(body.quoteDraftId),
         quote_item_uid: cleanText(body.quoteItemUid, 120),
         requested_text: requestedText,
+        request_context: requestContext,
         matching_raw: matchingRaw,
         search_query: searchQuery,
         section: cleanText(body.section, 180) || cleanText(diagnostic?.section, 180),

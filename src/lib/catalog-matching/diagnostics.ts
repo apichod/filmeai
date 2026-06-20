@@ -10,12 +10,14 @@ import {
   requestWantsPack,
 } from './safety'
 import { MIN_RERANK_CONFIDENCE } from './types'
+import type { CameraMount } from './safety'
 import type { CandidateSet, CatalogSignal, RerankSelection } from './types'
 
 export async function buildMatchedQuoteItems(
   candidateSets: CandidateSet[],
   selections: RerankSelection[],
-  approvedSignals: CatalogSignal[]
+  approvedSignals: CatalogSignal[],
+  cameraMount?: CameraMount
 ) {
 const selectionByIndex = new Map(selections.map(selection => [selection.index, selection]))
 
@@ -24,7 +26,7 @@ const rawItems = candidateSets.map((set, index) => {
   const aiSelected = selection && selection.confidence >= MIN_RERANK_CONFIDENCE
     ? set.candidates.find(candidate => candidate.id === selection.product_id) || null
     : null
-  const deterministic = deterministicAutoSelect(set)
+  const deterministic = deterministicAutoSelect(set, cameraMount)
   const preferredPack = requestWantsPack(set.item)
     ? set.candidates
       .map(product => ({ product, score: deterministicScore(product, set.item) }))
@@ -103,6 +105,7 @@ const rawItems = candidateSets.map((set, index) => {
             : 'Correspondance catalogue forte par nom/référence')
       : selection?.reason || 'Aucune correspondance catalogue assez fiable',
     debug: {
+      cameraMount: cameraMount || null,
       requestedName: displayRequestedName,
       matchingRaw: set.item.raw,
       searchQuery: set.item.query,

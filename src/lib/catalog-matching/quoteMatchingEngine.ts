@@ -8,6 +8,7 @@ import { buildMatchedQuoteItems } from './diagnostics'
 import { extractItems } from './extract'
 import { getQuotePrompts } from './prompts'
 import { rerankAll } from './rerank'
+import { detectCameraMount } from './safety'
 import { candidateSearchWithDebug, createEmbeddingMap } from './search'
 import { buildCatalogSignalsGlossary, getApprovedCatalogSignals } from './signals'
 import { stripQuantityPrefix } from './text'
@@ -53,8 +54,10 @@ ${learnedGlossary}`
     : extractionPrompt
 
   const extractedItems = await extractItems(message, finalExtractionPrompt)
+  const cameraMount = detectCameraMount(extractedItems)
   console.log('[matching] extraction', {
     count: extractedItems.length,
+    cameraMount,
     items: extractedItems.map(i => ({
       raw: i.raw,
       query: i.query,
@@ -93,7 +96,7 @@ ${learnedGlossary}`
     })
   )
 
-  const selections = await rerankAll(candidateSets, rerankPrompt)
+  const selections = await rerankAll(candidateSets, rerankPrompt, cameraMount)
   console.log('[matching] rerank raw', selections.map(s => ({
     index: s.index,
     productId: s.product_id,
@@ -101,7 +104,7 @@ ${learnedGlossary}`
     reason: s.reason,
   })))
 
-  const items = await buildMatchedQuoteItems(candidateSets, selections, approvedSignals)
+  const items = await buildMatchedQuoteItems(candidateSets, selections, approvedSignals, cameraMount)
   console.log('[matching] ✔ done', {
     ms: Date.now() - t0,
     results: items.map(i => ({

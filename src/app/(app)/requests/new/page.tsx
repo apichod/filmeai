@@ -29,6 +29,7 @@ type Product = {
 }
 
 type MatchDebug = {
+  requestContext?: string | null
   requestedName: string
   searchQuery: string
   matchingRaw?: string
@@ -228,6 +229,11 @@ function formatDiagnosticForCopy(debug: MatchDebug) {
 
   lines.push('DIAGNOSTIC IA FILMEAI')
   lines.push('')
+  if (debug.requestContext) {
+    lines.push('CONTEXTE GLOBAL REÇU')
+    lines.push(debug.requestContext)
+    lines.push('')
+  }
   lines.push(`Demandé : ${debug.requestedName}`)
   if (debug.matchingRaw && debug.matchingRaw !== debug.requestedName) lines.push(`Terme matching : ${debug.matchingRaw}`)
   lines.push(`Query : ${debug.searchQuery}`)
@@ -317,6 +323,11 @@ function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
         <div>
           <p className="font-semibold text-slate-900">Diagnostic IA</p>
           <p className="mt-1 text-slate-500">Demandé : <span className="font-medium text-slate-700">{debug.requestedName}</span></p>
+          {debug.requestContext && (
+            <p className="mt-1 line-clamp-2 text-slate-500">
+              Contexte : <span className="font-medium text-slate-700">{debug.requestContext}</span>
+            </p>
+          )}
           {debug.matchingRaw && debug.matchingRaw !== debug.requestedName && (
             <p className="text-slate-500">Terme matching : <span className="font-medium text-slate-700">{debug.matchingRaw}</span></p>
           )}
@@ -803,6 +814,7 @@ export default function NewRequestPage() {
         correctionType,
         quoteItemUid: item.uid,
         requestedText: item.requestedName || item.title || null,
+        requestContext: debug?.requestContext || null,
         matchingRaw: debug?.matchingRaw || null,
         searchQuery: debug?.searchQuery || null,
         section: item.section || debug?.section || null,
