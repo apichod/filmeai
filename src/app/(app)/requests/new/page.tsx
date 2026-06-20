@@ -297,7 +297,8 @@ function formatDiagnosticForCopy(debug: MatchDebug, operatorProductName?: string
     }
   }
   lines.push(`  Quantité  : ${debug.quantity}`)
-  lines.push(`  Section   : ${debug.section || '—'}`)
+  const sectionFromInfluence = debug.query?.influences?.find(i => i.source === 'section_context')?.detail?.match(/"([^"]+)"/)?.[1]
+  lines.push(`  Section   : ${debug.section || sectionFromInfluence || '—'}`)
   lines.push('')
 
   // ── Étape 2 : Recherche catalogue ─────────────────────────────────────────
