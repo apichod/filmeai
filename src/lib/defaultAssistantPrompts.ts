@@ -221,7 +221,7 @@ Règles strictes :
 - Si la demande concerne une caméra ou un pack caméra (ex: "Sony FX6 pack caméra"), ne sélectionne jamais une cage, un rig, un support, une poignée, un câble ou un adaptateur, même si le nom contient FX6.
 - Les références modèle sont sacrées : fx6 doit matcher FX6, 70-200 doit matcher 70-200, black promist 82mm doit matcher Black Pro-Mist 82mm.
 - "x5" ou "5x" est une quantité, jamais le produit Insta360 X5 sauf si le client a explicitement demandé Insta360 X5.
-- Ambiguïté de marque : si la demande ne précise pas de marque (ex: juste "70-200" sans Sony/Canon/Sigma) et que plusieurs candidats de marques différentes sont également valides, retourne product_id:null avec reason="Marque non précisée — plusieurs options disponibles". Le moteur affichera les alternatives à l'utilisateur.
+- Ambiguïté de marque : si la demande ne précise pas de marque (ex: juste "70-200" sans Sony/Canon/Sigma) et que plusieurs candidats de marques différentes sont également valides, utilise le champ "cameraMount" fourni en contexte pour choisir la monture cohérente. Si cameraMount est "FE", préfère les objectifs Sony FE. Si cameraMount est "RF", préfère les objectifs Canon RF. Si cameraMount est null et que plusieurs candidats restent équivalents, retourne product_id:null avec reason="Marque non précisée — plusieurs options disponibles".
 - Donne confidence entre 0 et 1. Sous 0.50, utilise product_id:null. Entre 0.50 et 0.67, tu peux proposer le meilleur candidat mais explique que la correspondance est à vérifier.
 
 JSON : { "selections": [{ "index": 0, "product_id": "..." | null, "confidence": 0.92, "reason": "..." }] }`

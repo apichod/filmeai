@@ -1,8 +1,9 @@
 // Doctrine matching: lire ./DOCTRINE.md avant modification. Généraliser l'intention, éviter les exceptions produit.
 import { openai } from './openai'
+import type { CameraMount } from './safety'
 import type { CandidateSet, RerankResult, RerankSelection } from './types'
 
-export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: string): Promise<RerankSelection[]> {
+export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: string, cameraMount?: CameraMount): Promise<RerankSelection[]> {
   const payload = candidateSets.map((set, index) => ({
     index,
     requested: set.item.displayRaw || set.item.raw,
@@ -27,7 +28,7 @@ export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: str
         role: 'system',
         content: rerankPrompt,
       },
-      { role: 'user', content: JSON.stringify({ items: payload }) },
+      { role: 'user', content: JSON.stringify({ cameraMount: cameraMount || null, items: payload }) },
     ],
     response_format: { type: 'json_object' },
     temperature: 0,

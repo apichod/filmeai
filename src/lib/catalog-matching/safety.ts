@@ -3,6 +3,50 @@ import { MIN_DETERMINISTIC_ACCEPT } from './types'
 import { compactText, normalizeText, significantTokens, stripQuantityPrefix } from './text'
 import type { CandidateSet, ExtractedItem, Product } from './types'
 
+// ── Contexte caméra global ────────────────────────────────────────────────────
+
+export type CameraMount = 'FE' | 'RF' | 'EF' | 'PL' | null
+
+/**
+ * Analyse la liste complète des items extraits et déduit la monture probable.
+ * Sony FX3/FX6/FX9/FX30 → E mount → FE
+ * Canon C400/C70 RF config → RF
+ * Canon C300/C70 EF config → EF
+ * Si plusieurs caméras de montures différentes → null (ambiguïté)
+ */
+export function detectCameraMount(items: ExtractedItem[]): CameraMount {
+  const mounts: CameraMount[] = []
+
+  for (const item of items) {
+    const text = normalizeText(`${item.raw} ${item.query}`)
+    if (/\b(fx3|fx6|fx9|fx30)\b/.test(text)) mounts.push('FE')
+    else if (/\bc400\b/.test(text)) mounts.push('RF')
+    else if (/\bc70\b/.test(text) && /\brf\b/.test(text)) mounts.push('RF')
+    else if (/\bc70\b/.test(text) && /\bef\b/.test(text)) mounts.push('EF')
+    else if (/\bc70\b/.test(text)) mounts.push('EF') // défaut C70 = EF Cinema
+    else if (/\bc300\b/.test(text)) mounts.push('EF')
+    else if (/\bc50\b/.test(text)) mounts.push('RF')
+    else if (/\bc80\b/.test(text)) mounts.push('RF')
+  }
+
+  const unique = Array.from(new Set(mounts.filter(Boolean)))
+  if (unique.length === 1) return unique[0] as CameraMount
+  return null // ambiguïté ou pas de caméra détectée
+}
+
+/**
+ * Retourne true si le nom produit est cohérent avec la monture détectée.
+ */
+export function productMatchesMount(product: Product, mount: CameraMount): boolean {
+  if (!mount) return true
+  const name = normalizeText(product.name)
+  if (mount === 'FE') return /\bfe\b/.test(name) || /\bsony\b/.test(name)
+  if (mount === 'RF') return /\brf\b/.test(name) || /\bcanon rf\b/.test(name)
+  if (mount === 'EF') return /\bef\b/.test(name) || /\bcanon ef\b/.test(name)
+  if (mount === 'PL') return /\bpl\b/.test(name)
+  return true
+}
+
 export function queryHasAllTokens(product: Product, tokens: string[]): boolean {
   const haystack = normalizeText(`${product.name} ${product.description || ''}`)
   return tokens.every(token => {
@@ -427,7 +471,7 @@ export function deterministicScore(product: Product, item: ExtractedItem): numbe
   return score
 }
 
-export function deterministicAutoSelect(set: CandidateSet): { product: Product; score: number } | null {
+export function deterministicAutoSelect(set: CandidateSet, cameraMount?: CameraMount): { product: Product; score: number } | null {
   if (set.candidates.length === 0) return null
 
   const ranked = set.candidates
@@ -436,9 +480,7 @@ export function deterministicAutoSelect(set: CandidateSet): { product: Product; 
 
   const best = ranked[0]
 
-  // Si plusieurs candidats ont le même score maximal et que le terme demandé
-  // ne contient pas de discriminant de marque ou de monture, ne pas choisir
-  // arbitrairement — laisser l'UI afficher les alternatives.
+  // Si plusieurs candidats ont le même score maximal, tenter de les départager.
   const tied = ranked.filter(r => Math.abs(r.score - best.score) < 0.01)
   if (tied.length >= 2) {
     const raw = normalizeText(stripQuantityPrefix(set.item.raw))
@@ -446,6 +488,14 @@ export function deterministicAutoSelect(set: CandidateSet): { product: Product; 
     const hasBrand = /\b(sony|canon|sigma|zeiss|tamron|fuji|nikon|leica)\b/.test(raw) || /\b(sony|canon|sigma|zeiss|tamron|fuji|nikon|leica)\b/.test(query)
     const hasMount = /\b(fe|rf|ef|pl|e-mount|mft|f-mount)\b/.test(raw) || /\b(fe|rf|ef|pl|e-mount|mft|f-mount)\b/.test(query)
     const hasAperture = /\bf\s*\/?\s*(1\.2|1\.4|1\.8|2\.8|4)\b/.test(raw) || /\b(1\.2|1\.4|1\.8|2\.8)\b/.test(raw)
+
+    // Tiebreaker : monture caméra détectée dans le devis global
+    if (!hasBrand && !hasMount && !hasAperture && cameraMount) {
+      const mountMatch = tied.find(r => productMatchesMount(r.product, cameraMount))
+      if (mountMatch) return mountMatch
+    }
+
+    // Aucun discriminant → ne pas choisir arbitrairement
     if (!hasBrand && !hasMount && !hasAperture) return null
   }
 
