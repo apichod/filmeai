@@ -18,9 +18,9 @@ type Settings = {
   delivery_pricing: string
   delivery_fee: number
   delivery_fee_return: number
+  delivery_fee_truck: number
+  delivery_fee_truck_return: number
   delivery_zones: string[]
-  booking_delay_days: number
-  payment_methods: string[]
   opening_hours: OpeningHours
   default_pickup_time: string
   default_return_time: string
@@ -31,9 +31,9 @@ type ApiSettings = {
   delivery_pricing?: string
   delivery_fee?: number
   delivery_fee_return?: number
+  delivery_fee_truck?: number
+  delivery_fee_truck_return?: number
   delivery_zones?: string[]
-  booking_delay?: string
-  payment_methods?: string[]
   opening_hours?: OpeningHours | null
   default_pickup_time?: string
   default_return_time?: string
@@ -55,8 +55,6 @@ const HOURS = Array.from({ length: 24 }, (_, i) => {
   const h = String(i).padStart(2, '0')
   return [`${h}:00`, `${h}:30`]
 }).flat()
-
-const PRESET_PAYMENTS = ['Carte bancaire', 'Espèces', 'Virement', 'Chèque', 'PayPal', 'Lydia']
 
 const DEFAULT_OPENING_HOURS: OpeningHours = {
   lundi:    { enabled: true,  open: '09:00', close: '19:00' },
@@ -84,26 +82,12 @@ const defaults: Settings = {
   delivery_pricing: 'fixed',
   delivery_fee: 0,
   delivery_fee_return: 0,
+  delivery_fee_truck: 0,
+  delivery_fee_truck_return: 0,
   delivery_zones: [],
-  booking_delay_days: 1,
-  payment_methods: [],
   opening_hours: DEFAULT_OPENING_HOURS,
   default_pickup_time: '14:00',
   default_return_time: '13:00',
-}
-
-// Convert legacy booking_delay string to days
-function parseLegacyDelay(val: string | undefined): number {
-  if (!val) return 1
-  if (/^\d+$/.test(val)) return parseInt(val, 10)
-  if (val === '0')   return 0
-  if (val === '2h')  return 0
-  if (val === '12h') return 0
-  if (val === '24h') return 1
-  if (val === '48h') return 2
-  if (val === '72h') return 3
-  if (val === '1w')  return 7
-  return 1
 }
 
 // ── Small components ──────────────────────────────────────────────────────────
@@ -130,7 +114,6 @@ function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) 
 
 export default function AssistantConditionsPage() {
   const [s, setS] = useState<Settings>(defaults)
-  const [customPayment, setCustomPayment] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -149,16 +132,16 @@ export default function AssistantConditionsPage() {
         const api = d.settings
         setS(prev => ({
           ...prev,
-          delivery_enabled:    api.delivery_enabled    ?? prev.delivery_enabled,
-          delivery_pricing:    api.delivery_pricing    ?? prev.delivery_pricing,
-          delivery_fee:        api.delivery_fee        ?? prev.delivery_fee,
-          delivery_fee_return: api.delivery_fee_return ?? prev.delivery_fee_return,
-          delivery_zones:      Array.isArray(api.delivery_zones) ? api.delivery_zones : prev.delivery_zones,
-          booking_delay_days:  parseLegacyDelay(api.booking_delay),
-          payment_methods:     Array.isArray(api.payment_methods) ? api.payment_methods : prev.payment_methods,
-          opening_hours:       api.opening_hours ?? prev.opening_hours,
-          default_pickup_time: api.default_pickup_time ?? prev.default_pickup_time,
-          default_return_time: api.default_return_time ?? prev.default_return_time,
+          delivery_enabled:         api.delivery_enabled         ?? prev.delivery_enabled,
+          delivery_pricing:         api.delivery_pricing         ?? prev.delivery_pricing,
+          delivery_fee:             api.delivery_fee             ?? prev.delivery_fee,
+          delivery_fee_return:      api.delivery_fee_return      ?? prev.delivery_fee_return,
+          delivery_fee_truck:       api.delivery_fee_truck       ?? prev.delivery_fee_truck,
+          delivery_fee_truck_return:api.delivery_fee_truck_return?? prev.delivery_fee_truck_return,
+          delivery_zones:           Array.isArray(api.delivery_zones) ? api.delivery_zones : prev.delivery_zones,
+          opening_hours:            api.opening_hours            ?? prev.opening_hours,
+          default_pickup_time:      api.default_pickup_time      ?? prev.default_pickup_time,
+          default_return_time:      api.default_return_time      ?? prev.default_return_time,
         }))
       })
   }, [])
@@ -167,27 +150,6 @@ export default function AssistantConditionsPage() {
 
   function set<K extends keyof Settings>(key: K, val: Settings[K]) {
     setS(prev => ({ ...prev, [key]: val }))
-  }
-
-  // Payment methods
-  function togglePayment(val: string) {
-    if (s.payment_methods.includes(val)) {
-      set('payment_methods', s.payment_methods.filter(p => p !== val))
-    } else {
-      set('payment_methods', [...s.payment_methods, val])
-    }
-  }
-
-  function addCustomPayment() {
-    const v = customPayment.trim()
-    if (!v || s.payment_methods.includes(v)) return
-    set('payment_methods', [...s.payment_methods, v])
-    setCustomPayment('')
-  }
-
-  function removeCustomPayment(val: string) {
-    if (PRESET_PAYMENTS.includes(val)) return
-    set('payment_methods', s.payment_methods.filter(p => p !== val))
   }
 
   // Opening hours
@@ -222,16 +184,16 @@ export default function AssistantConditionsPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          delivery_enabled:    s.delivery_enabled,
-          delivery_pricing:    s.delivery_pricing,
-          delivery_fee:        s.delivery_fee,
-          delivery_fee_return: s.delivery_fee_return,
-          delivery_zones:      s.delivery_zones,
-          booking_delay:       String(s.booking_delay_days),
-          payment_methods:     s.payment_methods,
-          opening_hours:       s.opening_hours,
-          default_pickup_time: s.default_pickup_time,
-          default_return_time: s.default_return_time,
+          delivery_enabled:          s.delivery_enabled,
+          delivery_pricing:          s.delivery_pricing,
+          delivery_fee:              s.delivery_fee,
+          delivery_fee_return:       s.delivery_fee_return,
+          delivery_fee_truck:        s.delivery_fee_truck,
+          delivery_fee_truck_return: s.delivery_fee_truck_return,
+          delivery_zones:            s.delivery_zones,
+          opening_hours:             s.opening_hours,
+          default_pickup_time:       s.default_pickup_time,
+          default_return_time:       s.default_return_time,
         }),
       })
       const data = await res.json() as { error?: string }
@@ -244,9 +206,6 @@ export default function AssistantConditionsPage() {
       setSaving(false)
     }
   }
-
-  // Custom payments = those in payment_methods not in PRESET_PAYMENTS
-  const customMethods = s.payment_methods.filter(p => !PRESET_PAYMENTS.includes(p))
 
   return (
     <div className="max-w-2xl space-y-5">
@@ -283,31 +242,69 @@ export default function AssistantConditionsPage() {
           </div>
 
           {s.delivery_pricing === 'fixed' && (
-            <div className="flex gap-4">
+            <div className="space-y-4">
+              {/* Voiture */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Tarif livraison (aller)</label>
-                <div className="relative w-36">
-                  <input
-                    type="number"
-                    value={s.delivery_fee}
-                    onChange={e => set('delivery_fee', Number(e.target.value))}
-                    min={0}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">€</span>
+                <p className="text-sm font-medium text-gray-700 mb-2">Voiture <span className="font-normal text-gray-400">(petit volume)</span></p>
+                <div className="flex gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1.5">Aller</label>
+                    <div className="relative w-36">
+                      <input
+                        type="number"
+                        value={s.delivery_fee}
+                        onChange={e => set('delivery_fee', Number(e.target.value))}
+                        min={0}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">€</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1.5">Retour</label>
+                    <div className="relative w-36">
+                      <input
+                        type="number"
+                        value={s.delivery_fee_return}
+                        onChange={e => set('delivery_fee_return', Number(e.target.value))}
+                        min={0}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">€</span>
+                    </div>
+                  </div>
                 </div>
               </div>
+              {/* Camion */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Tarif retour</label>
-                <div className="relative w-36">
-                  <input
-                    type="number"
-                    value={s.delivery_fee_return}
-                    onChange={e => set('delivery_fee_return', Number(e.target.value))}
-                    min={0}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">€</span>
+                <p className="text-sm font-medium text-gray-700 mb-2">Camion <span className="font-normal text-gray-400">(gros volume)</span></p>
+                <div className="flex gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1.5">Aller</label>
+                    <div className="relative w-36">
+                      <input
+                        type="number"
+                        value={s.delivery_fee_truck}
+                        onChange={e => set('delivery_fee_truck', Number(e.target.value))}
+                        min={0}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">€</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1.5">Retour</label>
+                    <div className="relative w-36">
+                      <input
+                        type="number"
+                        value={s.delivery_fee_truck_return}
+                        onChange={e => set('delivery_fee_truck_return', Number(e.target.value))}
+                        min={0}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">€</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -321,74 +318,6 @@ export default function AssistantConditionsPage() {
               placeholder="Paris, 92, Lyon… (séparées par des virgules)"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
             />
-          </div>
-        </div>
-      </div>
-
-      {/* ── Conditions ─────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
-        <div>
-          <div className="flex items-center gap-2 mb-0.5">
-            <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z" />
-            </svg>
-            <h2 className="text-sm font-semibold text-gray-900">Conditions</h2>
-          </div>
-          <p className="text-xs text-gray-500">Délai de réservation et moyens de paiement acceptés. La caution dépend du matériel (devis ou conditions de location).</p>
-        </div>
-
-        {/* Booking delay */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Délai de réservation minimum</label>
-          <div className="relative w-40">
-            <input
-              type="number"
-              value={s.booking_delay_days}
-              onChange={e => set('booking_delay_days', Math.max(0, Number(e.target.value)))}
-              min={0}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-            />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">jours</span>
-          </div>
-        </div>
-
-        {/* Payment methods */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2.5">Moyens de paiement</label>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {PRESET_PAYMENTS.map(p => {
-              const active = s.payment_methods.includes(p)
-              return (
-                <button key={p} type="button"
-                  onClick={() => togglePayment(p)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                    active
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-                  }`}>
-                  {p}
-                </button>
-              )
-            })}
-            {customMethods.map(p => (
-              <span key={p} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border bg-gray-900 text-white border-gray-900">
-                {p}
-                <button type="button" onClick={() => removeCustomPayment(p)} className="ml-0.5 hover:opacity-70">×</button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input
-              value={customPayment}
-              onChange={e => setCustomPayment(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addCustomPayment()}
-              placeholder="Autre moyen (ex. : Apple Pay)"
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-            />
-            <button type="button" onClick={addCustomPayment}
-              className="flex items-center gap-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap">
-              + Ajouter
-            </button>
           </div>
         </div>
       </div>
