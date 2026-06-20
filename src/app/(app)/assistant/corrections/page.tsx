@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type MatchDebug, formatDiagnosticForCopy } from '@/lib/diagnostic-format'
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
@@ -73,34 +74,28 @@ function stringifyJson(value: JsonValue | null) {
 }
 
 function buildCopyText(row: CatalogCorrection) {
-  const lines = [
+  const header = [
     'CORRECTION CATALOGUE FILMEAI',
     '',
-    `Date : ${formatDate(row.created_at)}`,
-    `Source : ${labelFor(SOURCE_LABELS, row.source)}`,
-    `Type : ${labelFor(TYPE_LABELS, row.correction_type)}`,
-    '',
-    row.request_context ? 'CONTEXTE GLOBAL REÇU' : null,
-    row.request_context || null,
-    row.request_context ? '' : null,
-    `Demandé : ${row.requested_text || '—'}`,
-    row.matching_raw ? `Terme matching : ${row.matching_raw}` : null,
-    row.search_query ? `Query : ${row.search_query}` : null,
-    row.section ? `Section : ${row.section}` : null,
-    `Quantité : ${row.quantity || 1}`,
-    '',
+    `Date     : ${formatDate(row.created_at)}`,
+    `Source   : ${labelFor(SOURCE_LABELS, row.source)}`,
+    `Type     : ${labelFor(TYPE_LABELS, row.correction_type)}`,
+    `Demandé  : ${row.requested_text || '—'}`,
     `Choix IA : ${row.ai_selected_product_name || 'aucun'}`,
-    row.ai_selected_by ? `Moteur : ${row.ai_selected_by}` : null,
-    confidencePercent(row.ai_confidence) != null ? `Confiance : ${confidencePercent(row.ai_confidence)}%` : null,
-    row.ai_reason ? `Raison : ${row.ai_reason}` : null,
+    `Correction opérateur : ${row.corrected_product_name || 'aucune / intervention Filme'}`,
     '',
-    `Correction : ${row.corrected_product_name || 'aucune / intervention Filme'}`,
-    '',
-    'DIAGNOSTIC JSON',
-    stringifyJson(row.diagnostic),
-  ].filter((line): line is string => line !== null)
+  ].filter((line): line is string => line !== null).join('\n')
 
-  return lines.join('\n')
+  // Si le diagnostic est un objet MatchDebug valide, on l'affiche en 5 étapes
+  if (row.diagnostic && typeof row.diagnostic === 'object' && !Array.isArray(row.diagnostic)) {
+    const debug = row.diagnostic as unknown as MatchDebug
+    if (debug.requestedName && debug.candidates) {
+      return header + formatDiagnosticForCopy(debug, row.corrected_product_name ?? undefined)
+    }
+  }
+
+  // Fallback : affichage basique + JSON brut
+  return header + 'DIAGNOSTIC JSON\n' + stringifyJson(row.diagnostic)
 }
 
 function CorrectionBadge({ type }: { type: string }) {
