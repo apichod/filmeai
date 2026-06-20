@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,22 @@ function getSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
+
+function getAuthClient(req: NextRequest) {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return req.cookies.get(name)?.value
+        },
+        set() {},
+        remove() {},
+      },
+    }
   )
 }
 
@@ -124,6 +141,54 @@ function isAllowedOrigin(req: NextRequest) {
       hostname === '127.0.0.1'
   } catch {
     return false
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const authClient = getAuthClient(req)
+    const { data: { user }, error: userError } = await authClient.auth.getUser()
+    if (userError || !user) {
+      return json({ error: 'Non autorisé.' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(req.url)
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '100', 10), 1), 300)
+    const source = cleanText(searchParams.get('source'), 80)
+    const correctionType = cleanText(searchParams.get('correctionType'), 80)
+    const query = cleanText(searchParams.get('q'), 160)
+
+    const supabase = getSupabase()
+    const orgId = await getOrgId(supabase)
+    if (!orgId) return json({ corrections: [] })
+
+    let request = supabase
+      .from('catalog_correction_events')
+      .select('*')
+      .eq('organization_id', orgId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (source) request = request.eq('source', source)
+    if (correctionType) request = request.eq('correction_type', correctionType)
+    if (query) {
+      const safeQuery = query.replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim()
+      const pattern = `%${safeQuery}%`
+      request = request.or([
+        `requested_text.ilike.${pattern}`,
+        `matching_raw.ilike.${pattern}`,
+        `search_query.ilike.${pattern}`,
+        `ai_selected_product_name.ilike.${pattern}`,
+        `corrected_product_name.ilike.${pattern}`,
+      ].join(','))
+    }
+
+    const { data, error } = await request
+    if (error) return json({ error: error.message }, { status: 500 })
+    return json({ corrections: data || [] })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return json({ error: message }, { status: 500 })
   }
 }
 

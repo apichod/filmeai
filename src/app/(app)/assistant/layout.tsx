@@ -6,6 +6,7 @@ const tabs = [
   { label: 'Apparence', href: '/assistant/appearance' },
   { label: 'Comportement', href: '/assistant/behavior' },
   { label: 'Connaissances', href: '/assistant/knowledge' },
+  { label: 'Corrections IA', href: '/assistant/corrections' },
   { label: 'Conditions', href: '/assistant/conditions' },
   { label: 'Devis', href: '/assistant/quotes' },
   { label: 'Intégration', href: '/assistant/integration' },
