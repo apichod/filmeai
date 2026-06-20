@@ -435,6 +435,20 @@ export function deterministicAutoSelect(set: CandidateSet): { product: Product; 
     .sort((a, b) => b.score - a.score)
 
   const best = ranked[0]
+
+  // Si plusieurs candidats ont le même score maximal et que le terme demandé
+  // ne contient pas de discriminant de marque ou de monture, ne pas choisir
+  // arbitrairement — laisser l'UI afficher les alternatives.
+  const tied = ranked.filter(r => Math.abs(r.score - best.score) < 0.01)
+  if (tied.length >= 2) {
+    const raw = normalizeText(stripQuantityPrefix(set.item.raw))
+    const query = normalizeText(set.item.query)
+    const hasBrand = /\b(sony|canon|sigma|zeiss|tamron|fuji|nikon|leica)\b/.test(raw) || /\b(sony|canon|sigma|zeiss|tamron|fuji|nikon|leica)\b/.test(query)
+    const hasMount = /\b(fe|rf|ef|pl|e-mount|mft|f-mount)\b/.test(raw) || /\b(fe|rf|ef|pl|e-mount|mft|f-mount)\b/.test(query)
+    const hasAperture = /\bf\s*\/?\s*(1\.2|1\.4|1\.8|2\.8|4)\b/.test(raw) || /\b(1\.2|1\.4|1\.8|2\.8)\b/.test(raw)
+    if (!hasBrand && !hasMount && !hasAperture) return null
+  }
+
   const haystack = normalizeText(`${best.product.name} ${best.product.description || ''}`)
   const raw = normalizeText(stripQuantityPrefix(set.item.raw))
   const query = normalizeText(set.item.query)
