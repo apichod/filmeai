@@ -30,12 +30,9 @@ export function normalizedSignalTerm(value: string): string {
   return normalizeText(stripQuantityPrefix(value))
 }
 
-import { CAMERA_MODELS_RE } from './constants'
-
 export function hasPreciseReference(value: string): boolean {
   const text = normalizeText(value)
-  return CAMERA_MODELS_RE.test(text) ||
-    /\b\d{2,3}\s*-\s*\d{2,3}\b/.test(text) ||
+  return /\b\d{2,3}\s*-\s*\d{2,3}\b/.test(text) ||
     /\b\d{2,4}\s*(mm|gb|go|wh|w)\b/.test(text) ||
     /\b\d+\s*\/\s*\d+\b/.test(text) ||
     /\bf\s*\/?\s*(?:1\.2|1\.4|1\.8|2\.8|4)\b/.test(text) ||

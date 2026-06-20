@@ -1,6 +1,5 @@
 // Doctrine matching: lire ./DOCTRINE.md avant modification. Généraliser l'intention, éviter les exceptions produit.
 import { getDefaultOrganizationId, getSupabaseAdmin } from './db'
-import { CAMERA_MODELS_RE } from './constants'
 import { hasPreciseReference, normalizeText, normalizedSignalTerm, significantTokens, STOPWORDS } from './text'
 import type { CatalogSignal, ExtractedItem, Product } from './types'
 
@@ -61,10 +60,10 @@ function isCameraModelToPackSignal(signal: CatalogSignal): boolean {
 
 function itemLooksLikeCameraAccessoryRequest(item: ExtractedItem): boolean {
   const text = normalizeText(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
-  const hasCameraModel = CAMERA_MODELS_RE.test(text)
   const hasAccessoryHead = /\b(cable|câble|declencheur|déclencheur|trigger|poignee|poignée|cage|rig|support|adaptateur|adapter|alim|alimentation|batterie|battery|chargeur|plate|plaque)\b/.test(text)
   const explicitlyAsksCamera = /\b(camera|caméra|boitier|boîtier|body|pack|kit)\b/.test(text)
-  return hasCameraModel && hasAccessoryHead && !explicitlyAsksCamera
+  const hasBrand = /\b(sony|canon|blackmagic|arri)\b/.test(text)
+  return hasBrand && hasAccessoryHead && !explicitlyAsksCamera
 }
 
 export function signalMatchesItem(signal: CatalogSignal, item: ExtractedItem): boolean {
