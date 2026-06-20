@@ -139,6 +139,10 @@ const rawItems = candidateSets.map((set, index) => {
         productId: selection.product_id,
         confidence: selection.confidence,
         reason: selection.reason || null,
+        usedForSelection: Boolean(aiSelected),
+        rejectedReason: !aiSelected && selection
+          ? `Confidence ${selection.confidence} < seuil ${MIN_RERANK_CONFIDENCE}`
+          : null,
       } : null,
       deterministic: deterministic ? {
         productId: deterministic.product.id,

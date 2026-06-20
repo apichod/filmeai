@@ -16,12 +16,15 @@ import type { CandidateSet, ParseQuoteRequestBody } from './types'
 export type { ParseQuoteRequestBody }
 
 export async function parseQuoteRequest(body: ParseQuoteRequestBody) {
+  const t0 = Date.now()
   const {
     message,
     quoteExtractionPrompt: bodyQuoteExtractionPrompt,
     quoteRerankPrompt: bodyQuoteRerankPrompt,
     quoteBackendPrompt: bodyQuoteBackendPrompt,
   } = body
+
+  console.log('[matching] ▶ start', { messageLength: message.length })
 
   let extractionPrompt: string
   let rerankPrompt: string
@@ -40,6 +43,8 @@ export async function parseQuoteRequest(body: ParseQuoteRequestBody) {
   }
 
   const approvedSignals = await getApprovedCatalogSignals()
+  console.log('[matching] signals', { count: approvedSignals.length })
+
   const learnedGlossary = buildCatalogSignalsGlossary(approvedSignals)
   const finalExtractionPrompt = learnedGlossary
     ? `${extractionPrompt}
@@ -48,7 +53,21 @@ ${learnedGlossary}`
     : extractionPrompt
 
   const extractedItems = await extractItems(message, finalExtractionPrompt)
-  if (extractedItems.length === 0) return { items: [] }
+  console.log('[matching] extraction', {
+    count: extractedItems.length,
+    items: extractedItems.map(i => ({
+      raw: i.raw,
+      query: i.query,
+      queryChanged: i.queryDebug?.changed,
+      qty: i.quantity,
+      section: i.section,
+    })),
+  })
+
+  if (extractedItems.length === 0) {
+    console.log('[matching] ✗ no items extracted')
+    return { items: [] }
+  }
 
   const embeddingMap = await createEmbeddingMap(
     extractedItems.flatMap(item => [item.query, stripQuantityPrefix(item.raw)])
@@ -57,6 +76,15 @@ ${learnedGlossary}`
   const candidateSets: CandidateSet[] = await Promise.all(
     extractedItems.map(async item => {
       const result = await candidateSearchWithDebug(item, embeddingMap, approvedSignals)
+      console.log('[matching] search', {
+        raw: item.raw,
+        query: item.query,
+        signals: result.debug.signalResults,
+        direct: result.debug.directResults,
+        semantic: result.debug.semanticExpandedResults,
+        candidatesAfterFilter: result.debug.candidatesAfterFilter,
+        removedUnsafe: result.debug.removedUnsafe,
+      })
       return {
         item,
         candidates: result.products,
@@ -66,7 +94,23 @@ ${learnedGlossary}`
   )
 
   const selections = await rerankAll(candidateSets, rerankPrompt)
+  console.log('[matching] rerank raw', selections.map(s => ({
+    index: s.index,
+    productId: s.product_id,
+    confidence: s.confidence,
+    reason: s.reason,
+  })))
+
   const items = await buildMatchedQuoteItems(candidateSets, selections, approvedSignals)
+  console.log('[matching] ✔ done', {
+    ms: Date.now() - t0,
+    results: items.map(i => ({
+      requested: i.requestedName,
+      matched: i.matched?.name ?? null,
+      selectedBy: i.debug?.selectedBy ?? null,
+      confidence: i.confidence,
+    })),
+  })
 
   return { items }
 }
