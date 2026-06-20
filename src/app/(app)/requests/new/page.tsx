@@ -57,6 +57,7 @@ type MatchDebug = {
   }
   finalChoice: { id: string; name: string } | null
   signals: Array<{
+    id?: string | null
     term: string
     normalizedTerm?: string | null
     productId?: string | null
@@ -279,6 +280,9 @@ function formatDiagnosticForCopy(debug: MatchDebug, operatorProductName?: string
   // ── Étape 1 : Extraction ──────────────────────────────────────────────────
   lines.push('ÉTAPE 1 — EXTRACTION')
   lines.push(`  Demandé   : ${debug.requestedName}`)
+  if (debug.matchingRaw && debug.matchingRaw !== debug.requestedName) {
+    lines.push(`  Raw       : ${debug.matchingRaw}`)
+  }
   lines.push(`  Query     : ${debug.searchQuery}`)
   if (debug.query) {
     const changed = debug.query.changed || debug.requestedName.trim() !== debug.searchQuery.trim()
@@ -376,6 +380,18 @@ function formatDiagnosticForCopy(debug: MatchDebug, operatorProductName?: string
 
 function MatchDiagnosticPanel({ debug, operatorProduct }: { debug: MatchDebug; operatorProduct?: Product | null }) {
   const [copied, setCopied] = useState(false)
+  const [deletingSignalId, setDeletingSignalId] = useState<string | null>(null)
+  const [deletedSignalIds, setDeletedSignalIds] = useState<Set<string>>(new Set())
+
+  async function deleteSignal(id: string) {
+    setDeletingSignalId(id)
+    try {
+      const res = await fetch(`/api/catalog-signals/${id}`, { method: 'DELETE' })
+      if (res.ok) setDeletedSignalIds(prev => { const s = new Set(prev); s.add(id); return s })
+    } finally {
+      setDeletingSignalId(null)
+    }
+  }
 
   async function copyDiagnostic() {
     const text = formatDiagnosticForCopy(debug, operatorProduct?.name ?? undefined)
@@ -454,12 +470,31 @@ function MatchDiagnosticPanel({ debug, operatorProduct }: { debug: MatchDebug; o
             <p className="mt-1 text-slate-400">Aucun signal actif pour cette ligne.</p>
           ) : (
             <div className="mt-1 space-y-1">
-              {debug.signals.slice(0, 4).map((signal, i) => (
-                <div key={`${signal.term}-${i}`} className="rounded-lg bg-white p-2 ring-1 ring-slate-100">
-                  <p className="font-medium text-slate-800">{signal.term} → {signal.productName}</p>
-                  <p className="text-[11px] text-slate-400">{signal.instructionOnly ? 'Instruction' : 'Association'} · {signal.source || 'source inconnue'} · occurrences {signal.occurrences ?? 0}</p>
-                </div>
-              ))}
+              {debug.signals.slice(0, 4).map((signal, i) => {
+                const deleted = signal.id ? deletedSignalIds.has(signal.id) : false
+                return (
+                  <div key={`${signal.term}-${i}`} className={`rounded-lg bg-white p-2 ring-1 ${deleted ? 'opacity-40 ring-red-100' : 'ring-slate-100'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-800">{signal.term} → {signal.productName}</p>
+                        <p className="text-[11px] text-slate-400">{signal.instructionOnly ? 'Instruction' : 'Association'} · {signal.source || 'source inconnue'} · occurrences {signal.occurrences ?? 0}</p>
+                      </div>
+                      {signal.id && !deleted && (
+                        <button
+                          type="button"
+                          onClick={() => void deleteSignal(signal.id!)}
+                          disabled={deletingSignalId === signal.id}
+                          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
+                          title="Supprimer ce signal"
+                        >
+                          {deletingSignalId === signal.id ? '…' : 'Supprimer'}
+                        </button>
+                      )}
+                      {deleted && <span className="shrink-0 text-[11px] text-red-400">Supprimé</span>}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

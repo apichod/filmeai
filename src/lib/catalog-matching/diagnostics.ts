@@ -128,6 +128,7 @@ const rawItems = candidateSets.map((set, index) => {
       },
       finalChoice: selected ? { id: selected.id, name: selected.name } : null,
       signals: matchingSignals.map(signal => ({
+        id: signal.id || null,
         term: signal.term,
         normalizedTerm: signal.normalized_term,
         productId: signal.product_id,

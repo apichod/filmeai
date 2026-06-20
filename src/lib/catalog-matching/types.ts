@@ -1,4 +1,5 @@
 export type CatalogSignal = {
+  id?: string
   term: string
   normalized_term: string | null
   product_id: string | null

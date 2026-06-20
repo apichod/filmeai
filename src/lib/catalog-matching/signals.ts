@@ -11,7 +11,7 @@ export async function getApprovedCatalogSignals(): Promise<CatalogSignal[]> {
     const supabase = getSupabaseAdmin()
     const { data, error } = await supabase
       .from('catalog_signals')
-      .select('term, normalized_term, product_id, product_name, source, confidence, occurrences')
+      .select('id, term, normalized_term, product_id, product_name, source, confidence, occurrences')
       .eq('organization_id', organizationId)
       .eq('approved', true)
       .order('occurrences', { ascending: false })
