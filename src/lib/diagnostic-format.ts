@@ -84,7 +84,7 @@ export function rootCauseSummary(debug: MatchDebug): string {
   const after = debug.search?.candidatesAfterFilter ?? 0
   const unsafe = debug.search?.removedUnsafe ?? 0
   if (before === 0) return '✗ AUCUN CANDIDAT — la recherche vectorielle n\'a rien trouvé. Créer un signal dans /assistant/knowledge ou vérifier le nom du produit en base.'
-  if (after === 0 && unsafe > 0) return `✗ TOUS BLOQUÉS PAR GARDE-FOUS — ${before} candidats trouvés, ${unsafe} rejetés pour incompatibilité (monture, type…).`
+  if (after === 0 && unsafe > 0) return `✗ TOUS BLOQUÉS PAR GARDE-FOUS — ${before} candidats trouvés, ${unsafe} incompatibles (monture/type). Si le bon produit existe au catalogue, créer un signal dans /assistant/knowledge.`
   if (debug.rerank?.productId && debug.rerank.confidence < 0.5) return `✗ CONFIANCE TROP FAIBLE — reranker a proposé un produit à ${Math.round(debug.rerank.confidence * 100)}% (seuil 50%). Améliorer le prompt ou créer un signal.`
   if (after > 0) return `✗ BON PRODUIT ABSENT DES CANDIDATS — ${after} candidats testés, aucun n'est le bon. Cause probable : distance sémantique trop grande entre la demande et le nom catalogue. Créer un signal.`
   return `✗ Aucune correspondance (${before} candidats avant filtre)`

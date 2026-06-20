@@ -108,13 +108,6 @@ export function requestText(item: ExtractedItem): string {
   return normalizeText(`${item.displayRaw || ''} ${item.raw} ${item.query}`)
 }
 
-function productMatchesRsModel(product: Product, model: '3' | '4'): boolean {
-  const name = productNameText(product)
-  const compact = compactText(name)
-  const spacedPattern = new RegExp(`\\b(?:dji\\s*)?(?:ronin\\s*)?rs\\s*${model}(?:\\s*pro)?\\b`)
-  const compactPattern = new RegExp(`(?:dji)?(?:ronin)?rs${model}(?:pro)?`)
-  return spacedPattern.test(name) || compactPattern.test(compact)
-}
 
 /**
  * Gardes structurelles uniquement — pas de liste de modèles hardcodée.
@@ -152,8 +145,6 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     if (!aperturePattern.test(name)) return true
   }
 
-  if (/\bronin\s*rs\s*3\b|\brs3\b/.test(req) && !productMatchesRsModel(product, '3')) return true
-  if (/\bronin\s*rs\s*4\b|\brs4\b/.test(req) && !productMatchesRsModel(product, '4')) return true
 
   return false
 }
