@@ -2,10 +2,10 @@
 import { getSupabaseAdmin } from './db'
 import { openai } from './openai'
 import { isInstructionOnlySignal, matchingSignalsForItem, signalNameMatchesProduct } from './signals'
-import { candidateIsUnsafe, deterministicScore, importantModelTokens, queryHasAllTokens } from './safety'
+import { candidateUnsafeReasons, deterministicScore, importantModelTokens, queryHasAllTokens } from './safety'
 import { normalizeText, significantTokens, spacedModelVariant, stripQuantityPrefix } from './text'
 import { MIN_SIMILARITY } from './types'
-import type { CatalogSignal, EmbeddingMap, ExtractedItem, Product, SearchDebug } from './types'
+import type { CatalogSignal, EmbeddingMap, ExtractedItem, Product, RejectedCandidate, SearchDebug } from './types'
 
 
 
@@ -328,34 +328,41 @@ export async function candidateSearchWithDebug(item: ExtractedItem, embeddingMap
 
   let removedUnsafe = 0
   let removedWeak = 0
+  const topRejected: RejectedCandidate[] = []
 
-  const candidates = allCandidates
-    .map(product => ({
-      product,
-      score: deterministicScore(product, item) + (signalIds.has(product.id) || product.signal_match ? 3 : 0),
-    }))
+  const scored = allCandidates.map(product => ({
+    product,
+    score: deterministicScore(product, item) + (signalIds.has(product.id) || product.signal_match ? 3 : 0),
+  }))
+
+  const candidates = scored
     .filter(({ product, score }) => {
-      // Idée d'hier soir : les signaux validés priment, puis l'IA rerank parmi
-      // une petite liste plausible. Les garde-fous ne doivent pas vider la liste
-      // avant que le diagnostic/reranker ne puissent travailler.
+      // Les garde-fous ne doivent pas vider la liste avant que le reranker puisse travailler.
       if (signalIds.has(product.id) || product.signal_match) return true
 
-      if (candidateIsUnsafe(product, item)) {
+      const unsafeReasons = candidateUnsafeReasons(product, item)
+      if (unsafeReasons.length > 0) {
         removedUnsafe += 1
+        if (topRejected.length < 5) topRejected.push({ name: product.name, score, reason: 'unsafe', unsafeReasons })
         return false
       }
 
       const important = importantModelTokens(item)
-      // Si une référence forte existe, on exige au moins le début de cohérence,
-      // pas une correspondance parfaite de tous les tokens. Sinon on casse les
-      // cas “24-70 F2.8” / “RS3” / “Sony FX3” avant le reranking.
-      if (important.length >= 1 && !queryHasAllTokens(product, important.slice(0, 1))) {
+      const hasImportantToken = important.length === 0 || queryHasAllTokens(product, important.slice(0, 1))
+
+      if (!hasImportantToken) {
         const keep = score >= 0.9
-        if (!keep) removedWeak += 1
+        if (!keep) {
+          removedWeak += 1
+          if (topRejected.length < 5) topRejected.push({ name: product.name, score, reason: 'weak', importantTokens: important, hasImportantToken: false })
+        }
         return keep
       }
       const keep = score >= 0.12
-      if (!keep) removedWeak += 1
+      if (!keep) {
+        removedWeak += 1
+        if (topRejected.length < 5) topRejected.push({ name: product.name, score, reason: 'weak', importantTokens: important, hasImportantToken: true })
+      }
       return keep
     })
     .sort((a, b) => {
@@ -377,6 +384,7 @@ export async function candidateSearchWithDebug(item: ExtractedItem, embeddingMap
       candidatesAfterFilter: candidates.length,
       removedUnsafe,
       removedWeak,
+      topRejected,
     },
   }
 }

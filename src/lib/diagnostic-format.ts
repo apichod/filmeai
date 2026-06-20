@@ -47,6 +47,14 @@ export type MatchDebug = {
     candidatesAfterFilter: number
     removedUnsafe: number
     removedWeak: number
+    topRejected?: Array<{
+      name: string
+      score: number
+      reason: 'unsafe' | 'weak'
+      unsafeReasons?: string[]
+      importantTokens?: string[]
+      hasImportantToken?: boolean
+    }>
   } | null
   candidates: Array<{
     id: string
@@ -146,7 +154,20 @@ export function formatDiagnosticForCopy(debug: MatchDebug, operatorProductName?:
     lines.push(`  Rejetés incompatibles : ${debug.search.removedUnsafe}`)
     lines.push(`  Rejetés score faible  : ${debug.search.removedWeak}`)
     lines.push(`  Candidats retenus     : ${debug.search.candidatesAfterFilter}`)
-    if (debug.search.candidatesAfterFilter === 0) lines.push('  ⚠ Aucun candidat ne passe les filtres')
+    if (debug.search.candidatesAfterFilter === 0) {
+      lines.push('  ⚠ Aucun candidat ne passe les filtres')
+      if (debug.search.topRejected?.length) {
+        lines.push('  Top rejetés :')
+        for (const r of debug.search.topRejected) {
+          const why = r.reason === 'unsafe'
+            ? `INCOMPATIBLE: ${r.unsafeReasons?.join(', ') || '?'}`
+            : r.hasImportantToken
+              ? `FAIBLE (token ok, score=${r.score.toFixed(2)})`
+              : `FAIBLE (token manquant: ${r.importantTokens?.[0] || '?'}, score=${r.score.toFixed(2)})`
+          lines.push(`    · ${r.name} → ${why}`)
+        }
+      }
+    }
   } else {
     lines.push('  non disponible')
   }

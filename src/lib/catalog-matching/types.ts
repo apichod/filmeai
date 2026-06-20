@@ -49,6 +49,15 @@ export type ExtractedItem = {
   queryDebug?: QueryDebug
 }
 
+export type RejectedCandidate = {
+  name: string
+  score: number
+  reason: 'unsafe' | 'weak'
+  unsafeReasons?: string[]
+  importantTokens?: string[]
+  hasImportantToken?: boolean
+}
+
 export type SearchDebug = {
   signalResults: number
   directResults: number
@@ -58,6 +67,7 @@ export type SearchDebug = {
   candidatesAfterFilter: number
   removedUnsafe: number
   removedWeak: number
+  topRejected?: RejectedCandidate[]
 }
 
 export type CandidateSet = {
