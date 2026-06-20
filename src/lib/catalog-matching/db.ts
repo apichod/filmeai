@@ -24,5 +24,6 @@ export async function getDefaultOrganizationId(): Promise<string | null> {
     .maybeSingle()
 
   if (error) throw new Error(error.message)
-  return data?.id ? String(data.id) : null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any)?.id ? String((data as any).id) : null
 }

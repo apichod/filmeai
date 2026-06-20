@@ -139,7 +139,8 @@ export async function hydrateProductMetadata(products: Product[]): Promise<Produ
     .in('id', ids)
 
   const metaById = new Map<string, { enriched_text?: string | null }>()
-  for (const row of data || []) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const row of (data || []) as any[]) {
     metaById.set(String(row.id), { enriched_text: row.enriched_text as string | null })
   }
 
@@ -192,13 +193,14 @@ export async function rpcSearch(query: string, limit = 20, embeddingOverride?: n
     embedding = embRes.data[0].embedding
   }
 
-  const { data, error } = await supabase.rpc('search_products', {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('search_products', {
     query_text: cleanedQuery,
     query_embedding: JSON.stringify(embedding),
     match_count: limit,
   })
 
-  if (error || !data?.length) return []
+  if (error || !(data as unknown[])?.length) return []
   return (data as Product[]).filter(p => (p.similarity || 0) >= MIN_SIMILARITY)
 }
 
