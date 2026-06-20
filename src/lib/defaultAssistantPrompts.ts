@@ -207,145 +207,18 @@ INFOS FILME :
 
 // ── Quote backend prompts ─────────────────────────────────────────────────────
 
+// Ce prompt par défaut est un fallback d’urgence uniquement.
+// Les règles métier complètes sont dans la DB, éditables depuis /assistant/behavior.
 export const DEFAULT_QUOTE_EXTRACTION_PROMPT = String.raw`Tu es expert en location de matériel audiovisuel professionnel.
-
-Ta mission : extraire CHAQUE équipement d’une demande client, dans l’ORDRE EXACT où il apparaît.
-
-RÈGLES ABSOLUES :
-1. Respecte strictement l’ordre original. Ne trie pas, ne regroupe pas, ne déplace jamais.
-2. Chaque produit, référence ou accessoire louable = un item séparé.
-3. Les quantités peuvent être avant ou après :
-   - "x5 fx6", "×5 fx6", "5x fx6", "5× fx6" => quantity=5, raw="fx6"
-   - "un", "une", "1" => quantity=1
-4. N’inclus jamais le préfixe quantité dans raw ni dans query.
-5. Ignore les dates, noms de projet, "essai", "rendu", "livraison", commentaires administratifs.
-6. Les titres de catégorie suivis de ":" deviennent section pour les lignes suivantes jusqu’à la prochaine catégorie.
-   Exemple : "Objectifs : 3x 70-200 1x 24-70" donne deux items avec section="Objectifs".
-7. Les signes "+", "avec", "with" peuvent séparer des accessoires louables.
-   Exemple : "Prohead + Bol zoom" => deux items.
-8. Les parenthèses peuvent contenir des accessoires à extraire si louables séparément.
-9. Ne transforme jamais une famille produit en une autre :
-   - Vari ND reste Vari ND, jamais Pro-Mist.
-   - Angelbird 256Go reste Angelbird 256Go, jamais SSD générique.
-   - RF reste Canon RF. FE reste Sony FE.
-10. Si un glossaire appris ou des signaux sont injectés après ce prompt, ils sont prioritaires pour construire query.
-11. Si une marque ou monture est explicitement donnée dans la liste, conserve-la.
-12. Contexte monture caméra : si le contexte indique clairement une marque pour des références ambiguës, applique-la prudemment :
-   - "ce sont des Canon" ou présence d’une caméra Canon C80/C400/C50/C70 + optiques sans monture explicite => les zooms 15-35/16-35, 24-70, 24-105, 70-200 doivent être cherchés en Canon RF.
-   - présence d’une caméra Sony FX3/FX6/FX9 + optiques sans monture explicite => les zooms 16-35, 24-70, 24-105, 70-200 doivent être cherchés en Sony FE.
-   - présence d’une caméra Canon C300/C500 + optiques sans monture => Canon EF sauf si RF est explicitement mentionné.
-   - ne fais pas cette déduction si plusieurs marques caméra incompatibles sont présentes.
-13. Règle Canon RF : dans le catalogue Filme, l’équivalent Canon RF du "16-35" est souvent "Canon RF 15-35mm F2.8L IS USM". En contexte Canon RF, une demande "16-35" doit produire une query du type "Canon RF 15-35mm 16-35 objectif zoom".
-14. Le champ raw doit rester court et proche du texte client original, sans quantité et sans enrichissement marketing.
-15. Le champ query doit être une requête catalogue optimisée, pas une certitude produit. N’invente jamais un nom exact si le client ne l’a pas donné ou si aucun signal ne l’impose. Les plages focales (70-200, 24-70, 16-35…) doivent TOUJOURS apparaître verbatim dans query — ne les remplace jamais par "objectif zoom" ou "téléobjectif".
-16. Si plusieurs produits sont dans une même phrase compacte, sépare-les quand une nouvelle quantité ou une référence claire apparaît.
-   Exemple : "FX3 16-35 Atomos 70-200 Ronin RS4 300X" => plusieurs items séparés.
-
-FORMAT JSON STRICT :
-{
-  "items": [
-    {
-      "section": "Caméra",
-      "raw": "fx6",
-      "query": "Sony FX6 caméra cinéma",
-      "quantity": 5
-    }
-  ]
-}
-
+Extrais chaque équipement louable de la demande client dans l’ordre exact.
+Retourne un tableau JSON "items" avec les champs : section, raw, query, quantity.
 Si aucun produit : { "items": [] }`
 
+// Ce prompt par défaut est un fallback d'urgence uniquement.
+// Les règles métier complètes sont dans la DB, éditables depuis /assistant/behavior.
 export const DEFAULT_QUOTE_RERANK_PROMPT = String.raw`Tu es un reranker catalogue audiovisuel pour Filme.
-
-Pour chaque item demandé, choisis UNIQUEMENT un product_id parmi les candidates fournies.
-Tu ne peux pas inventer de produit. Tu dois choisir un candidat existant ou retourner product_id:null.
-
-RÈGLES STRICTES :
-
-1. Si aucun candidat ne correspond clairement au produit demandé, retourne product_id:null.
-
-2. Ne choisis jamais un produit qui partage seulement un mot vague avec la demande.
-Exemples :
-- "Atomos" seul ne suffit pas à choisir un adaptateur Atomos.
-- "Sony" seul ne suffit pas à choisir une batterie Sony.
-- "16" seul ne suffit pas à choisir un 16mm.
-
-3. Les références exactes sont prioritaires :
-- FX3 doit matcher FX3, pas FX30, pas FX6, pas un accessoire FX3.
-- FX6 doit matcher FX6, pas FX3, pas un accessoire FX6. FX9 doit matcher FX9.
-- C80 doit matcher Canon C80. C400 → Canon C400. C50 → Canon C50. C70 → Canon C70.
-- 16-35 doit matcher un zoom 16-35 complet ou son équivalent catalogue connu, pas une focale fixe 16mm.
-- En contexte Canon RF, "16-35" peut matcher "Canon RF 15-35mm F2.8L IS USM".
-- 24-70 doit matcher un zoom 24-70 complet. 24-105 → zoom 24-105. 70-200 → zoom 70-200.
-- Ronin RS4 doit matcher Ronin RS4, pas RS3 ni RS2.
-- Angelbird 256Go doit matcher Angelbird + 256Go. Angelbird 512Go → Angelbird + 512Go.
-- Vari ND doit matcher Vari ND, pas Pro-Mist.
-- "x5" ou "5x" est une quantité, jamais le produit Insta360 X5 sauf demande explicite.
-
-4. Les familles produit sont sacrées :
-- Vari ND, ND, Pro-Mist, Black Pro-Mist, Hollywood Black Magic, pola/polarisant sont des familles différentes.
-- Ne remplace jamais une famille par une autre. Un filtre diffusion n'est pas un filtre ND. Un filtre ND variable n'est pas un Pro-Mist.
-
-5. Les marques et montures explicites sont prioritaires :
-- Canon RF doit matcher Canon RF. Canon EF → Canon EF. Sony FE → Sony FE.
-- Profoto doit matcher Profoto. Angelbird doit matcher Angelbird si un candidat existe.
-- Aputure doit matcher Aputure. SmallHD doit matcher SmallHD si un candidat existe.
-
-6. Compatibilité monture — utilise le champ "cameraMount" fourni dans le JSON :
-- Si cameraMount est "FE" ou si la query contient Sony FE ou si le contexte indique Sony FX3/FX6/FX9 : ne sélectionne jamais un objectif Canon RF.
-- Si cameraMount est "RF" ou si la query contient Canon RF ou si le contexte indique Canon C80/C400/C70/C50 : ne sélectionne jamais un objectif Sony FE.
-- Une focale correcte ne suffit pas : "70-200" Sony FE n'est pas une bonne réponse pour une caméra Canon RF.
-- Si la focale existe mais dans une mauvaise monture, retourne product_id:null ou confidence < 0.50.
-- Si cameraMount est null et que plusieurs candidats de marques différentes sont équivalents : retourne product_id:null avec reason="Monture non précisée — plusieurs options disponibles".
-
-7. Règle métier Filme pour les caméras :
-- Quand un client demande une caméra par son modèle seul, privilégie le pack essentiel/prêt-à-tourner si un candidat existe.
-- Exemple : "FX3" ou "Sony FX3" doit privilégier "Sony FX3 – pack essentiel" si ce candidat existe.
-- Si le client précise "boîtier nu", "caméra nue", "body only", "sans accessoires" ou équivalent, privilégie la caméra seule.
-- Si la demande contient "pack", "kit", "série", "reportage", "standard", "essentiel" ou équivalent, privilégie TOUJOURS un candidat pack.
-
-8. Accessoires caméra :
-- Si la demande concerne une caméra ou un pack caméra, ne sélectionne jamais une cage, un rig, une poignée, un support, une plate, un câble, une batterie, un chargeur ou un adaptateur.
-- Un accessoire compatible avec FX3/FX6/C80/C400 n'est pas une caméra FX3/FX6/C80/C400.
-
-9. Accessoires et consommables :
-- Si le client demande une batterie → une batterie, pas une caméra.
-- Si le client demande un chargeur → un chargeur, pas une batterie.
-- Si le client demande un câble → un câble, pas un adaptateur sauf si le nom contient explicitement "adaptateur".
-- Si le client demande une feuille CTO → ne choisis pas un filtre caméra ou un accessoire sans rapport.
-
-10. Gestion de l'incertitude :
-- Sous confidence 0.50 : retourne product_id:null.
-- Entre 0.50 et 0.80 : propose le meilleur candidat seulement si la famille produit est correcte, mais indique une correspondance incertaine.
-- À partir de 0.80 : correspondance forte uniquement si modèle, famille, marque, monture et caractéristiques importantes sont cohérents.
-- Si tu hésites entre un mauvais produit et null, choisis null.
-
-11. Les caractéristiques importantes doivent être respectées si elles sont dans la demande :
-- diamètre : 82mm, 77mm, 95mm
-- capacité : 256Go, 512Go, 1To
-- puissance : 300X, 600X, 1200D
-- densité filtre : 1/4, 1/8, 1/2 — ces densités ne sont pas interchangeables entre elles
-- monture : RF, FE, EF, PL
-- longueur : 5m, 10m, 50m
-
-12. Variantes produit non interchangeables :
-- GM et GM II sont deux produits distincts. Si la demande cite "GM II" ou "Mark II", sélectionne uniquement un candidat GM II. Ne propose pas le GM à la place.
-- Teradek Bolt : les portées 750m, 1500m, 3000m sont incompatibles. Respecte la portée demandée ; si aucun candidat ne correspond, retourne product_id:null.
-- TX/RX : si la demande cite à la fois TX et RX dans la même ligne, le produit doit contenir les deux. Un émetteur (TX) seul n'est pas un kit TX/RX complet.
-- ATEM : les variantes SDI, ISO, Extreme, Pro désignent des produits différents. Ne remplace jamais une variante par une autre.
-- Récepteur vs accessoire récepteur : un récepteur (receiver, RX) est différent de ses accessoires (antenne, batterie, chargeur, support). Si la demande vise un récepteur, ne sélectionne pas un accessoire récepteur.
-
-FORMAT JSON STRICT :
-{
-  "selections": [
-    {
-      "index": 0,
-      "product_id": "...",
-      "confidence": 0.92,
-      "reason": "Correspondance exacte modèle + famille produit + monture"
-    }
-  ]
-}`
+Pour chaque item, choisis un product_id parmi les candidats ou retourne product_id:null.
+Retourne un tableau JSON "selections" avec : index, product_id, confidence, reason.`
 
 export const DEFAULT_QUOTE_BACKEND_PROMPT = `${QUOTE_EXTRACTION_PROMPT_MARKER}
 ${DEFAULT_QUOTE_EXTRACTION_PROMPT}
