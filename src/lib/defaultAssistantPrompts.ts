@@ -181,19 +181,25 @@ INFOS FILME :
 
 export const DEFAULT_QUOTE_EXTRACTION_PROMPT = String.raw`Tu es expert en location de matériel audiovisuel professionnel.
 
-Ta mission : extraire CHAQUE équipement d'une liste matériel, dans l'ORDRE EXACT où il apparaît.
+Ta mission : extraire CHAQUE équipement d’une liste matériel, dans l’ORDRE EXACT où il apparaît.
 
 RÈGLES ABSOLUES :
-1. Les préfixes de quantité peuvent être écrits AVANT l'article : "x5 fx6", "×5 fx6", "5x fx6", "5× fx6" signifient quantity=5 et raw="fx6". N'inclus JAMAIS "x5" dans la query produit.
-1b. "un", "une", "1", "un(e)" devant un produit signifie quantity=1. Exemple : "Une C400 avec une C50" = deux items séparés, quantity=1 chacun.
-2. Développe les abréviations en termes de recherche complets avec marque, mais garde raw court et propre.
-3. Chaque modèle/référence différente = un item séparé.
-4. Ignore les dates et infos administratives (Essai, Rendu, →, etc.).
-5. Si un texte contient un accessoire entre parenthèses, extrais aussi l'accessoire s'il est louable séparément.
-6. Respecte strictement l'ordre d'apparition : ne trie pas, ne regroupe pas, ne déplace jamais.
-7. Quand une catégorie/titre est indiquée avec ":" (exemples : "Caméra :", "Objectifs :", "Moniteur :", "Data :", "Énergie :", "Machinerie :"), mets ce titre dans le champ "section" de tous les items qui suivent jusqu'à la prochaine catégorie.
-8. Pour "Objectifs : 3x 70-200 1x 24-70 1x 16-35", retourne trois items dans cet ordre, tous avec section="Objectifs".
-9. Les signes + séparent souvent des articles louables : "Prohead + Bol zoom" = deux lignes, "Octa 5 with all diff + Speedring" = au moins Octa 5 puis Speedring.
+1. Les préfixes de quantité peuvent être écrits AVANT l’article : "x5 fx6", "×5 fx6", "5x fx6", "5× fx6" signifient quantity=5 et raw="fx6". N’inclus JAMAIS "x5" dans la query produit.
+2. "un", "une", "1", "un(e)" devant un produit signifie quantity=1. Exemple : "Une C400 avec une C50" = deux items séparés, quantity=1 chacun.
+3. Développe les abréviations en termes de recherche complets avec marque, mais garde raw court et propre.
+4. Chaque modèle/référence différente = un item séparé.
+5. Ignore les dates et infos administratives (Essai, Rendu, →, etc.).
+6. Si un texte contient un accessoire entre parenthèses, extrais aussi l’accessoire s’il est louable séparément.
+7. Respecte strictement l’ordre d’apparition : ne trie pas, ne regroupe pas, ne déplace jamais.
+8. Quand une catégorie/titre est indiquée avec ":" (exemples : "Caméra :", "Objectifs :", "Moniteur :", "Data :", "Énergie :", "Machinerie :"), mets ce titre dans le champ "section" de tous les items qui suivent jusqu’à la prochaine catégorie.
+9. Pour "Objectifs : 3x 70-200 1x 24-70 1x 16-35", retourne trois items dans cet ordre, tous avec section="Objectifs".
+10. Les signes + séparent souvent des articles louables : "Prohead + Bol zoom" = deux lignes, "Octa 5 with all diff + Speedring" = au moins Octa 5 puis Speedring.
+
+RÈGLES POUR LES RÉFÉRENCES TECHNIQUES (CRITIQUE) :
+- Les plages focales (70-200, 24-70, 16-35, 24-105, etc.) doivent TOUJOURS être conservées verbatim dans la query. Ne les remplace JAMAIS par une description générique comme "objectif zoom" ou "téléobjectif". Exemple : raw="70-200" → query="objectif 70-200mm" et NON "objectif zoom".
+- Les références modèle (FX3, C400, RS4, Bolt 3000, etc.) doivent apparaître dans la query telles quelles.
+- Si une ouverture est précisée près d’une focale (ex: "70-200 F2.8"), inclus-la dans la query : query="objectif 70-200mm F2.8".
+- Si une marque est explicitement mentionnée (Sony, Canon, Sigma…), inclus-la dans la query.
 
 RÈGLES DE GLOSSAIRE :
 - N’embarque pas de glossaire métier figé dans ce prompt.
@@ -215,6 +221,7 @@ Règles strictes :
 - Si la demande concerne une caméra ou un pack caméra (ex: "Sony FX6 pack caméra"), ne sélectionne jamais une cage, un rig, un support, une poignée, un câble ou un adaptateur, même si le nom contient FX6.
 - Les références modèle sont sacrées : fx6 doit matcher FX6, 70-200 doit matcher 70-200, black promist 82mm doit matcher Black Pro-Mist 82mm.
 - "x5" ou "5x" est une quantité, jamais le produit Insta360 X5 sauf si le client a explicitement demandé Insta360 X5.
+- Ambiguïté de marque : si la demande ne précise pas de marque (ex: juste "70-200" sans Sony/Canon/Sigma) et que plusieurs candidats de marques différentes sont également valides, retourne product_id:null avec reason="Marque non précisée — plusieurs options disponibles". Le moteur affichera les alternatives à l'utilisateur.
 - Donne confidence entre 0 et 1. Sous 0.50, utilise product_id:null. Entre 0.50 et 0.67, tu peux proposer le meilleur candidat mais explique que la correspondance est à vérifier.
 
 JSON : { "selections": [{ "index": 0, "product_id": "..." | null, "confidence": 0.92, "reason": "..." }] }`

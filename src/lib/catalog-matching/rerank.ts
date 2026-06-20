@@ -3,22 +3,6 @@ import { openai } from './openai'
 import type { CandidateSet, RerankResult, RerankSelection } from './types'
 
 export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: string): Promise<RerankSelection[]> {
-  const context = candidateSets.map((set, index) => ({
-    index,
-    requested: set.item.displayRaw || set.item.raw,
-    raw: set.item.raw,
-    query: set.item.query,
-    quantity: set.item.quantity,
-    section: set.item.section,
-    top_candidates: set.candidates.slice(0, 5).map(candidate => ({
-      id: candidate.id,
-      name: candidate.name,
-      description: (candidate.description || '').slice(0, 320),
-      similarity: candidate.similarity || null,
-      is_bundle: candidate.is_bundle || false,
-    })),
-  }))
-
   const payload = candidateSets.map((set, index) => ({
     index,
     requested: set.item.displayRaw || set.item.raw,
@@ -43,7 +27,7 @@ export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: str
         role: 'system',
         content: rerankPrompt,
       },
-      { role: 'user', content: JSON.stringify({ context, items: payload }) },
+      { role: 'user', content: JSON.stringify({ items: payload }) },
     ],
     response_format: { type: 'json_object' },
     temperature: 0,
