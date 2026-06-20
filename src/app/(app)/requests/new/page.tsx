@@ -254,83 +254,120 @@ function rootCauseSummary(debug: MatchDebug): string {
 }
 
 function formatDiagnosticForCopy(debug: MatchDebug, operatorProductName?: string) {
+  const SEP = '─────────────────────────────────────────'
   const lines: string[] = []
 
-  lines.push('DIAGNOSTIC IA FILMEAI')
+  lines.push(`DIAGNOSTIC IA FILMEAI — ${debug.requestedName}`)
+  lines.push(SEP)
   lines.push('')
-  lines.push('RÉSUMÉ')
-  lines.push(rootCauseSummary(debug))
-  lines.push(`Demandé         : ${debug.requestedName}`)
-  lines.push(`Query recherche : ${debug.searchQuery}`)
-  lines.push(`Choix IA        : ${debug.finalChoice?.name || 'aucun'}${debug.selectedBy ? ` (${sourceLabel(debug.selectedBy)})` : ''}`)
+
+  // ── Résultat final ────────────────────────────────────────────────────────
+  lines.push('RÉSULTAT FINAL')
+  lines.push(`  ${rootCauseSummary(debug)}`)
   if (operatorProductName !== undefined) {
     const changed = operatorProductName !== debug.finalChoice?.name
-    lines.push(`Choix opérateur : ${operatorProductName || 'aucun (intervention Filme)'}${changed ? ' ← MODIFIÉ' : ''}`)
+    lines.push(`  Choix IA        : ${debug.finalChoice?.name || 'aucun'}${debug.selectedBy ? ` (${sourceLabel(debug.selectedBy)})` : ''}`)
+    lines.push(`  Choix opérateur : ${operatorProductName || 'aucun (intervention Filme)'}${changed ? ' ← MODIFIÉ' : ''}`)
+  } else {
+    lines.push(`  Choix IA : ${debug.finalChoice?.name || 'aucun'}${debug.selectedBy ? ` (${sourceLabel(debug.selectedBy)})` : ''}`)
   }
-
   if (debug.requestContext) {
-    lines.push('')
-    lines.push('CONTEXTE GLOBAL REÇU')
-    lines.push(debug.requestContext)
+    lines.push(`  Contexte : ${debug.requestContext}`)
   }
+  lines.push('')
 
+  // ── Étape 1 : Extraction ──────────────────────────────────────────────────
+  lines.push('ÉTAPE 1 — EXTRACTION')
+  lines.push(`  Demandé   : ${debug.requestedName}`)
+  lines.push(`  Query     : ${debug.searchQuery}`)
   if (debug.query) {
-    lines.push('')
-    lines.push('QUERY')
-    lines.push(`Prompt initial  : ${debug.query.queryFromPrompt}`)
-    lines.push(`Modifiée        : ${debug.query.changed ? 'oui' : 'non'}`)
+    const changed = debug.query.changed || debug.requestedName.trim() !== debug.searchQuery.trim()
+    lines.push(`  Modifiée  : ${changed ? 'oui' : 'non'}`)
     if (debug.query.influences.length > 0) {
-      debug.query.influences.forEach(influence => {
-        lines.push(`  · ${influence.label} [${influence.source}] : ${influence.detail}`)
+      lines.push('  Influences :')
+      debug.query.influences.forEach(inf => {
+        lines.push(`    · ${inf.label} : ${inf.detail}`)
       })
+    } else {
+      lines.push('  Influences : aucune')
     }
   }
-
+  lines.push(`  Quantité  : ${debug.quantity}`)
+  lines.push(`  Section   : ${debug.section || '—'}`)
   lines.push('')
-  lines.push('SIGNAUX UTILISÉS')
-  if (debug.signals.length === 0) {
-    lines.push('- aucun')
+
+  // ── Étape 2 : Recherche catalogue ─────────────────────────────────────────
+  lines.push('ÉTAPE 2 — RECHERCHE CATALOGUE')
+  if (debug.search) {
+    lines.push(`  Signaux appris    : ${debug.search.signalResults} résultats`)
+    lines.push(`  Direct nom/texte  : ${debug.search.directResults} résultats`)
+    lines.push(`  Vectoriel query   : ${debug.search.semanticExpandedResults} résultats`)
+    lines.push(`  Vectoriel brut    : ${debug.search.semanticRawResults} résultats`)
+    lines.push(`  Total (dédupliqué): ${debug.search.candidatesBeforeFilter} candidats`)
   } else {
-    debug.signals.forEach(signal => {
-      lines.push(`- ${signal.term} → ${signal.productName} | ${signal.instructionOnly ? 'instruction' : 'association'} | occurrences ${signal.occurrences ?? 0}`)
+    lines.push('  non disponible')
+  }
+  lines.push('')
+
+  // ── Étape 3 : Filtrage / garde-fous ──────────────────────────────────────
+  lines.push('ÉTAPE 3 — FILTRAGE GARDE-FOUS')
+  if (debug.search) {
+    const kept = debug.search.candidatesAfterFilter
+    const unsafe = debug.search.removedUnsafe
+    const weak = debug.search.removedWeak
+    lines.push(`  Rejetés incompatibles : ${unsafe}`)
+    lines.push(`  Rejetés score faible  : ${weak}`)
+    lines.push(`  Candidats retenus     : ${kept}`)
+    if (kept === 0) lines.push('  ⚠ Aucun candidat ne passe les filtres')
+  } else {
+    lines.push('  non disponible')
+  }
+  lines.push('')
+
+  // ── Étape 4 : Reranking IA ────────────────────────────────────────────────
+  lines.push('ÉTAPE 4 — RERANKING IA')
+  if (debug.rerank) {
+    if (debug.rerank.productId) {
+      lines.push(`  Choix reranker    : ${debug.decisionCandidates?.rerank?.name || debug.rerank.productId}`)
+      lines.push(`  Confiance         : ${Math.round(debug.rerank.confidence * 100)}%${debug.rerank.confidence < 0.5 ? ' ← sous le seuil (50%), ignoré' : ''}`)
+      if (debug.rerank.reason) lines.push(`  Raison            : ${debug.rerank.reason}`)
+    } else {
+      lines.push('  Aucun produit sélectionné par le reranker')
+    }
+  } else {
+    lines.push('  Reranking non exécuté (aucun candidat)')
+  }
+  lines.push('')
+
+  // ── Étape 5 : Décision finale ─────────────────────────────────────────────
+  lines.push('ÉTAPE 5 — DÉCISION FINALE')
+  lines.push('  Ordre de priorité : signal → pack/kit → reranking → déterministe (fallback)')
+  lines.push(`  Signal        : ${debug.decisionCandidates?.signal?.name || 'aucun'}`)
+  lines.push(`  Pack/kit      : ${debug.decisionCandidates?.packRule?.name || 'aucun'} (règle safety.ts : priorité si demande explicite pack/kit)`)
+  lines.push(`  Reranking IA  : ${debug.decisionCandidates?.rerank?.name || 'aucun'}`)
+  lines.push(`  Déterministe  : ${debug.decisionCandidates?.deterministic?.name || 'aucun'} (fallback si reranker échoue, seuil score ≥ 1.25)`)
+  lines.push(`  → SÉLECTIONNÉ : ${debug.finalChoice?.name || 'aucun'}`)
+  lines.push('')
+
+  // ── Candidats testés ──────────────────────────────────────────────────────
+  lines.push('CANDIDATS TESTÉS')
+  if (debug.candidates.length === 0) {
+    lines.push('  aucun')
+  } else {
+    debug.candidates.forEach((c, i) => {
+      const flags = [
+        c.selected ? '✓ SÉLECTIONNÉ' : null,
+        c.rerankChoice ? 'choix reranker' : null,
+        c.signalMatch ? 'signal' : null,
+        c.unsafe ? `rejeté (${c.unsafeReasons.join(', ')})` : null,
+      ].filter(Boolean).join(' · ')
+      lines.push(`  ${i + 1}. ${c.name}`)
+      lines.push(`     score=${c.deterministicScore} | sim=${c.similarity != null ? Math.round(c.similarity * 100) + '%' : 'n/a'}${flags ? ` | ${flags}` : ''}`)
     })
   }
-
   lines.push('')
-  lines.push('RECHERCHE CATALOGUE')
-  if (debug.search) {
-    lines.push(`- Signaux          : ${debug.search.signalResults}`)
-    lines.push(`- Direct nom/texte : ${debug.search.directResults}`)
-    lines.push(`- Vectoriel query  : ${debug.search.semanticExpandedResults}`)
-    lines.push(`- Vectoriel brut   : ${debug.search.semanticRawResults}`)
-    lines.push(`- Avant filtre     : ${debug.search.candidatesBeforeFilter}`)
-    lines.push(`- Après filtre     : ${debug.search.candidatesAfterFilter}`)
-    lines.push(`- Rejetés unsafe   : ${debug.search.removedUnsafe}`)
-    lines.push(`- Rejetés faibles  : ${debug.search.removedWeak}`)
-  } else {
-    lines.push('- non disponible')
-  }
 
-  lines.push('')
-  lines.push('DÉCISIONS MOTEUR')
-  lines.push(`- Reranking     : ${debug.rerank?.productId ? `${Math.round(debug.rerank.confidence * 100)}% — ${debug.rerank.reason || '(sans raison)'}` : 'aucun choix'}`)
-  lines.push(`- Déterministe  : ${debug.deterministic ? `${debug.deterministic.productName} (score ${debug.deterministic.score})` : 'aucun'}`)
-  lines.push(`- Pack préféré  : ${debug.preferredPack ? `${debug.preferredPack.productName} (score ${debug.preferredPack.score})` : 'aucun'}`)
-
-  lines.push('')
-  lines.push('CANDIDATS TESTÉS')
-  debug.candidates.forEach((candidate, index) => {
-    const flags = [
-      candidate.selected ? 'SÉLECTIONNÉ' : null,
-      candidate.rerankChoice ? 'choix-reranker' : null,
-      candidate.signalMatch ? 'signal' : null,
-      candidate.unsafe ? `UNSAFE(${candidate.unsafeReasons.join(',')})` : null,
-    ].filter(Boolean).join(' · ')
-    lines.push(`${index + 1}. ${candidate.name}`)
-    lines.push(`   score=${candidate.deterministicScore} | sim=${candidate.similarity != null ? Math.round(candidate.similarity * 100) + '%' : 'n/a'}${flags ? ` | ${flags}` : ''}`)
-  })
-
-  lines.push('')
+  // ── JSON brut ─────────────────────────────────────────────────────────────
   lines.push('JSON DEBUG')
   lines.push(JSON.stringify(debug, null, 2))
 
