@@ -403,25 +403,20 @@ function MatchDiagnosticPanel({ debug, operatorProduct }: { debug: MatchDebug; o
 
   const operatorChanged = operatorProduct && operatorProduct.name !== debug.finalChoice?.name
   const rootCause = rootCauseSummary(debug)
+  const success = Boolean(debug.finalChoice)
 
   return (
     <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+
+      {/* ── Header ── */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-slate-900">Diagnostic IA</p>
-          <p className="mt-1 text-[11px] font-medium text-slate-600">{rootCause}</p>
-          <p className="mt-1 text-slate-500">Demandé : <span className="font-medium text-slate-700">{debug.requestedName}</span></p>
-          {debug.matchingRaw && debug.matchingRaw !== debug.requestedName && (
-            <p className="text-slate-500">Terme matching : <span className="font-medium text-slate-700">{debug.matchingRaw}</span></p>
-          )}
-          <p className="text-slate-500">Query : <span className="font-medium text-slate-700">{debug.searchQuery}</span></p>
+          <p className={`mt-0.5 text-[11px] font-medium ${success ? 'text-emerald-700' : 'text-red-600'}`}>{rootCause}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={copyDiagnostic}
-            className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-slate-700"
-          >
+          <button type="button" onClick={copyDiagnostic}
+            className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700">
             {copied ? 'Copié !' : 'Copier'}
           </button>
           <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
@@ -430,6 +425,7 @@ function MatchDiagnosticPanel({ debug, operatorProduct }: { debug: MatchDebug; o
         </div>
       </div>
 
+      {/* ── Sélection opérateur ── */}
       {operatorProduct && (
         <div className={`mt-2 rounded-lg p-2 ring-1 ${operatorChanged ? 'bg-amber-50 ring-amber-200' : 'bg-emerald-50 ring-emerald-200'}`}>
           <p className="text-[11px] uppercase tracking-wide text-slate-400">Sélection opérateur</p>
@@ -440,59 +436,118 @@ function MatchDiagnosticPanel({ debug, operatorProduct }: { debug: MatchDebug; o
         </div>
       )}
 
-      {debug.query && (
-        <div className="mt-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">Pourquoi cette query ?</p>
-          <p className="mt-1 text-slate-500">Prompt initial : <span className="font-medium text-slate-700">{debug.query.queryFromPrompt}</span></p>
-          <p className="text-slate-500">Modifiée après extraction : <span className="font-medium text-slate-700">{debug.query.changed ? 'oui' : 'non'}</span></p>
-          {debug.query.influences.length > 0 && (
+      <div className="mt-3 space-y-2">
+
+        {/* ── Étape 1 — Extraction ── */}
+        <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Étape 1 — Extraction</p>
+          <div className="mt-1 space-y-0.5">
+            <p className="text-slate-500">Demandé : <span className="font-medium text-slate-800">{debug.requestedName}</span></p>
+            {debug.matchingRaw && debug.matchingRaw !== debug.requestedName && (
+              <p className="text-slate-500">Raw : <span className="font-medium text-slate-800">{debug.matchingRaw}</span></p>
+            )}
+            <p className="text-slate-500">Query : <span className="font-medium text-slate-800">{debug.searchQuery}</span>
+              {debug.query?.changed && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-700">modifiée</span>}
+            </p>
+          </div>
+          {debug.query && debug.query.influences.length > 0 && (
             <div className="mt-2 space-y-1">
-              {debug.query.influences.slice(0, 5).map((influence, i) => (
-                <p key={`${influence.source}-${i}`} className="rounded bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
-                  <span className="font-semibold text-slate-700">{influence.label}</span> — {influence.detail}
+              {debug.query.influences.map((inf, i) => (
+                <p key={i} className="rounded bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
+                  <span className="font-semibold text-slate-700">{inf.label}</span> — {inf.detail}
                 </p>
               ))}
             </div>
           )}
         </div>
-      )}
 
-      {debug.finalChoice && (
-        <div className="mt-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">Choix final</p>
-          <p className="mt-0.5 font-medium text-slate-900">{debug.finalChoice.name}</p>
+        {/* ── Étape 2 — Recherche ── */}
+        {debug.search && (
+          <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Étape 2 — Recherche catalogue</p>
+            <div className="mt-1 grid grid-cols-4 gap-x-3 gap-y-1 text-[11px]">
+              <div><p className="text-slate-400">Signaux</p><p className="font-semibold text-slate-800">{debug.search.signalResults}</p></div>
+              <div><p className="text-slate-400">Direct</p><p className="font-semibold text-slate-800">{debug.search.directResults}</p></div>
+              <div><p className="text-slate-400">Vectoriel query</p><p className="font-semibold text-slate-800">{debug.search.semanticExpandedResults}</p></div>
+              <div><p className="text-slate-400">Vectoriel brut</p><p className="font-semibold text-slate-800">{debug.search.semanticRawResults}</p></div>
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500">Total dédupliqué : <span className="font-semibold text-slate-800">{debug.search.candidatesBeforeFilter}</span></p>
+          </div>
+        )}
+
+        {/* ── Étape 3 — Filtrage ── */}
+        {debug.search && (
+          <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Étape 3 — Filtrage garde-fous</p>
+            <div className="mt-1 grid grid-cols-3 gap-x-3 text-[11px]">
+              <div><p className="text-slate-400">Incompatibles</p><p className={`font-semibold ${debug.search.removedUnsafe > 0 ? 'text-red-600' : 'text-slate-800'}`}>{debug.search.removedUnsafe}</p></div>
+              <div><p className="text-slate-400">Score faible</p><p className={`font-semibold ${debug.search.removedWeak > 0 ? 'text-amber-600' : 'text-slate-800'}`}>{debug.search.removedWeak}</p></div>
+              <div><p className="text-slate-400">Retenus</p><p className={`font-semibold ${debug.search.candidatesAfterFilter === 0 ? 'text-red-600' : 'text-emerald-700'}`}>{debug.search.candidatesAfterFilter}</p></div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Étape 4 — Reranking ── */}
+        <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Étape 4 — Reranking IA</p>
+          <div className="mt-1 text-[11px]">
+            {debug.rerank?.productId ? (
+              <>
+                <p className="text-slate-500">Produit : <span className="font-medium text-slate-800">{debug.decisionCandidates?.rerank?.name || debug.rerank.productId}</span></p>
+                <p className="text-slate-500">Confiance : <span className={`font-semibold ${debug.rerank.confidence < 0.5 ? 'text-red-600' : 'text-emerald-700'}`}>{Math.round(debug.rerank.confidence * 100)}%</span>
+                  {debug.rerank.confidence < 0.5 && <span className="ml-1 text-red-500">(sous le seuil 50% → ignoré)</span>}
+                </p>
+                {debug.rerank.reason && <p className="text-slate-500">Raison : <span className="font-medium text-slate-700">{debug.rerank.reason}</span></p>}
+              </>
+            ) : (
+              <p className="text-slate-400">Aucun produit sélectionné</p>
+            )}
+          </div>
         </div>
-      )}
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <div>
-          <p className="font-semibold text-slate-800">Signaux utilisés</p>
+        {/* ── Étape 5 — Décision finale ── */}
+        <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Étape 5 — Décision finale</p>
+          <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] md:grid-cols-4">
+            {(['signal', 'packRule', 'rerank', 'deterministic'] as const).map(key => {
+              const labels: Record<string, string> = { signal: 'Signal', packRule: 'Pack/kit', rerank: 'Reranking', deterministic: 'Déterministe' }
+              const val = debug.decisionCandidates?.[key]
+              return (
+                <div key={key}>
+                  <p className="text-slate-400">{labels[key]}</p>
+                  <p className={`font-medium ${val ? 'text-slate-800' : 'text-slate-300'}`}>{val?.name || '—'}</p>
+                </div>
+              )
+            })}
+          </div>
+          <div className={`mt-2 rounded px-2 py-1 text-[11px] font-semibold ${success ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
+            → {debug.finalChoice?.name || 'Aucun produit sélectionné'}
+          </div>
+        </div>
+
+        {/* ── Signaux utilisés ── */}
+        <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Signaux utilisés</p>
           {debug.signals.length === 0 ? (
-            <p className="mt-1 text-slate-400">Aucun signal actif pour cette ligne.</p>
+            <p className="mt-1 text-slate-400">Aucun</p>
           ) : (
             <div className="mt-1 space-y-1">
-              {debug.signals.slice(0, 4).map((signal, i) => {
+              {debug.signals.slice(0, 6).map((signal, i) => {
                 const deleted = signal.id ? deletedSignalIds.has(signal.id) : false
                 return (
-                  <div key={`${signal.term}-${i}`} className={`rounded-lg bg-white p-2 ring-1 ${deleted ? 'opacity-40 ring-red-100' : 'ring-slate-100'}`}>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-medium text-slate-800">{signal.term} → {signal.productName}</p>
-                        <p className="text-[11px] text-slate-400">{signal.instructionOnly ? 'Instruction' : 'Association'} · {signal.source || 'source inconnue'} · occurrences {signal.occurrences ?? 0}</p>
-                      </div>
-                      {signal.id && !deleted && (
-                        <button
-                          type="button"
-                          onClick={() => void deleteSignal(signal.id!)}
-                          disabled={deletingSignalId === signal.id}
-                          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
-                          title="Supprimer ce signal"
-                        >
-                          {deletingSignalId === signal.id ? '…' : 'Supprimer'}
-                        </button>
-                      )}
-                      {deleted && <span className="shrink-0 text-[11px] text-red-400">Supprimé</span>}
+                  <div key={i} className={`flex items-start justify-between gap-2 rounded px-2 py-1 ${deleted ? 'opacity-40 bg-red-50' : 'bg-slate-50'}`}>
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800">{signal.term} → {signal.productName}</p>
+                      <p className="text-[11px] text-slate-400">{signal.instructionOnly ? 'Instruction' : 'Association'} · {signal.source || '?'} · {signal.occurrences ?? 0} occurrence{(signal.occurrences ?? 0) > 1 ? 's' : ''}</p>
                     </div>
+                    {signal.id && !deleted ? (
+                      <button type="button" onClick={() => void deleteSignal(signal.id!)} disabled={deletingSignalId === signal.id}
+                        className="shrink-0 rounded border border-red-200 px-2 py-0.5 text-[11px] font-medium text-red-500 hover:bg-red-50 disabled:opacity-50">
+                        {deletingSignalId === signal.id ? '…' : 'Supprimer'}
+                      </button>
+                    ) : deleted ? (
+                      <span className="shrink-0 text-[11px] text-red-400">Supprimé</span>
+                    ) : null}
                   </div>
                 )
               })}
@@ -500,55 +555,30 @@ function MatchDiagnosticPanel({ debug, operatorProduct }: { debug: MatchDebug; o
           )}
         </div>
 
-        <div>
-          <p className="font-semibold text-slate-800">Décisions moteur</p>
-          <div className="mt-1 space-y-1 text-slate-500">
-            {debug.decisionPriority?.length && <p>Priorité : {debug.decisionPriority.join(' → ')}</p>}
-            <p>Reranking : {debug.rerank?.productId ? `${Math.round(debug.rerank.confidence * 100)}%` : 'aucun choix'}</p>
-            {debug.rerank?.reason && <p className="line-clamp-2">Raison : {debug.rerank.reason}</p>}
-            <p>Déterministe : {debug.deterministic ? `${debug.deterministic.productName} (${debug.deterministic.score})` : 'aucun'}</p>
-            <p>Pack préféré : {debug.preferredPack ? `${debug.preferredPack.productName} (${debug.preferredPack.score})` : 'aucun'}</p>
-          </div>
-        </div>
-      </div>
-
-      {debug.search && (
-        <div className="mt-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
-          <p className="font-semibold text-slate-800">Recherche catalogue</p>
-          <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-500 md:grid-cols-4">
-            <p>Signaux : <span className="font-medium text-slate-700">{debug.search.signalResults}</span></p>
-            <p>Direct : <span className="font-medium text-slate-700">{debug.search.directResults}</span></p>
-            <p>Vectoriel query : <span className="font-medium text-slate-700">{debug.search.semanticExpandedResults}</span></p>
-            <p>Vectoriel demandé : <span className="font-medium text-slate-700">{debug.search.semanticRawResults}</span></p>
-            <p>Avant filtre : <span className="font-medium text-slate-700">{debug.search.candidatesBeforeFilter}</span></p>
-            <p>Après filtre : <span className="font-medium text-slate-700">{debug.search.candidatesAfterFilter}</span></p>
-            <p>Garde-fous : <span className="font-medium text-red-600">{debug.search.removedUnsafe}</span></p>
-            <p>Score faible : <span className="font-medium text-amber-600">{debug.search.removedWeak}</span></p>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-3">
-        <p className="font-semibold text-slate-800">Candidats testés</p>
-        <div className="mt-1 max-h-56 overflow-auto rounded-lg bg-white ring-1 ring-slate-200">
-          {debug.candidates.map(candidate => (
-            <div key={candidate.id} className={`border-b border-slate-100 p-2 last:border-b-0 ${candidate.selected ? 'bg-emerald-50' : candidate.unsafe ? 'bg-red-50/50' : ''}`}>
-              <div className="flex items-start justify-between gap-2">
-                <p className="font-medium text-slate-900">{candidate.name}</p>
-                <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">score {candidate.deterministicScore}</span>
+        {/* ── Candidats testés ── */}
+        <div className="rounded-lg bg-white ring-1 ring-slate-200">
+          <p className="px-2 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Candidats testés</p>
+          <div className="mt-1 max-h-52 overflow-auto divide-y divide-slate-50">
+            {debug.candidates.map(c => (
+              <div key={c.id} className={`px-2 py-1.5 ${c.selected ? 'bg-emerald-50' : c.unsafe ? 'bg-red-50/40' : ''}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-medium text-slate-900">{c.name}</p>
+                  <div className="flex shrink-0 gap-1">
+                    {c.selected && <span className="rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-700">✓</span>}
+                    {c.rerankChoice && <span className="rounded bg-blue-100 px-1 text-[10px] font-semibold text-blue-700">rerank</span>}
+                    {c.signalMatch && <span className="rounded bg-purple-100 px-1 text-[10px] font-semibold text-purple-700">signal</span>}
+                    <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">{c.deterministicScore}</span>
+                    {c.similarity != null && <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">{Math.round(c.similarity * 100)}%</span>}
+                  </div>
+                </div>
+                {c.unsafeReasons.length > 0 && (
+                  <p className="mt-0.5 text-[11px] text-red-500">{c.unsafeReasons.join(' · ')}</p>
+                )}
               </div>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                {candidate.selected ? 'Sélectionné · ' : ''}
-                {candidate.rerankChoice ? 'Choix reranker · ' : ''}
-                {candidate.signalMatch ? 'Signal · ' : ''}
-                similarité {candidate.similarity != null ? Math.round(candidate.similarity * 100) + '%' : 'n/a'}
-              </p>
-              {candidate.unsafeReasons.length > 0 && (
-                <p className="mt-1 text-[11px] text-red-600">Rejet/garde-fou : {candidate.unsafeReasons.join(' · ')}</p>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
+
       </div>
     </div>
   )
