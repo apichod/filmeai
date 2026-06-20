@@ -224,36 +224,66 @@ function sourceLabel(source: MatchDebug['selectedBy']) {
   return 'Aucun choix automatique'
 }
 
-function formatDiagnosticForCopy(debug: MatchDebug) {
+function rootCauseSummary(debug: MatchDebug): string {
+  if (debug.finalChoice) {
+    if (debug.selectedBy === 'signal') return '✓ Signal appris → association directe au produit'
+    if (debug.selectedBy === 'rerank') {
+      const conf = debug.rerank?.confidence != null ? Math.round(debug.rerank.confidence * 100) : '?'
+      return `✓ Reranking IA → confiance ${conf}%`
+    }
+    if (debug.selectedBy === 'deterministic') return `✓ Score déterministe → ${debug.deterministic?.score ?? '?'}`
+    if (debug.selectedBy === 'pack_rule') return '✓ Règle pack/kit → priorité pack'
+    return '✓ Choix automatique'
+  }
+  const before = debug.search?.candidatesBeforeFilter ?? 0
+  const after = debug.search?.candidatesAfterFilter ?? 0
+  const unsafe = debug.search?.removedUnsafe ?? 0
+  if (before === 0) {
+    return '✗ AUCUN CANDIDAT — la recherche vectorielle n\'a rien trouvé. Créer un signal dans /assistant/knowledge ou vérifier le nom du produit en base.'
+  }
+  if (after === 0 && unsafe > 0) {
+    return `✗ TOUS BLOQUÉS PAR GARDE-FOUS — ${before} candidats trouvés, ${unsafe} rejetés pour incompatibilité (monture, type…).`
+  }
+  if (debug.rerank?.productId && debug.rerank.confidence < 0.5) {
+    return `✗ CONFIANCE TROP FAIBLE — reranker a proposé un produit à ${Math.round(debug.rerank.confidence * 100)}% (seuil 50%). Améliorer le prompt ou créer un signal.`
+  }
+  if (after > 0) {
+    return `✗ BON PRODUIT ABSENT DES CANDIDATS — ${after} candidats testés, aucun n'est le bon. Cause probable : distance sémantique trop grande entre la demande et le nom catalogue. Créer un signal.`
+  }
+  return `✗ Aucune correspondance (${before} candidats avant filtre)`
+}
+
+function formatDiagnosticForCopy(debug: MatchDebug, operatorProductName?: string) {
   const lines: string[] = []
 
   lines.push('DIAGNOSTIC IA FILMEAI')
   lines.push('')
+  lines.push('RÉSUMÉ')
+  lines.push(rootCauseSummary(debug))
+  lines.push(`Demandé         : ${debug.requestedName}`)
+  lines.push(`Query recherche : ${debug.searchQuery}`)
+  lines.push(`Choix IA        : ${debug.finalChoice?.name || 'aucun'}${debug.selectedBy ? ` (${sourceLabel(debug.selectedBy)})` : ''}`)
+  if (operatorProductName !== undefined) {
+    const changed = operatorProductName !== debug.finalChoice?.name
+    lines.push(`Choix opérateur : ${operatorProductName || 'aucun (intervention Filme)'}${changed ? ' ← MODIFIÉ' : ''}`)
+  }
+
   if (debug.requestContext) {
+    lines.push('')
     lines.push('CONTEXTE GLOBAL REÇU')
     lines.push(debug.requestContext)
-    lines.push('')
   }
-  lines.push(`Demandé : ${debug.requestedName}`)
-  if (debug.matchingRaw && debug.matchingRaw !== debug.requestedName) lines.push(`Terme matching : ${debug.matchingRaw}`)
-  lines.push(`Query : ${debug.searchQuery}`)
-  if (debug.query) {
-    lines.push(`Query prompt initiale : ${debug.query.queryFromPrompt}`)
-    lines.push(`Query modifiée : ${debug.query.changed ? 'oui' : 'non'}`)
-  }
-  if (debug.section) lines.push(`Section : ${debug.section}`)
-  lines.push(`Quantité : ${debug.quantity}`)
-  lines.push(`Source du choix : ${sourceLabel(debug.selectedBy)}`)
-  lines.push(`Choix final : ${debug.finalChoice?.name || 'aucun'}`)
 
-  lines.push('')
-  lines.push('QUERY — INFLUENCES')
-  if (!debug.query?.influences?.length) {
-    lines.push('- aucune influence détaillée')
-  } else {
-    debug.query.influences.forEach(influence => {
-      lines.push(`- ${influence.label} [${influence.source}] : ${influence.detail}`)
-    })
+  if (debug.query) {
+    lines.push('')
+    lines.push('QUERY')
+    lines.push(`Prompt initial  : ${debug.query.queryFromPrompt}`)
+    lines.push(`Modifiée        : ${debug.query.changed ? 'oui' : 'non'}`)
+    if (debug.query.influences.length > 0) {
+      debug.query.influences.forEach(influence => {
+        lines.push(`  · ${influence.label} [${influence.source}] : ${influence.detail}`)
+      })
+    }
   }
 
   lines.push('')
@@ -262,42 +292,42 @@ function formatDiagnosticForCopy(debug: MatchDebug) {
     lines.push('- aucun')
   } else {
     debug.signals.forEach(signal => {
-      lines.push(`- ${signal.term} → ${signal.productName} | source=${signal.source || 'n/a'} | occurrences=${signal.occurrences ?? 0} | type=${signal.instructionOnly ? 'instruction' : 'association'}`)
+      lines.push(`- ${signal.term} → ${signal.productName} | ${signal.instructionOnly ? 'instruction' : 'association'} | occurrences ${signal.occurrences ?? 0}`)
     })
   }
 
   lines.push('')
   lines.push('RECHERCHE CATALOGUE')
   if (debug.search) {
-    lines.push(`- Signaux : ${debug.search.signalResults}`)
+    lines.push(`- Signaux          : ${debug.search.signalResults}`)
     lines.push(`- Direct nom/texte : ${debug.search.directResults}`)
-    lines.push(`- Vectoriel query : ${debug.search.semanticExpandedResults}`)
-    lines.push(`- Vectoriel demandé : ${debug.search.semanticRawResults}`)
-    lines.push(`- Candidats avant filtre : ${debug.search.candidatesBeforeFilter}`)
-    lines.push(`- Candidats après filtre : ${debug.search.candidatesAfterFilter}`)
-    lines.push(`- Supprimés garde-fous : ${debug.search.removedUnsafe}`)
-    lines.push(`- Supprimés score faible : ${debug.search.removedWeak}`)
+    lines.push(`- Vectoriel query  : ${debug.search.semanticExpandedResults}`)
+    lines.push(`- Vectoriel brut   : ${debug.search.semanticRawResults}`)
+    lines.push(`- Avant filtre     : ${debug.search.candidatesBeforeFilter}`)
+    lines.push(`- Après filtre     : ${debug.search.candidatesAfterFilter}`)
+    lines.push(`- Rejetés unsafe   : ${debug.search.removedUnsafe}`)
+    lines.push(`- Rejetés faibles  : ${debug.search.removedWeak}`)
   } else {
     lines.push('- non disponible')
   }
 
   lines.push('')
   lines.push('DÉCISIONS MOTEUR')
-  if (debug.decisionPriority?.length) lines.push(`- Ordre de priorité : ${debug.decisionPriority.join(' → ')}`)
-  lines.push(`- Reranking : ${debug.rerank?.productId ? `${Math.round(debug.rerank.confidence * 100)}%` : 'aucun choix'}`)
-  if (debug.rerank?.reason) lines.push(`- Raison reranking : ${debug.rerank.reason}`)
-  lines.push(`- Déterministe : ${debug.deterministic ? `${debug.deterministic.productName} (${debug.deterministic.score})` : 'aucun'}`)
-  lines.push(`- Pack préféré : ${debug.preferredPack ? `${debug.preferredPack.productName} (${debug.preferredPack.score})` : 'aucun'}`)
+  lines.push(`- Reranking     : ${debug.rerank?.productId ? `${Math.round(debug.rerank.confidence * 100)}% — ${debug.rerank.reason || '(sans raison)'}` : 'aucun choix'}`)
+  lines.push(`- Déterministe  : ${debug.deterministic ? `${debug.deterministic.productName} (score ${debug.deterministic.score})` : 'aucun'}`)
+  lines.push(`- Pack préféré  : ${debug.preferredPack ? `${debug.preferredPack.productName} (score ${debug.preferredPack.score})` : 'aucun'}`)
 
   lines.push('')
   lines.push('CANDIDATS TESTÉS')
   debug.candidates.forEach((candidate, index) => {
+    const flags = [
+      candidate.selected ? 'SÉLECTIONNÉ' : null,
+      candidate.rerankChoice ? 'choix-reranker' : null,
+      candidate.signalMatch ? 'signal' : null,
+      candidate.unsafe ? `UNSAFE(${candidate.unsafeReasons.join(',')})` : null,
+    ].filter(Boolean).join(' · ')
     lines.push(`${index + 1}. ${candidate.name}`)
-    lines.push(`   id=${candidate.id}`)
-    lines.push(`   score=${candidate.deterministicScore} | similarité=${candidate.similarity != null ? Math.round(candidate.similarity * 100) + '%' : 'n/a'} | selected=${candidate.selected ? 'oui' : 'non'} | rerank=${candidate.rerankChoice ? 'oui' : 'non'} | signal=${candidate.signalMatch ? 'oui' : 'non'} | unsafe=${candidate.unsafe ? 'oui' : 'non'}`)
-    if (candidate.unsafeReasons.length > 0) {
-      lines.push(`   garde-fous=${candidate.unsafeReasons.join(' · ')}`)
-    }
+    lines.push(`   score=${candidate.deterministicScore} | sim=${candidate.similarity != null ? Math.round(candidate.similarity * 100) + '%' : 'n/a'}${flags ? ` | ${flags}` : ''}`)
   })
 
   lines.push('')
@@ -307,27 +337,26 @@ function formatDiagnosticForCopy(debug: MatchDebug) {
   return lines.join('\n')
 }
 
-function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
+function MatchDiagnosticPanel({ debug, operatorProduct }: { debug: MatchDebug; operatorProduct?: Product | null }) {
   const [copied, setCopied] = useState(false)
 
   async function copyDiagnostic() {
-    const text = formatDiagnosticForCopy(debug)
+    const text = formatDiagnosticForCopy(debug, operatorProduct?.name ?? undefined)
     await navigator.clipboard.writeText(text)
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1600)
   }
 
+  const operatorChanged = operatorProduct && operatorProduct.name !== debug.finalChoice?.name
+  const rootCause = rootCauseSummary(debug)
+
   return (
     <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="font-semibold text-slate-900">Diagnostic IA</p>
+          <p className="mt-1 text-[11px] font-medium text-slate-600">{rootCause}</p>
           <p className="mt-1 text-slate-500">Demandé : <span className="font-medium text-slate-700">{debug.requestedName}</span></p>
-          {debug.requestContext && (
-            <p className="mt-1 line-clamp-2 text-slate-500">
-              Contexte : <span className="font-medium text-slate-700">{debug.requestContext}</span>
-            </p>
-          )}
           {debug.matchingRaw && debug.matchingRaw !== debug.requestedName && (
             <p className="text-slate-500">Terme matching : <span className="font-medium text-slate-700">{debug.matchingRaw}</span></p>
           )}
@@ -346,6 +375,16 @@ function MatchDiagnosticPanel({ debug }: { debug: MatchDebug }) {
           </span>
         </div>
       </div>
+
+      {operatorProduct && (
+        <div className={`mt-2 rounded-lg p-2 ring-1 ${operatorChanged ? 'bg-amber-50 ring-amber-200' : 'bg-emerald-50 ring-emerald-200'}`}>
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Sélection opérateur</p>
+          <p className="mt-0.5 font-semibold text-slate-900">{operatorProduct.name}</p>
+          {operatorChanged && debug.finalChoice && (
+            <p className="mt-0.5 text-[11px] text-amber-700">Remplace le choix IA : {debug.finalChoice.name}</p>
+          )}
+        </div>
+      )}
 
       {debug.query && (
         <div className="mt-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
@@ -1445,7 +1484,7 @@ export default function NewRequestPage() {
                         </div>
                       )}
                       {debugUid === item.uid && item.debug && (
-                        <MatchDiagnosticPanel debug={item.debug} />
+                        <MatchDiagnosticPanel debug={item.debug} operatorProduct={item.product ?? null} />
                       )}
                     </div>
                   ))}
