@@ -22,6 +22,9 @@ export type QuoteItem = {
   position?: number
   unitPrice?: number | null
   deposit?: number | null
+  confidence?: number | null
+  reason?: string | null
+  debug?: unknown
 }
 
 export type CustomerType = 'person' | 'company'
@@ -162,6 +165,9 @@ export function buildStoredQuoteItems(items: QuoteItem[], days: number) {
       availableQuantity: item.availableQuantity ?? null,
       lineTotal,
       lineDeposit,
+      confidence: item.confidence ?? null,
+      reason: item.reason ?? null,
+      debug: item.debug ?? null,
     }
   })
 }

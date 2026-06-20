@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { type MatchDebug, formatDiagnosticForCopy, rootCauseSummary } from '@/lib/diagnostic-format'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ type QuoteItem = {
   lineDeposit?: number
   confidence?: number
   reason?: string | null
+  debug?: unknown
 }
 
 type RequestDetail = {
@@ -178,7 +180,7 @@ function Spinner({ size = 16, white = false }: { size?: number; white?: boolean 
     />
   )
 }
-function MatchGauge({ confidence, type }: { confidence?: number; type?: string }) {
+function MatchGauge({ confidence, type, requestedName }: { confidence?: number; type?: string; requestedName?: string }) {
   if (!confidence || type === 'section') return null
   const percent = matchPercent(confidence)
   const color = matchColor(percent)
@@ -188,7 +190,53 @@ function MatchGauge({ confidence, type }: { confidence?: number; type?: string }
         <div className="h-full rounded-full transition-all" style={{ width: `${percent}%`, backgroundColor: color }} />
       </div>
       <span className="text-[11px] font-medium tabular-nums" style={{ color }}>{percent}%</span>
-      <span className="text-[11px] text-gray-400">{matchLabel(percent, type)}</span>
+      <span className="text-[11px] text-gray-400">
+        {matchLabel(percent, type)}
+        {requestedName && <span className="text-gray-400"> ({requestedName})</span>}
+      </span>
+    </div>
+  )
+}
+
+function MatchDiagnosticSaved({ debug }: { debug: unknown }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const parsed = (debug && typeof debug === 'object' && 'requestedName' in (debug as object))
+    ? debug as MatchDebug
+    : null
+  if (!parsed) return null
+
+  const rootCause = rootCauseSummary(parsed)
+  const success = Boolean(parsed.finalChoice)
+
+  async function copy() {
+    await navigator.clipboard.writeText(formatDiagnosticForCopy(parsed!))
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
+
+  return (
+    <div className="mt-1">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="text-[11px] text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors"
+      >
+        {open ? 'Masquer le diagnostic IA' : 'Afficher le diagnostic IA'}
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-700">
+          <div className="flex items-start justify-between gap-2">
+            <p className={`text-[11px] font-medium ${success ? 'text-emerald-700' : 'text-red-600'}`}>{rootCause}</p>
+            <button
+              onClick={copy}
+              className="shrink-0 rounded bg-white px-2 py-0.5 text-[10px] border border-slate-200 text-slate-500 hover:text-slate-800 transition-colors"
+            >
+              {copied ? 'Copié ✓' : 'Copier log'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -628,7 +676,10 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
                           : 'Ligne custom Booqable — à vérifier'}
                       </p>
                       {item.confidence != null && (
-                        <MatchGauge confidence={item.confidence} type={item.type} />
+                        <MatchGauge confidence={item.confidence} type={item.type} requestedName={item.requestedName} />
+                      )}
+                      {item.debug != null && (
+                        <MatchDiagnosticSaved debug={item.debug} />
                       )}
                       {item.type === 'custom_charge' && (
                         <p className="text-[11px] font-semibold text-amber-700 mt-0.5">Intervention humaine requise</p>
