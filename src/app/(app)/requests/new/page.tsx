@@ -58,15 +58,67 @@ type Step = 'client' | 'quote'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function todayStr() {
-  return new Date().toISOString().split('T')[0]
-}
-function tomorrowStr() {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  return d.toISOString().split('T')[0]
+function extractDatesFromText(text: string): { startsAt?: string; stopsAt?: string } {
+  const months: Record<string, string> = {
+    janvier: '01', jan: '01', fevrier: '02', fev: '02', mars: '03', mar: '03',
+    avril: '04', avr: '04', mai: '05', juin: '06', juillet: '07', juil: '07',
+    aout: '08', aou: '08', septembre: '09', sep: '09', octobre: '10', oct: '10',
+    novembre: '11', nov: '11', decembre: '12', dec: '12',
+  }
+  const yr = new Date().getFullYear()
+  const norm = text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+
+  function toISO(d: string, m: string, y?: string): string | null {
+    const month = months[m] ?? (m.length <= 2 ? m.padStart(2, '0') : null)
+    if (!month) return null
+    return `${y || yr}-${month}-${d.padStart(2, '0')}`
+  }
+
+  // ISO range: 2025-01-15 … 2025-01-20
+  const isoRange = norm.match(/(\d{4}-\d{2}-\d{2})[^0-9]+?au[^0-9]+?(\d{4}-\d{2}-\d{2})/)
+  if (isoRange) return { startsAt: isoRange[1], stopsAt: isoRange[2] }
+
+  // Single ISO date
+  const isoSingle = norm.match(/\b(\d{4}-\d{2}-\d{2})\b/)
+  if (isoSingle) return { startsAt: isoSingle[1] }
+
+  const mo = Object.keys(months).join('|')
+
+  // "du 15 au 20 janvier [2025]" — same month
+  const sameMonth = norm.match(new RegExp(`du\\s+(\\d{1,2})\\s+au\\s+(\\d{1,2})\\s+(${mo})(?:\\s+(\\d{4}))?`))
+  if (sameMonth) {
+    const s = toISO(sameMonth[1], sameMonth[3], sameMonth[4])
+    const e = toISO(sameMonth[2], sameMonth[3], sameMonth[4])
+    if (s && e) return { startsAt: s, stopsAt: e }
+  }
+
+  // "du 15 janvier au 20 fevrier [2025]"
+  const diffMonth = norm.match(new RegExp(`du\\s+(\\d{1,2})\\s+(${mo})(?:\\s+(\\d{4}))?\\s+au\\s+(\\d{1,2})\\s+(${mo})(?:\\s+(\\d{4}))?`))
+  if (diffMonth) {
+    const s = toISO(diffMonth[1], diffMonth[2], diffMonth[3])
+    const e = toISO(diffMonth[4], diffMonth[5], diffMonth[6])
+    if (s && e) return { startsAt: s, stopsAt: e }
+  }
+
+  // "15/01/2025 au 20/01/2025" or "15/01 au 20/01"
+  const slashRange = norm.match(/(\d{1,2})\/(\d{2})(?:\/(\d{4}))?\s+(?:au|-)\s+(\d{1,2})\/(\d{2})(?:\/(\d{4}))?/)
+  if (slashRange) {
+    const s = toISO(slashRange[1], slashRange[2], slashRange[3])
+    const e = toISO(slashRange[4], slashRange[5], slashRange[6])
+    if (s && e) return { startsAt: s, stopsAt: e }
+  }
+
+  // Single French date: "le 15 janvier [2025]" or "15 janvier [2025]"
+  const single = norm.match(new RegExp(`(?:le\\s+)?(\\d{1,2})\\s+(${mo})(?:\\s+(\\d{4}))?`))
+  if (single) {
+    const s = toISO(single[1], single[2], single[3])
+    if (s) return { startsAt: s }
+  }
+
+  return {}
 }
 function daysBetween(a: string, b: string) {
+  if (!a || !b) return 1
   return Math.max(1, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000))
 }
 function matchPercent(confidence?: number | null) {
@@ -499,8 +551,8 @@ export default function NewRequestPage() {
   const [items, setItems] = useState<QuoteItem[]>([])
 
   // ── Dates
-  const [startsAt, setStartsAt] = useState(todayStr())
-  const [stopsAt, setStopsAt] = useState(tomorrowStr())
+  const [startsAt, setStartsAt] = useState('')
+  const [stopsAt, setStopsAt] = useState('')
 
   // ── Edit item
   const [editingUid, setEditingUid] = useState<string | null>(null)
@@ -608,6 +660,11 @@ export default function NewRequestPage() {
 
       setParseProgress(96)
       setParseStatus('Ajout des lignes au devis…')
+
+      // Extraire les dates du message si pas encore définies
+      const extractedDates = extractDatesFromText(text)
+      if (extractedDates.startsAt && !startsAt) setStartsAt(extractedDates.startsAt)
+      if (extractedDates.stopsAt && !stopsAt) setStopsAt(extractedDates.stopsAt)
 
       const parsedItems = data.items || []
       let added = 0
@@ -844,8 +901,8 @@ export default function NewRequestPage() {
             reason: i.reason ?? null,
             debug: i.debug ?? null,
           })),
-          startsAt: new Date(startsAt + 'T09:00:00').toISOString(),
-          stopsAt: new Date(stopsAt + 'T18:00:00').toISOString(),
+          startsAt: new Date((startsAt || new Date().toISOString().split('T')[0]) + 'T09:00:00').toISOString(),
+          stopsAt: new Date((stopsAt || new Date(Date.now() + 86400000).toISOString().split('T')[0]) + 'T18:00:00').toISOString(),
         }),
       })
       const data = await res.json() as { conversationId?: string; error?: string }
@@ -1165,7 +1222,7 @@ export default function NewRequestPage() {
                 rows={2}
                 className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:border-gray-800"
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
                     e.preventDefault()
                     handleSend()
                   }
@@ -1181,7 +1238,7 @@ export default function NewRequestPage() {
                 </svg>
               </button>
             </div>
-            <p className="mt-1 text-[11px] text-gray-400">Entrée = nouvelle ligne · ⌘/Ctrl + Entrée = envoyer</p>
+            <p className="mt-1 text-[11px] text-gray-400">Entrée = envoyer · ⌘/Ctrl + Entrée = nouvelle ligne</p>
           </div>
         </div>
 
@@ -1309,7 +1366,7 @@ export default function NewRequestPage() {
                             </p>
                             <p className="text-xs text-gray-400">
                               {item.type === 'product'
-                                ? (item.product?.price_per_day != null && item.product.price_per_day > 0 ? `${item.product.price_per_day}€/jour` : 'Prix après dates')
+                                ? (item.product?.price_per_day != null && item.product.price_per_day > 0 ? `${item.product.price_per_day}€/jour` : '')
                                 : 'Ligne custom Booqable — à vérifier'}
                             </p>
                             {item.confidence != null && (
