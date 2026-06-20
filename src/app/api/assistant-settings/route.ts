@@ -47,6 +47,8 @@ const ALLOWED_FIELDS = new Set([
   'delivery_zones',
   'booking_delay',
   'payment_methods',
+  'default_pickup_time',
+  'default_return_time',
 
   // Devis
   'quote_mode',
