@@ -139,8 +139,16 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         const qty = Number(attrs.quantity) || 0
         if (qty <= 0) continue
 
-        const itemId = String(attrs.item_id || '')
+        // En JSON:API boomerang, l'item_id est dans relationships.item.data.id
+        // (pas dans attributes). attrs.description est le nom du produit sur la ligne.
+        type Rel = { data?: { type: string; id: string } }
+        const rels = r.relationships as Record<string, Rel> | undefined
+        const itemId = String(rels?.item?.data?.id || attrs.item_id || '')
         const product = productMap.get(itemId)
+
+        // attrs.description = nom du produit directement dans la ligne (plus fiable)
+        const productName = String(attrs.description || product?.name || '')
+        if (!productName) continue  // ignorer les lignes sans nom (frais internes, etc.)
 
         // Trouver le stock_item_id assigné via planning_id
         const planningId = String(attrs.planning_id || '')
@@ -150,7 +158,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         lines.push({
           id: r.id,
           product_id: itemId,
-          product_name: product?.name || String(attrs.description || 'Article inconnu'),
+          product_name: productName,
           quantity: qty,
           product_group_id: product?.product_group_id || undefined,
           stock_item_id: stockItemId,
@@ -543,7 +551,7 @@ async function resolveProductId(productGroupId: string): Promise<string | null> 
  * - type 'product' : utilise order_fulfillments (book_product / book_specific_stock_items)
  * - type 'custom'  : crée une ligne charge via POST /lines
  */
-export async function addSAVLine(params: SAVLineParams): Promise<void> {
+export async function addSAVLine(params: SAVLineParams): Promise<{ startError?: string }> {
   if (params.type === 'product') {
     // Résoudre le product_id depuis le product_group_id
     const productId = await resolveProductId(params.productGroupId)
@@ -602,48 +610,76 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
         }
       }
 
-      // Étape 2 — specify_stock_items avec les deux formats (order_fulfillment + data)
+      let startError: string | undefined
+
+      // Étape 2 — specify_stock_items puis start_stock_items
       if (planningId) {
+        // 2a — specify_stock_items : assigner l'exemplaire au planning
         const specifyAction = {
           action: 'specify_stock_items',
           product_id: productId,
           planning_id: planningId,
           stock_item_ids_to_add: [params.stockItemId],
         }
-        const assignRes = await fetch(
+        const specifyRes = await fetch(
           `${BASE4}/order_fulfillments?include=order,changed_plannings,changed_stock_item_plannings`,
           {
             method: 'POST',
             headers: headers(),
             body: JSON.stringify({
-              order_fulfillment: {
-                order_id: params.orderId,
-                actions: [specifyAction],
-              },
+              order_fulfillment: { order_id: params.orderId, actions: [specifyAction] },
               data: {
                 type: 'order_fulfillments',
-                attributes: {
-                  order_id: params.orderId,
-                  confirm_shortage: false,
-                  actions: [specifyAction],
-                },
+                attributes: { order_id: params.orderId, confirm_shortage: false, actions: [specifyAction] },
               },
             }),
             signal: AbortSignal.timeout(10000),
           }
         )
-        if (!assignRes.ok) {
-          const text = await assignRes.text()
-          console.warn(`addSAVLine: specify_stock_items failed (${assignRes.status}): ${text}`)
+        if (!specifyRes.ok) {
+          const text = await specifyRes.text()
+          console.warn(`addSAVLine: specify_stock_items failed (${specifyRes.status}): ${text}`)
+          startError = `specify_stock_items échoué (${specifyRes.status})`
         } else {
-          console.log(`addSAVLine: specify_stock_items OK — stock_item ${params.stockItemId} assigné au planning ${planningId}`)
+          console.log(`addSAVLine: specify_stock_items OK — stock_item ${params.stockItemId} planifié`)
+
+          // 2b — start_stock_items : réserver / "pick up" l'exemplaire
+          const startAction = {
+            action: 'start_stock_items',
+            planning_id: planningId,
+            product_id: productId,
+            stock_item_ids: [params.stockItemId],
+          }
+          const startRes = await fetch(
+            `${BASE4}/order_fulfillments?include=order,changed_lines,changed_plannings,changed_stock_item_plannings`,
+            {
+              method: 'POST',
+              headers: headers(),
+              body: JSON.stringify({
+                order_fulfillment: { order_id: params.orderId, actions: [startAction] },
+                data: {
+                  type: 'order_fulfillments',
+                  attributes: { order_id: params.orderId, confirm_shortage: false, actions: [startAction] },
+                },
+              }),
+              signal: AbortSignal.timeout(15000),
+            }
+          )
+          if (!startRes.ok) {
+            const text = await startRes.text()
+            console.warn(`addSAVLine: start_stock_items failed (${startRes.status}): ${text}`)
+            startError = `start_stock_items échoué (${startRes.status}): ${text.slice(0, 200)}`
+          } else {
+            console.log(`addSAVLine: start_stock_items OK — stock_item ${params.stockItemId} réservé`)
+          }
         }
       } else {
         console.warn('addSAVLine: no planning_id found, stock item not assigned')
+        startError = 'planning_id introuvable — exemplaire non assigné'
       }
 
       await zeroOutOrderLines(params.orderId)
-      return
+      return { startError }
     }
 
     // Produit bulk → book_product
@@ -668,7 +704,7 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
       throw new Error(`Booqable addSAVLine error ${res.status}: ${text}`)
     }
     await zeroOutOrderLines(params.orderId)
-    return
+    return {}
   }
 
   // Ligne custom (article non référencé)
@@ -696,4 +732,5 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
     const text = await res.text()
     throw new Error(`Booqable addSAVLine custom error ${res.status}: ${text}`)
   }
+  return {}
 }

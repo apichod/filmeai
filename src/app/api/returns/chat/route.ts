@@ -334,9 +334,11 @@ async function executeTool(
 
         if (args.line_type === 'product' && args.product_group_id) {
           const stockItemId = args.stock_item_id ? String(args.stock_item_id) : undefined
-          await addSAVLine({ type: 'product', orderId, productGroupId: String(args.product_group_id), quantity: qty, stockItemId })
+          const { startError } = await addSAVLine({ type: 'product', orderId, productGroupId: String(args.product_group_id), quantity: qty, stockItemId })
           const stockInfo = stockItemId ? ` | stock_item_id: ${stockItemId}` : ''
-          return { result: `✓ Ligne produit ajoutée à la SAV order (product_group_id: ${args.product_group_id}${stockInfo}, qté: ${qty})` }
+          let result = `✓ Ligne produit ajoutée à la SAV order (product_group_id: ${args.product_group_id}${stockInfo}, qté: ${qty})`
+          if (startError) result += `\n⚠️ Réservation non bloquante échouée : ${startError}`
+          return { result }
         } else {
           const title = args.custom_title ? String(args.custom_title) : 'Article non référencé'
           await addSAVLine({ type: 'custom', orderId, title, quantity: qty, note: args.note ? String(args.note) : undefined })
@@ -501,10 +503,7 @@ B3. Annonce : "J'ajoute les tags..."
 B4. Annonce : "J'ajoute le commentaire SAV..."
     → Appelle add_sav_comment avec l'id de la SAV order, le numéro de l'order origine, et le détail du problème.
 
-B5. Annonce : "J'ajoute une note interne à l'order d'origine..."
-    → Appelle add_internal_note sur l'order D'ORIGINE (pas la SAV order) avec un résumé.
-
-B6. Annonce : "J'enregistre le cas dans le suivi..."
+B5. Annonce : "J'enregistre le cas dans le suivi..."
     → Appelle log_case.
 
 ═══════════════════════════════════════════════════
