@@ -84,40 +84,80 @@ export type CreateSAVOrderParams = {
 }
 
 export async function createSAVOrder(params: CreateSAVOrderParams): Promise<BooqableOrder | null> {
-  const { customerId, products, fullDiscount = false, returnDays = 30 } = params
+  const { customerId, fullDiscount = false, returnDays = 30 } = params
 
-  const orderBody: Record<string, unknown> = {
-    customer_id: customerId,
-    starts_at: bqDate(today()),
-    stops_at: bqDate(inDays(returnDays)),
-    deposit_type: 'none',               // pas de caution sur SAV
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = process.env.BOOQABLE_API_KEY
+  const startsAt = bqDate(today())
+  const stopsAt  = bqDate(inDays(returnDays))
+
+  // ── Essai v4 (même pattern que createBooqableOrder dans booqable.ts) ─────────
+  try {
+    const v4Url = `https://${subdomain}.booqable.com/api/4/orders`
+    const v4Res = await fetch(v4Url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        data: {
+          type: 'orders',
+          attributes: {
+            customer_id: customerId,
+            starts_at: startsAt,
+            stops_at: stopsAt,
+            status: 'draft',
+            ...(fullDiscount ? { deposit_type: 'none' } : {}),
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (v4Res.ok) {
+      const d = await v4Res.json() as { data?: { id: string }; order?: BooqableOrder }
+      const orderId = d.data?.id || (d.order as BooqableOrder | undefined)?.id
+      if (orderId) {
+        // Si remise 100%, appliquer via PATCH v1
+        if (fullDiscount) {
+          await fetch(`https://${subdomain}.booqable.com/api/1/orders/${orderId}?api_key=${key}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: { discount_percentage: 100, deposit_type: 'none' } }),
+          })
+        }
+        return { id: orderId, number: '', status: 'concept', starts_at: startsAt, stops_at: stopsAt, customer_id: customerId, customer: null, tags: [], lines: [], properties_attributes: {} }
+      }
+    }
+  } catch (e) {
+    console.warn('SAV order v4 failed, trying v1:', e)
   }
 
-  if (fullDiscount) {
-    orderBody.discount_percentage = 100  // remise 100% pour matériel manquant
-  }
-
-  if (products.length > 0) {
-    orderBody.lines_attributes = products.map(p => ({
-      product_id: p.productId,
-      quantity: p.quantity,
-    }))
-  }
-
-  const res = await fetch(`${BASE}/orders`, {
+  // ── Fallback v1 avec api_key en query param ───────────────────────────────────
+  const v1Url = `https://${subdomain}.booqable.com/api/1/orders?api_key=${key}`
+  const v1Res = await fetch(v1Url, {
     method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({ order: orderBody }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      order: {
+        customer_id: customerId,
+        starts_at: startsAt,
+        stops_at: stopsAt,
+        status: 'concept',
+        deposit_type: 'none',
+        ...(fullDiscount ? { discount_percentage: 100 } : {}),
+      },
+    }),
     signal: AbortSignal.timeout(10000),
   })
 
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Booqable createOrder error ${res.status}: ${text}`)
+  if (!v1Res.ok) {
+    const text = await v1Res.text()
+    throw new Error(`Booqable createSAVOrder v1 error ${v1Res.status}: ${text}`)
   }
 
-  const data = await res.json() as { order?: BooqableOrder }
-  return data.order || null
+  const v1Data = await v1Res.json() as { order?: BooqableOrder }
+  return v1Data.order || null
 }
 
 // ── Add tag ────────────────────────────────────────────────────────────────────
