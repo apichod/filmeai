@@ -76,14 +76,18 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'add_tag',
-      description: 'Ajoute un tag à une order Booqable (LATE ou TOBEREPAIRED)',
+      description: 'Ajoute un ou plusieurs tags à une SAV order Booqable. Pour une casse : tags=["TOBEREPAIRED","LATE"]. Pour un retard seul : tags=["LATE"].',
       parameters: {
         type: 'object',
         properties: {
           order_id: { type: 'string', description: 'UUID Booqable de la SAV order — utiliser le champ "id" retourné par create_sav_order' },
-          tag:      { type: 'string', description: 'LATE ou TOBEREPAIRED', enum: ['LATE', 'TOBEREPAIRED'] },
+          tags: {
+            type: 'array',
+            items: { type: 'string', enum: ['LATE', 'TOBEREPAIRED'] },
+            description: 'Liste de tags à ajouter. Casse → ["TOBEREPAIRED","LATE"]. Retard → ["LATE"].',
+          },
         },
-        required: ['order_id', 'tag'],
+        required: ['order_id', 'tags'],
       },
     },
   },
@@ -269,7 +273,7 @@ async function executeTool(
 
       case 'add_internal_note': {
         await addInternalNote(String(args.order_id), String(args.note))
-        return { result: `✓ Note interne ajoutée à l'order ${args.order_id}` }
+        return { result: `✓ Note interne : ${String(args.note)}` }
       }
 
       case 'create_sav_order': {
@@ -284,8 +288,9 @@ async function executeTool(
       }
 
       case 'add_tag': {
-        await addTagToOrder(String(args.order_id), String(args.tag))
-        return { result: `✓ Tag ${args.tag} ajouté à l'order ${args.order_id}` }
+        const tagList = Array.isArray(args.tags) ? args.tags.map(String) : [String(args.tags || args.tag || '')]
+        await addTagToOrder(String(args.order_id), tagList)
+        return { result: `✓ Tags ajoutés : ${tagList.join(', ')}` }
       }
 
       case 'add_sav_comment': {
@@ -294,7 +299,7 @@ async function executeTool(
           String(args.origin_order_number),
           String(args.comment)
         )
-        return { result: `✓ Commentaire SAV ajouté (order origine: ${args.origin_order_number})` }
+        return { result: `✓ Commentaire SAV (order #${args.origin_order_number}) : ${String(args.comment)}` }
       }
 
       case 'search_products': {
@@ -489,7 +494,9 @@ B2. Annonce : "J'ajoute [nom article] à la SAV order..."
     → Une ligne par article, une par une.
 
 B3. Annonce : "J'ajoute les tags..."
-    → Appelle add_tag selon le cas (TOBEREPAIRED pour casse, LATE pour retard).
+    → Appelle add_tag UNE SEULE FOIS avec les deux tags en tableau :
+      - Casse → tags: ["TOBEREPAIRED", "LATE"]
+      - Retard seul → tags: ["LATE"]
 
 B4. Annonce : "J'ajoute le commentaire SAV..."
     → Appelle add_sav_comment avec l'id de la SAV order, le numéro de l'order origine, et le détail du problème.

@@ -121,12 +121,30 @@ function toolSummary(name: string, result: string | undefined): string | null {
     return `${lines.length} exemplaire${lines.length > 1 ? 's' : ''}${ids ? ' : ' + ids : ''}`
   }
 
-  // add_sav_line retourne "✓ Ligne ajoutée : Nom"
-  if (name === 'add_sav_line' && result.startsWith('✓')) {
-    return result.replace('✓ ', '').slice(0, 60)
+  // add_tag → "✓ Tags ajoutés : TOBEREPAIRED, LATE"
+  if (name === 'add_tag' && result.startsWith('✓')) {
+    const m = result.match(/:\s*(.+)$/)
+    return m ? m[1].trim() : null
   }
 
-  // log_case retourne "✓ Cas enregistré #N"
+  // add_sav_comment → "✓ Commentaire SAV (order #XXXX) : ..."
+  if (name === 'add_sav_comment' && result.startsWith('✓')) {
+    const m = result.match(/:\s*(.+)$/)
+    return m ? m[1].trim().slice(0, 80) : null
+  }
+
+  // add_internal_note → "✓ Note interne : ..."
+  if (name === 'add_internal_note' && result.startsWith('✓')) {
+    const m = result.match(/:\s*(.+)$/)
+    return m ? m[1].trim().slice(0, 80) : null
+  }
+
+  // add_sav_line retourne "✓ Ligne produit ajoutée..."
+  if (name === 'add_sav_line' && result.startsWith('✓')) {
+    return result.replace('✓ ', '').slice(0, 80)
+  }
+
+  // log_case retourne "✓ Cas #N loggué..."
   if (name === 'log_case') {
     const m = result.match(/#\d+/)
     return m ? `Cas ${m[0]}` : null

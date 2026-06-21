@@ -306,9 +306,8 @@ export async function zeroOutOrderLines(orderId: string): Promise<void> {
  * Ajoute un tag à une order existante (conserve les tags existants).
  * GET retourne `tags`, PUT accepte `tag_list` (array).
  */
-export async function addTagToOrder(orderId: string, tag: string): Promise<void> {
-  // Booqable stocke les tags en minuscule
-  const tagLower = tag.toLowerCase()
+export async function addTagToOrder(orderId: string, tags: string | string[]): Promise<void> {
+  const newTags = (Array.isArray(tags) ? tags : [tags]).map(t => t.toLowerCase())
 
   const getRes = await fetch(`${BASE}/orders/${orderId}`, {
     headers: headers(),
@@ -317,11 +316,12 @@ export async function addTagToOrder(orderId: string, tag: string): Promise<void>
   if (!getRes.ok) throw new Error(`Booqable getOrder error: ${getRes.status}`)
 
   const getData = await getRes.json() as { order?: BooqableOrder }
-  const existingTags = getData.order?.tags || []   // GET retourne "tags"
+  const existingTags = getData.order?.tags || []
 
-  if (existingTags.includes(tagLower)) return      // déjà présent
+  const merged = Array.from(new Set([...existingTags, ...newTags]))
+  if (merged.length === existingTags.length && newTags.every(t => existingTags.includes(t))) return  // tous déjà présents
 
-  // v4 PUT — format vérifié sur Google Apps Script setDirectTagFromInvoiceV4
+  // v4 PUT
   const res = await fetch(`${BASE4}/orders/${orderId}`, {
     method: 'PUT',
     headers: headers(),
@@ -329,7 +329,7 @@ export async function addTagToOrder(orderId: string, tag: string): Promise<void>
       data: {
         id:   orderId,
         type: 'orders',
-        attributes: { tag_list: [...existingTags, tagLower] },
+        attributes: { tag_list: merged },
       },
     }),
     signal: AbortSignal.timeout(10000),
@@ -553,7 +553,8 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
     // Étape 1 — book_product pour créer le planning
     // Étape 2 — assign_stock_items pour assigner l'exemplaire précis
     if (params.stockItemId) {
-      const bookRes = await fetch(`${BASE4}/order_fulfillments`, {
+      // Étape 1 — book_product avec include=changed_plannings pour récupérer le planning_id
+      const bookRes = await fetch(`${BASE4}/order_fulfillments?include=changed_plannings`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
@@ -578,11 +579,14 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
         included?: Array<{ id: string; type: string }>
       }
 
-      // Chercher le planning_id dans les ressources incluses
-      let planningId = (bookData.included || []).find(r => r.type === 'plannings')?.id
+      // Chercher le planning_id dans les ressources incluses (type peut être 'planning' ou 'plannings')
+      const includedTypes = (bookData.included || []).map(r => r.type)
+      console.log('book_product included types:', includedTypes)
+      let planningId = (bookData.included || []).find(r => r.type === 'plannings' || r.type === 'planning')?.id
 
       // Fallback : fetcher les plannings de l'order filtrés par product_id
       if (!planningId) {
+        console.warn('addSAVLine: planning not in book_product response, fetching separately...')
         try {
           const planRes = await fetch(
             `${BASE4}/plannings?filter[order_id]=${params.orderId}&filter[product_id]=${productId}&page[size]=5`,
@@ -591,38 +595,48 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
           if (planRes.ok) {
             const planData = await planRes.json() as { data?: Array<{ id: string }> }
             planningId = planData.data?.[0]?.id
+            console.log('addSAVLine: planning fetched separately:', planningId)
           }
         } catch (e) {
           console.warn('addSAVLine: could not fetch plannings:', e)
         }
       }
 
-      // Assigner l'exemplaire spécifique via specify_stock_items
+      // Étape 2 — specify_stock_items avec les deux formats (order_fulfillment + data)
       if (planningId) {
-        const assignRes = await fetch(`${BASE4}/order_fulfillments`, {
-          method: 'POST',
-          headers: headers(),
-          body: JSON.stringify({
-            data: {
-              type: 'order_fulfillments',
-              attributes: {
+        const specifyAction = {
+          action: 'specify_stock_items',
+          product_id: productId,
+          planning_id: planningId,
+          stock_item_ids_to_add: [params.stockItemId],
+        }
+        const assignRes = await fetch(
+          `${BASE4}/order_fulfillments?include=order,changed_plannings,changed_stock_item_plannings`,
+          {
+            method: 'POST',
+            headers: headers(),
+            body: JSON.stringify({
+              order_fulfillment: {
                 order_id: params.orderId,
-                confirm_shortage: false,
-                actions: [{
-                  action: 'specify_stock_items',
-                  product_id: productId,
-                  planning_id: planningId,
-                  stock_item_ids_to_add: [params.stockItemId],
-                }],
+                actions: [specifyAction],
               },
-            },
-          }),
-          signal: AbortSignal.timeout(10000),
-        })
+              data: {
+                type: 'order_fulfillments',
+                attributes: {
+                  order_id: params.orderId,
+                  confirm_shortage: false,
+                  actions: [specifyAction],
+                },
+              },
+            }),
+            signal: AbortSignal.timeout(10000),
+          }
+        )
         if (!assignRes.ok) {
           const text = await assignRes.text()
-          console.warn(`addSAVLine: assign_stock_items failed (${assignRes.status}): ${text}`)
-          // Ne pas throw — le produit est quand même ajouté, juste pas l'exemplaire précis
+          console.warn(`addSAVLine: specify_stock_items failed (${assignRes.status}): ${text}`)
+        } else {
+          console.log(`addSAVLine: specify_stock_items OK — stock_item ${params.stockItemId} assigné au planning ${planningId}`)
         }
       } else {
         console.warn('addSAVLine: no planning_id found, stock item not assigned')
