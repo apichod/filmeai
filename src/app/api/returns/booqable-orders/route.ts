@@ -10,6 +10,7 @@ export type BooqableOrderRow = {
   customer_name: string
   order_sav: string
   notes_sav: string
+  date_sav: string
   starts_at: string
   stops_at: string
   status: string
@@ -60,39 +61,30 @@ export async function GET(req: NextRequest) {
 
   const data = await res.json() as V4Response
 
-  // Index des ressources incluses
-  const included = data.included || []
-  const customerMap  = new Map<string, string>()             // id → name
-  const propsByOrder = new Map<string, Map<string, string>>() // orderId → {identifier: value}
-
-  for (const item of included) {
+  // Index des customers depuis included
+  const customerMap = new Map<string, string>() // id → name
+  for (const item of (data.included || [])) {
     if (item.type === 'customers') {
       customerMap.set(item.id, (item.attributes as CustomerAttrs).name || '—')
-    }
-    if (item.type === 'properties') {
-      const attrs   = item.attributes as PropAttrs
-      const ownerId = (item.relationships as PropRels)?.owner?.data?.id
-      if (ownerId) {
-        if (!propsByOrder.has(ownerId)) propsByOrder.set(ownerId, new Map())
-        propsByOrder.get(ownerId)!.set(attrs.identifier || '', attrs.value || '')
-      }
     }
   }
 
   const rows: BooqableOrderRow[] = (data.data || []).map(order => {
     const attrs  = order.attributes as OrderAttrs
-    const custId = (order.relationships as OrderRels)?.customer?.data?.id
-    const props  = propsByOrder.get(order.id) || new Map()
+    // Properties sont directement dans attributes.properties (pas dans included)
+    const props  = attrs.properties || {}
+    const custId = attrs.customer_id
 
     return {
       id:            order.id,
       number:        attrs.number ?? '',
       customer_name: custId ? (customerMap.get(custId) || '—') : '—',
-      order_sav:     props.get('order_sav')  || props.get('order_origin') || '',
-      notes_sav:     props.get('notes_sav')  || props.get('note_interne') || '',
-      starts_at:     attrs.starts_at || '',
-      stops_at:      attrs.stops_at  || '',
-      status:        attrs.status    || '',
+      order_sav:     props.order_sav  || '',
+      notes_sav:     props.notes_sav  || '',
+      date_sav:      props.date_sav   || '',
+      starts_at:     attrs.starts_at  || '',
+      stops_at:      attrs.stops_at   || '',
+      status:        attrs.status     || '',
       url:           `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`,
     }
   })
@@ -115,8 +107,11 @@ type V4Response = {
   meta?: Record<string, unknown>
 }
 
-type OrderAttrs    = { number?: string | number; status?: string; starts_at?: string; stops_at?: string; tag_list?: string | string[] }
-type OrderRels     = { customer?: { data?: { id: string } } }
+type OrderProps = {
+  order_sav?: string | null
+  notes_sav?: string | null
+  date_sav?:  string | null
+  [key: string]: string | null | undefined
+}
+type OrderAttrs    = { number?: string | number; status?: string; starts_at?: string; stops_at?: string; tag_list?: string | string[]; properties?: OrderProps; customer_id?: string }
 type CustomerAttrs = { name?: string }
-type PropAttrs     = { identifier?: string; value?: string }
-type PropRels      = { owner?: { data?: { id: string } } }

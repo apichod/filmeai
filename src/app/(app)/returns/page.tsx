@@ -757,6 +757,7 @@ type BooqableOrderRow = {
   customer_name: string
   order_sav: string
   notes_sav: string
+  date_sav: string
   starts_at: string
   stops_at: string
   status: string
@@ -764,10 +765,25 @@ type BooqableOrderRow = {
 }
 
 function BooqableOrdersTable({ tag }: { tag: string }) {
-  const [orders, setOrders]   = useState<BooqableOrderRow[]>([])
-  const [loading, setLoading] = useState(false)
-  const [synced, setSynced]   = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [orders, setOrders]     = useState<BooqableOrderRow[]>([])
+  const [loading, setLoading]   = useState(false)
+  const [synced, setSynced]     = useState(false)
+  const [syncedAt, setSyncedAt] = useState<string | null>(null)
+  const [error, setError]       = useState<string | null>(null)
+  const storageKey = `bq_orders_${tag}`
+
+  // Charger depuis localStorage au montage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey)
+      if (stored) {
+        const parsed = JSON.parse(stored) as { orders: BooqableOrderRow[]; syncedAt: string }
+        setOrders(parsed.orders)
+        setSyncedAt(parsed.syncedAt)
+        setSynced(true)
+      }
+    } catch { /* ignore */ }
+  }, [storageKey])
 
   async function sync() {
     setLoading(true)
@@ -776,8 +792,13 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
       const res  = await fetch(`/api/returns/booqable-orders?tag=${encodeURIComponent(tag)}`)
       const data = await res.json() as { orders?: BooqableOrderRow[]; error?: string }
       if (data.error) { setError(data.error); return }
-      setOrders(data.orders || [])
+      const rows = data.orders || []
+      const now  = new Date().toISOString()
+      setOrders(rows)
+      setSyncedAt(now)
       setSynced(true)
+      // Persister jusqu'au prochain sync
+      localStorage.setItem(storageKey, JSON.stringify({ orders: rows, syncedAt: now }))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur réseau')
     } finally {
@@ -799,6 +820,11 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
           </h2>
           {synced && (
             <span className="text-xs text-gray-400">{orders.length} order{orders.length !== 1 ? 's' : ''}</span>
+          )}
+          {syncedAt && (
+            <span className="text-xs text-gray-400">
+              · Sync {new Date(syncedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </span>
           )}
         </div>
         <button
@@ -843,6 +869,7 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
               </tr>
@@ -865,6 +892,7 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
                   </td>
                   <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                   <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
                   <td className="px-4 py-3 text-gray-600 max-w-xs truncate text-xs">{o.notes_sav || '—'}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                     {fmtDate(o.starts_at)} → {fmtDate(o.stops_at)}
