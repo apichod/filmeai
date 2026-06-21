@@ -869,8 +869,8 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
               </tr>
             </thead>
@@ -892,8 +892,8 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
                   </td>
                   <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                   <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 text-xs max-w-xs whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
-                  <td className="px-4 py-3 text-gray-600 max-w-xs truncate text-xs">{o.notes_sav || '—'}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                     {fmtDate(o.starts_at)} → {fmtDate(o.stops_at)}
                   </td>
