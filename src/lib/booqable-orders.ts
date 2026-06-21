@@ -445,8 +445,6 @@ async function resolveProductId(productGroupId: string): Promise<string | null> 
  * - type 'custom'  : crée une ligne charge via POST /lines
  */
 export async function addSAVLine(params: SAVLineParams): Promise<void> {
-  const subdomain = process.env.BOOQABLE_SUBDOMAIN
-
   if (params.type === 'product') {
     // Résoudre le product_id depuis le product_group_id
     const productId = await resolveProductId(params.productGroupId)

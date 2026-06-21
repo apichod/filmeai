@@ -11,7 +11,6 @@ import {
   searchProducts,
   getStockItems,
   addSAVLine,
-  zeroOutOrderLines,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
