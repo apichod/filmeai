@@ -10,6 +10,7 @@ const tabs = [
   { label: 'Conditions', href: '/assistant/conditions' },
   { label: 'Devis', href: '/assistant/quotes' },
   { label: 'Intégration', href: '/assistant/integration' },
+  { label: 'Workflows retours', href: '/assistant/workflows' },
 ]
 
 export default function AssistantLayout({ children }: { children: React.ReactNode }) {

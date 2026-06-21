@@ -18,6 +18,7 @@ const NAV_PERMISSIONS = [
   { key: 'inbox',      label: 'Inbox' },
   { key: 'contacts',   label: 'Contacts' },
   { key: 'requests',   label: 'Assistant planning' },
+  { key: 'returns',    label: 'Assistant retours' },
   { key: 'assistant',  label: 'Paramètres' },
   { key: 'statistics', label: 'Statistiques' },
 ]
