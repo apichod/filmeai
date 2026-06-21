@@ -136,7 +136,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
-  caseId: string | null
+  _caseId: string | null
 ): Promise<{ result: string; caseId?: string }> {
   try {
     switch (name) {
