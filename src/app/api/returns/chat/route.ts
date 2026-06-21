@@ -41,21 +41,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'add_internal_note',
-      description: 'Ajoute une note interne à l\'order Booqable',
-      parameters: {
-        type: 'object',
-        properties: {
-          order_id:  { type: 'string', description: 'UUID Booqable de l\'order — utiliser le champ "id" retourné par fetch_order, PAS le numéro lisible' },
-          note:      { type: 'string', description: 'Texte de la note interne' },
-        },
-        required: ['order_id', 'note'],
-      },
-    },
-  },
+  // add_internal_note retiré du workflow automatique (disponible en cas de besoin manuel uniquement)
   {
     type: 'function',
     function: {

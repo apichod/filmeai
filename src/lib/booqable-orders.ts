@@ -99,7 +99,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
 
       const included = boomData.included || []
 
-      // Index des produits : id → { name, product_group_id }
+      // Index des produits (type="products") : product_id → { name, product_group_id }
       const productMap = new Map<string, { name: string; product_group_id: string }>()
       for (const r of included) {
         if (r.type === 'products') {
@@ -107,6 +107,15 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
             name: String(r.attributes.name || ''),
             product_group_id: String(r.attributes.product_group_id || ''),
           })
+        }
+      }
+
+      // Index des product_groups (type="product_groups") : product_group_id → { name }
+      // Dans boomerang, la relationship item d'une line peut pointer directement sur product_groups
+      const productGroupMap = new Map<string, { name: string }>()
+      for (const r of included) {
+        if (r.type === 'product_groups') {
+          productGroupMap.set(r.id, { name: String(r.attributes.name || '') })
         }
       }
 
@@ -139,28 +148,38 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         const qty = Number(attrs.quantity) || 0
         if (qty <= 0) continue
 
-        // En JSON:API boomerang, l'item_id est dans relationships.item.data.id
-        // (pas dans attributes). attrs.description est le nom du produit sur la ligne.
+        // Résolution de l'item via relationships (JSON:API boomerang)
+        // La relationship "item" peut pointer sur "product_groups" ou "products" selon le cas.
         type Rel = { data?: { type: string; id: string } }
         const rels = r.relationships as Record<string, Rel> | undefined
-        const itemId = String(rels?.item?.data?.id || attrs.item_id || '')
-        const product = productMap.get(itemId)
+        const itemRel = rels?.item?.data
+        const itemRelId   = itemRel?.id   || String(attrs.item_id || '')
+        const itemRelType = itemRel?.type || ''
 
-        // attrs.description = nom du produit directement dans la ligne (plus fiable)
-        const productName = String(attrs.description || product?.name || '')
+        let productGroupId: string | undefined
+        // Si la relationship pointe directement sur un product_group → l'id est déjà le product_group_id
+        if (itemRelType === 'product_groups') {
+          productGroupId = itemRelId || undefined
+        } else {
+          // Sinon (type="products" ou attrs.item_id) → chercher dans productMap
+          const product = productMap.get(itemRelId)
+          productGroupId = product?.product_group_id || undefined
+        }
+
+        // attrs.description = nom du produit sur la ligne (le plus fiable dans boomerang)
+        const productName = String(attrs.description || productGroupMap.get(itemRelId)?.name || productMap.get(itemRelId)?.name || '')
         if (!productName) continue  // ignorer les lignes sans nom (frais internes, etc.)
 
-        // Trouver le stock_item_id assigné via planning_id
         const planningId = String(attrs.planning_id || '')
         const stockItemId = planningStockMap.get(planningId) || undefined
         const stockItemIdentifier = stockItemId ? stockItemMap.get(stockItemId) : undefined
 
         lines.push({
           id: r.id,
-          product_id: itemId,
+          product_id: itemRelId,
           product_name: productName,
           quantity: qty,
-          product_group_id: product?.product_group_id || undefined,
+          product_group_id: productGroupId,
           stock_item_id: stockItemId,
           stock_item_identifier: stockItemIdentifier,
         })
