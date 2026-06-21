@@ -153,9 +153,9 @@ async function executeTool(
             customer_id: order.customer_id,
             starts_at: order.starts_at,
             stops_at: order.stops_at,
-            tags: order.tag_list,
+            tags: order.tags,
             lines,
-            note: order.note,
+            note_interne: order.properties_attributes?.note_interne || null,
           }),
         }
       }
