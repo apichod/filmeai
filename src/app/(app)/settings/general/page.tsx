@@ -197,14 +197,6 @@ export default function SettingsGeneralPage() {
   // Langue
   const [lang, setLang] = useState('fr')
 
-  // Password
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [passwordError, setPasswordError] = useState('')
-  const [savingPassword, setSavingPassword] = useState(false)
-  const [savedPassword, setSavedPassword] = useState(false)
-
   // Load data
   useEffect(() => {
     const supabase = getSupabase()
@@ -279,31 +271,6 @@ export default function SettingsGeneralPage() {
     setSavingProfile(false)
     setSavedProfile(true)
     setTimeout(() => setSavedProfile(false), 2500)
-  }
-
-  async function changePassword() {
-    setPasswordError('')
-    if (newPassword.length < 8) {
-      setPasswordError('8 caractères minimum, avec une majuscule et un chiffre.')
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError('Les deux mots de passe ne correspondent pas.')
-      return
-    }
-    setSavingPassword(true)
-    const supabase = getSupabase()
-    const { error } = await supabase.auth.updateUser({ password: newPassword })
-    setSavingPassword(false)
-    if (error) {
-      setPasswordError(error.message)
-    } else {
-      setSavedPassword(true)
-      setCurrentPassword('')
-      setNewPassword('')
-      setConfirmPassword('')
-      setTimeout(() => setSavedPassword(false), 3000)
-    }
   }
 
   return (
@@ -452,36 +419,6 @@ export default function SettingsGeneralPage() {
             </button>
           ))}
         </div>
-      </Section>
-
-      {/* ── Mot de passe ── */}
-      <Section
-        icon={<IconKey />}
-        title="Mot de passe"
-        subtitle="Changez le mot de passe de votre compte. Les autres appareils connectés seront déconnectés."
-      >
-        <Field label="Mot de passe actuel">
-          <Input type="password" value={currentPassword} onChange={setCurrentPassword} placeholder="••••••••" />
-        </Field>
-        <Field label="Nouveau mot de passe">
-          <Input type="password" value={newPassword} onChange={setNewPassword} placeholder="••••••••" />
-          <p className="text-xs text-gray-400 mt-1">8 caractères minimum, avec une majuscule et un chiffre.</p>
-        </Field>
-        <Field label="Confirmer le nouveau mot de passe">
-          <Input type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="••••••••" />
-        </Field>
-
-        {passwordError && (
-          <p className="text-xs text-red-500">{passwordError}</p>
-        )}
-
-        <button
-          onClick={changePassword}
-          disabled={savingPassword}
-          className="bg-black text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
-        >
-          {savingPassword ? 'Modification…' : savedPassword ? 'Mot de passe modifié ✓' : 'Changer le mot de passe'}
-        </button>
       </Section>
 
       {/* ── Compte & données ── */}
