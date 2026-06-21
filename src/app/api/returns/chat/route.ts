@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import nodemailer from 'nodemailer'
+import { renderEmail, type EmailTemplateId } from '@/lib/email-templates'
 import {
   fetchOrderByNumber,
   createSAVOrder,
@@ -173,19 +174,31 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'draft_email',
-      description: 'Génère un email client basé sur le template Filme (casse ou manquant). À appeler après log_case. Affiche l\'email à l\'opérateur et demande confirmation avant envoi.',
+      description: `Génère un email client à partir de la bibliothèque de templates Filme. À appeler après log_case.
+Templates disponibles :
+- retour_ok : #10 tout est OK, pas de problème
+- retour_casse : #11 contrôle retour matériel cassé (requiert insurance, caution)
+- retour_manquant : #11 contrôle retour matériel manquant
+- facturation_casse : #12 facture réparation (requiert insurance, caution, amount_above_500)
+- facturation_perdu : #12 facture perte matériel (requiert insurance, caution)
+- facturation_vole : #12 facture vol matériel (requiert insurance, caution, amount_above_500)`,
       parameters: {
         type: 'object',
         properties: {
-          problem_type:        { type: 'string', enum: ['casse', 'manquant'], description: 'Type de problème' },
-          insurance:           { type: 'boolean', description: 'Le client a une assurance ?' },
-          caution:             { type: 'boolean', description: 'Une caution est active ?' },
+          template_id:         { type: 'string', enum: ['retour_ok','retour_casse','retour_manquant','facturation_casse','facturation_perdu','facturation_vole'], description: 'ID du template à utiliser' },
+          insurance:           { type: 'boolean', description: 'Le client a souscrit à l\'assurance' },
+          caution:             { type: 'boolean', description: 'Une caution est active sur l\'order' },
+          amount_above_500:    { type: 'boolean', description: 'Montant réparation/remplacement > 500 € (pour templates facturation avec franchise)' },
+          late_payment:        { type: 'boolean', description: 'Cas retard de paiement (templates facturation uniquement)' },
           customer_name:       { type: 'string', description: 'Prénom/nom du client' },
           customer_email:      { type: 'string', description: 'Email du client (champ customer_email de fetch_order)' },
-          origin_order_number: { type: 'string', description: 'Numéro de l\'order d\'origine' },
-          sav_comment:         { type: 'string', description: 'Détail du problème (identique au commentaire SAV)' },
+          order_number:        { type: 'string', description: 'Numéro de location (pour retour_ok)' },
+          origin_order_number: { type: 'string', description: 'Numéro de l\'order d\'origine (order_sav)' },
+          sav_comment:         { type: 'string', description: 'Détail du problème (notes_sav)' },
+          payment_link:        { type: 'string', description: 'Lien paiement CB (templates facturation)' },
+          document_number:     { type: 'string', description: 'Numéro de facture Booqable (templates facturation)' },
         },
-        required: ['problem_type', 'insurance', 'caution', 'customer_name', 'origin_order_number', 'sav_comment'],
+        required: ['template_id', 'customer_name'],
       },
     },
   },
@@ -333,39 +346,23 @@ async function executeTool(
       }
 
       case 'draft_email': {
-        const problemType    = String(args.problem_type || 'casse')
-        const insurance      = Boolean(args.insurance)
-        const caution        = Boolean(args.caution)
-        const customerName   = String(args.customer_name || '')
-        const originOrderNum = String(args.origin_order_number || '')
-        const savComment     = String(args.sav_comment || '')
-
-        // Détermine le cas (1–4)
-        let caseBlock = ''
-        if (problemType === 'casse') {
-          if (insurance && !caution) {
-            caseBlock = `Vous avez souscrit à notre assurance.\nConformément à nos conditions générales, une franchise de 20 % du montant des dommages s'applique, avec un minimum de 500 € HT.\nPour les réparations inférieures à 500 €, le montant total vous sera facturé.\nDès réception du devis, nous vous adresserons la facture correspondante, accompagnée du détail des réparations.`
-          } else if (insurance && caution) {
-            caseBlock = `Vous avez souscrit à notre assurance.\nConformément à nos conditions générales, une franchise de 20 % du montant des dommages s'applique, avec un minimum de 500 € HT.\nPour les réparations inférieures à 500 €, le montant total vous sera facturé.\nUne caution est actuellement active ; nous la conservons à titre de garantie jusqu'à réception du devis de réparation.\nDès réception du devis, nous vous adresserons la facture correspondante, accompagnée du détail des réparations.`
-          } else if (!insurance && !caution) {
-            caseBlock = `Vous n'avez pas souscrit à notre assurance.\nL'intégralité du coût de la réparation sera donc à votre charge.\nDès réception du devis, nous vous adresserons la facture correspondante, accompagnée du détail des réparations.`
-          } else {
-            caseBlock = `Vous n'avez pas souscrit à notre assurance.\nL'intégralité du coût de la réparation sera donc à votre charge.\nUne caution est actuellement active ; nous la conservons à titre de garantie le temps d'obtenir le devis.\nDès réception du devis, nous vous adresserons la facture correspondante, accompagnée du détail des réparations.`
-          }
-        }
-
-        let subject = ''
-        let body    = ''
-
-        if (problemType === 'casse') {
-          subject = `filme – Dommage matériel constaté lors du retour de votre commande ${originOrderNum}`
-          body = `Hello ${customerName},\n\nNous venons de procéder à la vérification du retour de votre commande #${originOrderNum}.\nLors du contrôle, nous avons relevé les points suivants :\n${savComment}\n\n${caseBlock}\n\nN'hésitez pas à nous contacter par retour d'email à location@filme.fr ou par téléphone au 07 57 83 07 07.\nNous comptons sur votre réactivité et restons à votre disposition.\n\nL'équipe Filme`
-        } else {
-          subject = `filme – Matériel manquant lors du retour de votre commande ${originOrderNum}`
-          body = `Hello ${customerName},\n\nNous venons de finaliser la vérification du retour de votre commande #${originOrderNum}.\nLors du contrôle, nous avons relevé les points suivants :\n${savComment}\n\n👉 Afin de régulariser rapidement la situation, merci de rapporter le matériel manquant dès que possible dans nos locaux de Montreuil.\nSi cela n'est pas possible, merci de nous contacter sans délai afin que nous trouvions ensemble la solution la plus adaptée.\n\nMerci de bien vouloir nous tenir informés par retour d'email à location@filme.fr ou par téléphone au 07 57 83 07 07.\nNous comptons sur votre réactivité et restons à votre disposition.\n\nL'équipe Filme`
-        }
-
-        return { result: JSON.stringify({ subject, body, to: args.customer_email || '' }) }
+        const templateId = String(args.template_id || 'retour_casse') as EmailTemplateId
+        const email = renderEmail(templateId, {
+          customerName:       String(args.customer_name || ''),
+          customerEmail:      args.customer_email ? String(args.customer_email) : undefined,
+          orderNumber:        args.order_number ? String(args.order_number) : undefined,
+          originOrderNumber:  args.origin_order_number ? String(args.origin_order_number) : undefined,
+          notesSav:           args.sav_comment ? String(args.sav_comment) : undefined,
+          insurance:          Boolean(args.insurance),
+          caution:            Boolean(args.caution),
+          amountAbove500:     Boolean(args.amount_above_500),
+          latePayment:        Boolean(args.late_payment),
+          paymentLink:        args.payment_link ? String(args.payment_link) : undefined,
+          documentNumber:     args.document_number ? String(args.document_number) : undefined,
+          orderStartsAt:      args.order_starts_at ? String(args.order_starts_at) : undefined,
+          orderStopsAt:       args.order_stops_at ? String(args.order_stops_at) : undefined,
+        })
+        return { result: JSON.stringify({ subject: email.subject, body: email.body, to: email.to || args.customer_email || '' }) }
       }
 
       case 'send_email': {
@@ -482,7 +479,15 @@ B6. Annonce : "J'enregistre le cas dans le suivi..."
 ÉTAPE C — EMAIL CLIENT (après log_case)
 ═══════════════════════════════════════════════════
 
-C1. Appelle draft_email avec : problem_type, insurance, caution, customer_name, customer_email (de fetch_order), origin_order_number, sav_comment.
+C1. Choisis le template adapté :
+    - Contrôle retour OK → retour_ok
+    - Contrôle retour cassé → retour_casse
+    - Contrôle retour manquant → retour_manquant
+    - Facturation réparation → facturation_casse
+    - Facturation perte → facturation_perdu
+    - Facturation vol → facturation_vole
+    Appelle draft_email avec : template_id, insurance, caution, customer_name, customer_email (de fetch_order), origin_order_number, sav_comment.
+    Pour les templates facturation, demande aussi à l'opérateur si le montant dépasse 500 € (amount_above_500), et s'il a un lien de paiement ou un numéro de facture.
 
 C2. Présente l'email généré à l'opérateur :
     "Voici l'email que je propose d'envoyer à [customer_email] :
