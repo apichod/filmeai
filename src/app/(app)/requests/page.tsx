@@ -132,6 +132,23 @@ export default function RequestsPage() {
     }
   }
 
+  async function deleteSelected() {
+    if (!selected.size) return
+    if (!confirm(`Supprimer définitivement ${selected.size} demande${selected.size > 1 ? 's' : ''} ? Cette action est irréversible.`)) return
+    setBulkArchiving(true)
+    try {
+      await Promise.all(
+        Array.from(selected).map(id =>
+          fetch(`/api/conversations/${id}`, { method: 'DELETE' })
+        )
+      )
+      setRequests(prev => prev.filter(r => !selected.has(r.id)))
+      setSelected(new Set())
+    } finally {
+      setBulkArchiving(false)
+    }
+  }
+
   const allSelected = filtered.length > 0 && selected.size === filtered.length
   const someSelected = selected.size > 0
 
@@ -148,16 +165,29 @@ export default function RequestsPage() {
           {someSelected && (
             <>
               <span className="text-sm text-gray-500">{selected.size} sélectionnée{selected.size > 1 ? 's' : ''}</span>
-              <button
-                onClick={() => void archiveSelected()}
-                disabled={bulkArchiving}
-                className="flex items-center gap-1.5 text-sm text-white bg-gray-900 hover:bg-gray-700 disabled:opacity-50 px-3 py-2 rounded-lg transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M10 12v4m4-4v4" />
-                </svg>
-                {bulkArchiving ? 'Archivage…' : 'Archiver'}
-              </button>
+              {statusFilter === 'closed' ? (
+                <button
+                  onClick={() => void deleteSelected()}
+                  disabled={bulkArchiving}
+                  className="flex items-center gap-1.5 text-sm text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 px-3 py-2 rounded-lg transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  {bulkArchiving ? 'Suppression…' : 'Supprimer'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => void archiveSelected()}
+                  disabled={bulkArchiving}
+                  className="flex items-center gap-1.5 text-sm text-white bg-gray-900 hover:bg-gray-700 disabled:opacity-50 px-3 py-2 rounded-lg transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M10 12v4m4-4v4" />
+                  </svg>
+                  {bulkArchiving ? 'Archivage…' : 'Archiver'}
+                </button>
+              )}
               <button onClick={() => setSelected(new Set())} className="text-sm text-gray-500 hover:text-gray-900">Annuler</button>
             </>
           )}
