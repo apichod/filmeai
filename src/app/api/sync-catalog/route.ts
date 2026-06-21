@@ -80,9 +80,6 @@ function stripHtml(value?: string): string {
   return value ? value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : ''
 }
 
-function centsToDecimalString(cents?: number): string | undefined {
-  return cents !== undefined ? String(cents / 100) : undefined
-}
 
 function getAttributes(resource: JsonRecord): JsonRecord {
   return asRecord(resource.attributes) || {}
