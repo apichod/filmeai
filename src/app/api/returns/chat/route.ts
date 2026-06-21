@@ -135,8 +135,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
 
 async function executeTool(
   name: string,
-  args: Record<string, unknown>,
-  _caseId: string | null
+  args: Record<string, unknown>
 ): Promise<{ result: string; caseId?: string }> {
   try {
     switch (name) {
@@ -332,7 +331,7 @@ Guide le responsable de stock à travers les procédures de retour étape par é
             let args: Record<string, unknown> = {}
             try { args = JSON.parse(tc.arguments) } catch { /* ignore */ }
 
-            const { result, caseId: newCaseId } = await executeTool(tc.name, args, currentCaseId)
+            const { result, caseId: newCaseId } = await executeTool(tc.name, args)
             if (newCaseId) currentCaseId = newCaseId
 
             send(JSON.stringify({ type: 'tool_result', name: tc.name, result }))
