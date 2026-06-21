@@ -350,36 +350,151 @@ export type SAVLineParams =
   | { type: 'custom';  orderId: string; title: string; quantity: number; note?: string }
 
 /**
- * Ajoute une ligne à la SAV order via l'API v4.
- * - type 'product' : ligne produit Booqable (product_group_id)
- * - type 'custom'  : ligne custom (article non référencé)
+ * Résout le product_id Booqable depuis un product_group_id.
+ * Même logique que booqable.ts → productIdForProductGroup.
+ */
+async function resolveProductId(productGroupId: string): Promise<string | null> {
+  const key = KEY
+
+  // v4 — product_group include=products
+  try {
+    const res = await fetch(`${BASE4}/product_groups/${productGroupId}?include=products`, {
+      headers: headers(),
+      signal: AbortSignal.timeout(8000),
+    })
+    if (res.ok) {
+      const data = await res.json() as { included?: Array<{ type: string; id: string; attributes?: { product_group_id?: string } }> }
+      const product = (data.included || []).find(r => r.type === 'products' || r.type === 'product')
+      if (product?.id) return product.id
+    }
+  } catch { /* continue */ }
+
+  // v4 — filter by product_group_id
+  try {
+    const res = await fetch(`${BASE4}/products?filter[product_group_id]=${productGroupId}&page[size]=5`, {
+      headers: headers(),
+      signal: AbortSignal.timeout(8000),
+    })
+    if (res.ok) {
+      const data = await res.json() as { data?: Array<{ id: string }> }
+      if (data.data?.[0]?.id) return data.data[0].id
+    }
+  } catch { /* continue */ }
+
+  // v1 fallback
+  try {
+    const res = await fetch(`${BASE}/product_groups/${productGroupId}?api_key=${key}`, {
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (res.ok) {
+      const data = await res.json() as { product_group?: { products?: Array<{ id: string }> } }
+      if (data.product_group?.products?.[0]?.id) return data.product_group.products[0].id
+    }
+  } catch { /* continue */ }
+
+  return null
+}
+
+/**
+ * Ajoute une ligne à la SAV order.
+ * - type 'product' : utilise order_fulfillments (book_product / book_specific_stock_items)
+ * - type 'custom'  : crée une ligne charge via POST /lines
  */
 export async function addSAVLine(params: SAVLineParams): Promise<void> {
-  const attributes: Record<string, unknown> = {
-    owner_id:   params.orderId,
-    owner_type: 'orders',
-    quantity:   params.quantity,
-  }
+  const subdomain = process.env.BOOQABLE_SUBDOMAIN
+  const key = KEY
 
   if (params.type === 'product') {
-    attributes.product_group_id = params.productGroupId
-    if (params.stockItemId) attributes.stock_item_id = params.stockItemId
-  } else {
-    attributes.line_type   = 'charge'
-    attributes.title       = params.title
-    attributes.price_each_in_cents = 0
-    if (params.note) attributes.extra_information = params.note
+    // Résoudre le product_id depuis le product_group_id
+    const productId = await resolveProductId(params.productGroupId)
+    if (!productId) throw new Error(`Impossible de résoudre le product_id pour product_group ${params.productGroupId}`)
+
+    // Pour un stock item spécifique (trackable) → book_specific_stock_items
+    // Sinon → book_product classique
+    const action: Record<string, unknown> = params.stockItemId
+      ? {
+          action: 'book_specific_stock_items',
+          product_id: productId,
+          stock_item_ids: [params.stockItemId],
+        }
+      : {
+          action: 'book_product',
+          mode: 'create_new',
+          product_id: productId,
+          quantity: params.quantity,
+        }
+
+    const res = await fetch(`${BASE4}/order_fulfillments`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          type: 'order_fulfillments',
+          attributes: {
+            order_id: params.orderId,
+            confirm_shortage: false,
+            actions: [action],
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      // Fallback: si book_specific_stock_items échoue, essayer book_product sans stock_item
+      if (params.stockItemId) {
+        console.warn(`book_specific_stock_items failed (${res.status}), trying book_product fallback`)
+        const fallback = await fetch(`https://${subdomain}.booqable.com/api/4/order_fulfillments`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            data: {
+              type: 'order_fulfillments',
+              attributes: {
+                order_id: params.orderId,
+                confirm_shortage: false,
+                actions: [{ action: 'book_product', mode: 'create_new', product_id: productId, quantity: params.quantity }],
+              },
+            },
+          }),
+          signal: AbortSignal.timeout(15000),
+        })
+        if (!fallback.ok) {
+          const fallbackText = await fallback.text()
+          throw new Error(`Booqable addSAVLine fallback error ${fallback.status}: ${fallbackText}`)
+        }
+        return
+      }
+      throw new Error(`Booqable addSAVLine error ${res.status}: ${text}`)
+    }
+    return
   }
 
+  // Ligne custom (article non référencé)
   const res = await fetch(`${BASE4}/lines`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ data: { type: 'lines', attributes } }),
+    body: JSON.stringify({
+      data: {
+        type: 'lines',
+        attributes: {
+          owner_id:             params.orderId,
+          owner_type:           'orders',
+          line_type:            'charge',
+          title:                params.title,
+          quantity:             params.quantity,
+          price_each_in_cents:  0,
+          ...(params.note ? { extra_information: params.note } : {}),
+        },
+      },
+    }),
     signal: AbortSignal.timeout(10000),
   })
 
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Booqable addSAVLine error ${res.status}: ${text}`)
+    throw new Error(`Booqable addSAVLine custom error ${res.status}: ${text}`)
   }
 }
