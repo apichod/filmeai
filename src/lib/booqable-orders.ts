@@ -139,9 +139,9 @@ export async function addTagToOrder(orderId: string, tag: string): Promise<void>
   if (existingTags.includes(tag)) return           // déjà présent
 
   const res = await fetch(`${BASE}/orders/${orderId}`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: headers(),
-    body: JSON.stringify({ order: { tag_list: [...existingTags, tag] } }),  // PUT utilise tag_list
+    body: JSON.stringify({ order: { tag_list: [...existingTags, tag] } }),
     signal: AbortSignal.timeout(10000),
   })
   if (!res.ok) {
@@ -158,13 +158,13 @@ export async function addTagToOrder(orderId: string, tag: string): Promise<void>
  */
 export async function addInternalNote(orderId: string, note: string): Promise<void> {
   const res = await fetch(`${BASE}/orders/${orderId}`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: headers(),
     body: JSON.stringify({
       order: {
-        properties_attributes: {
-          note_interne: note,
-        },
+        properties_attributes: [
+          { name: 'Note interne', identifier: 'note_interne', value: note },
+        ],
       },
     }),
     signal: AbortSignal.timeout(10000),
@@ -189,14 +189,14 @@ export async function addSAVComment(
   comment: string
 ): Promise<void> {
   const res = await fetch(`${BASE}/orders/${orderId}`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: headers(),
     body: JSON.stringify({
       order: {
-        properties_attributes: {
-          order_sav: originOrderNumber,
-          note_interne: comment,
-        },
+        properties_attributes: [
+          { name: 'Order SAV', identifier: 'order_sav', value: originOrderNumber },
+          { name: 'Note interne', identifier: 'note_interne', value: comment },
+        ],
       },
     }),
     signal: AbortSignal.timeout(10000),
