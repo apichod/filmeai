@@ -749,46 +749,185 @@ function CasesTable() {
   )
 }
 
+// ── Onglets Booqable par tag ───────────────────────────────────────────────────
+
+type BooqableOrderRow = {
+  id: string
+  number: string | number
+  customer_name: string
+  order_sav: string
+  notes_sav: string
+  starts_at: string
+  stops_at: string
+  status: string
+  url: string
+}
+
+function BooqableOrdersTable({ tag }: { tag: string }) {
+  const [orders, setOrders]   = useState<BooqableOrderRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [synced, setSynced]   = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+
+  async function sync() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res  = await fetch(`/api/returns/booqable-orders?tag=${encodeURIComponent(tag)}`)
+      const data = await res.json() as { orders?: BooqableOrderRow[]; error?: string }
+      if (data.error) { setError(data.error); return }
+      setOrders(data.orders || [])
+      setSynced(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur réseau')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function fmtDate(iso: string) {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-gray-900">
+            Tag Booqable : <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono">{tag}</code>
+          </h2>
+          {synced && (
+            <span className="text-xs text-gray-400">{orders.length} order{orders.length !== 1 ? 's' : ''}</span>
+          )}
+        </div>
+        <button
+          onClick={sync}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+        >
+          {loading ? (
+            <span className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+          ) : (
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+          )}
+          Sync
+        </button>
+      </div>
+
+      {error && (
+        <div className="px-5 py-3 bg-red-50 text-red-600 text-xs border-b border-red-100">{error}</div>
+      )}
+
+      {!synced && !loading && (
+        <div className="p-10 text-center text-sm text-gray-400">
+          Cliquez sur Sync pour charger les orders Booqable
+        </div>
+      )}
+
+      {loading && (
+        <div className="p-10 text-center text-sm text-gray-400">Chargement…</div>
+      )}
+
+      {synced && !loading && orders.length === 0 && (
+        <div className="p-10 text-center text-sm text-gray-400">Aucune order avec le tag {tag}</div>
+      )}
+
+      {synced && !loading && orders.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {orders.map(o => (
+                <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <a
+                      href={o.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-black hover:underline flex items-center gap-1"
+                    >
+                      #{o.number}
+                      <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                      </svg>
+                    </a>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
+                  <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 max-w-xs truncate text-xs">{o.notes_sav || '—'}</td>
+                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                    {fmtDate(o.starts_at)} → {fmtDate(o.stops_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page principale ────────────────────────────────────────────────────────────
 
+type Tab = 'chat' | 'open' | 'replacement' | 'repair' | 'log'
+
 export default function ReturnsPage() {
-  const [tab, setTab] = useState<'chat' | 'cases'>('chat')
+  const [tab, setTab] = useState<Tab>('chat')
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'chat',        label: 'Nouveau cas' },
+    { id: 'open',        label: 'Ouverts' },
+    { id: 'replacement', label: 'En cours de remplacement' },
+    { id: 'repair',      label: 'En cours de réparation' },
+    { id: 'log',         label: 'Log' },
+  ]
 
   return (
     <div className="flex flex-col h-full gap-4 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Assistant retours</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Gestion des anomalies de retour matériel</p>
-        </div>
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">Assistant retours</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Gestion des anomalies de retour matériel</p>
+      </div>
+
+      {/* Onglets */}
+      <div className="flex gap-1 border-b border-gray-200 -mb-1">
+        {tabs.map(t => (
           <button
-            onClick={() => setTab('chat')}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              tab === 'chat' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              tab === t.id
+                ? 'border-black text-black'
+                : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}
           >
-            Nouveau cas
+            {t.label}
           </button>
-          <button
-            onClick={() => setTab('cases')}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              tab === 'cases' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-            }`}
-          >
-            Historique
-          </button>
-        </div>
+        ))}
       </div>
 
       <div className="flex-1 min-h-0">
-        {tab === 'chat' ? (
+        {tab === 'chat' && (
           <div className="h-full" style={{ minHeight: '600px' }}>
             <ChatPanel />
           </div>
-        ) : (
-          <CasesTable />
         )}
+        {tab === 'open'        && <BooqableOrdersTable tag="LATE" />}
+        {tab === 'replacement' && <BooqableOrdersTable tag="TO_BE_REPLACED" />}
+        {tab === 'repair'      && <BooqableOrdersTable tag="TO_BE_REPAIRED" />}
+        {tab === 'log'         && <CasesTable />}
       </div>
     </div>
   )
