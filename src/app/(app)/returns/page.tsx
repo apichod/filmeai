@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useUserRole } from '@/lib/user-role-context'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -11,7 +12,7 @@ type StreamEvent =
   | { type: 'done'; caseId: string | null }
   | { type: 'error'; message: string }
 
-type Message = {
+type ChatMessage = {
   id: string
   role: 'user' | 'assistant'
   content: string
@@ -27,16 +28,14 @@ type ReturnCase = {
   problem_description: string
   status: 'open' | 'in_progress' | 'resolved'
   metadata: Record<string, unknown>
+  messages: ChatMessage[]
   created_at: string
-  updated_at: string
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 function statusLabel(s: string) {
@@ -74,7 +73,7 @@ function toolLabel(name: string) {
 // ── Composant Chat ─────────────────────────────────────────────────────────────
 
 function ChatPanel() {
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       role: 'assistant',
@@ -95,11 +94,14 @@ function ChatPanel() {
     if (!text || sending) return
     setInput('')
 
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text }
-    setMessages(prev => [...prev, userMsg])
-
+    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: text }
     const assistantId = `a-${Date.now()}`
-    setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', toolCalls: [] }])
+
+    setMessages(prev => [
+      ...prev,
+      userMsg,
+      { id: assistantId, role: 'assistant', content: '', toolCalls: [] },
+    ])
     setSending(true)
 
     try {
@@ -118,6 +120,7 @@ function ChatPanel() {
       const reader = res.body.getReader()
       const dec = new TextDecoder()
       let buffer = ''
+      let finishedCaseId: string | null = null
 
       while (true) {
         const { done, value } = await reader.read()
@@ -131,18 +134,14 @@ function ChatPanel() {
           if (!line.startsWith('data: ')) continue
           const json = line.slice(6)
           if (!json) continue
-
           try {
             const event = JSON.parse(json) as StreamEvent
 
             if (event.type === 'text') {
               setMessages(prev => prev.map(m =>
-                m.id === assistantId
-                  ? { ...m, content: m.content + event.content }
-                  : m
+                m.id === assistantId ? { ...m, content: m.content + event.content } : m
               ))
             }
-
             if (event.type === 'tool_call') {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
@@ -150,7 +149,6 @@ function ChatPanel() {
                   : m
               ))
             }
-
             if (event.type === 'tool_result') {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
@@ -165,11 +163,10 @@ function ChatPanel() {
                   : m
               ))
             }
-
-            if (event.type === 'done' && event.caseId) {
-              setCaseId(event.caseId)
+            if (event.type === 'done') {
+              finishedCaseId = event.caseId
+              if (event.caseId) setCaseId(event.caseId)
             }
-
             if (event.type === 'error') {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
@@ -177,8 +174,23 @@ function ChatPanel() {
                   : m
               ))
             }
-          } catch { /* ligne invalide */ }
+          } catch { /* ignore */ }
         }
+      }
+
+      // Sauvegarde la conversation dans le cas si on a un caseId
+      if (finishedCaseId) {
+        setMessages(current => {
+          const toSave = current
+            .filter(m => m.id !== 'welcome')
+            .map(m => ({ role: m.role, content: m.content }))
+          fetch('/api/returns/cases', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: finishedCaseId, messages: toSave }),
+          }).catch(() => {/* non-bloquant */})
+          return current
+        })
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -191,10 +203,7 @@ function ChatPanel() {
   }
 
   function handleKey(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
 
   function reset() {
@@ -209,28 +218,20 @@ function ChatPanel() {
 
   return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Assistant retours</h2>
-          {caseId && (
-            <p className="text-xs text-green-600 mt-0.5">Cas actif en cours de traitement</p>
-          )}
+          {caseId && <p className="text-xs text-green-600 mt-0.5">Cas actif en cours de traitement</p>}
         </div>
-        <button
-          onClick={reset}
-          className="text-xs text-gray-400 hover:text-gray-700 transition-colors"
-        >
+        <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
           Nouveau cas
         </button>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] space-y-1.5`}>
-              {/* Tool calls */}
+            <div className="max-w-[80%] space-y-1.5">
               {msg.toolCalls && msg.toolCalls.length > 0 && (
                 <div className="space-y-1">
                   {msg.toolCalls.map((tc, i) => (
@@ -239,15 +240,11 @@ function ChatPanel() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
                       </svg>
                       <span>{toolLabel(tc.name)}</span>
-                      {tc.result && tc.result.startsWith('✓') && (
-                        <span className="text-green-500">✓</span>
-                      )}
+                      {tc.result && tc.result.startsWith('✓') && <span className="text-green-500">✓</span>}
                     </div>
                   ))}
                 </div>
               )}
-
-              {/* Message text */}
               {(msg.content || msg.role === 'assistant') && (
                 <div className={`rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
                   msg.role === 'user'
@@ -269,7 +266,6 @@ function ChatPanel() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <div className="p-3 border-t border-gray-100">
         <div className="flex items-end gap-2 bg-gray-50 rounded-xl border border-gray-200 px-3 py-2">
           <textarea
@@ -297,21 +293,107 @@ function ChatPanel() {
   )
 }
 
-// ── Composant Table des cas ────────────────────────────────────────────────────
+// ── Drawer conversation ────────────────────────────────────────────────────────
+
+function ConversationDrawer({ c, onClose }: { c: ReturnCase; onClose: () => void }) {
+  const msgs = c.messages || []
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/20" onClick={onClose} />
+      <div className="relative w-full max-w-lg bg-white shadow-xl flex flex-col h-full">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <p className="text-xs text-gray-400 mb-0.5">Cas #{c.case_number} · Order {c.origin_order}</p>
+            <h2 className="text-sm font-semibold text-gray-900">{c.problem_description}</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 transition-colors p-1">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Meta */}
+        <div className="px-5 py-3 border-b border-gray-50 flex items-center gap-3">
+          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(c.status)}`}>
+            {statusLabel(c.status)}
+          </span>
+          <span className="text-xs text-gray-400">{typeLabel(c.problem_type)}</span>
+          <span className="text-xs text-gray-400">{formatDate(c.created_at)}</span>
+          {c.sav_order_id && (
+            <span className="text-xs text-gray-400">SAV: {c.sav_order_id}</span>
+          )}
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {msgs.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">Aucune conversation enregistrée</p>
+          ) : (
+            msgs.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+                  msg.role === 'user'
+                    ? 'bg-black text-white rounded-br-sm'
+                    : 'bg-gray-100 text-gray-800 rounded-bl-sm'
+                }`}>
+                  {msg.content}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Table des cas ──────────────────────────────────────────────────────────────
 
 function CasesTable() {
+  const { isAdmin } = useUserRole()
   const [cases, setCases] = useState<ReturnCase[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'open' | 'in_progress' | 'resolved'>('all')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
+  const [openCase, setOpenCase] = useState<ReturnCase | null>(null)
 
   useEffect(() => {
     setLoading(true)
+    setSelected(new Set())
     const url = filter === 'all' ? '/api/returns/cases' : `/api/returns/cases?status=${filter}`
     fetch(url)
       .then(r => r.json())
       .then(d => { setCases(d.cases || []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [filter])
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected(prev => prev.size === cases.length ? new Set() : new Set(cases.map(c => c.id)))
+  }
+
+  async function deleteSelected() {
+    if (!selected.size) return
+    setDeleting(true)
+    await fetch('/api/returns/cases', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: Array.from(selected) }),
+    })
+    setCases(prev => prev.filter(c => !selected.has(c.id)))
+    setSelected(new Set())
+    setDeleting(false)
+  }
 
   async function updateStatus(id: string, status: string) {
     await fetch('/api/returns/cases', {
@@ -322,79 +404,145 @@ function CasesTable() {
     setCases(prev => prev.map(c => c.id === id ? { ...c, status: status as ReturnCase['status'] } : c))
   }
 
+  async function openDetail(c: ReturnCase) {
+    // Recharge le cas avec les messages complets
+    const res = await fetch(`/api/returns/cases?id=${c.id}`)
+    const d = await res.json()
+    setOpenCase(d.case || c)
+  }
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      {/* Header + filtres */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <h2 className="text-sm font-semibold text-gray-900">Historique des cas</h2>
-        <div className="flex gap-1">
-          {(['all', 'open', 'in_progress', 'resolved'] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                filter === f ? 'bg-black text-white' : 'text-gray-500 hover:bg-gray-100'
-              }`}
-            >
-              {f === 'all' ? 'Tous' : f === 'open' ? 'Ouverts' : f === 'in_progress' ? 'En cours' : 'Résolus'}
-            </button>
-          ))}
+    <>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-gray-900">Historique des cas</h2>
+            {isAdmin && selected.size > 0 && (
+              <button
+                onClick={deleteSelected}
+                disabled={deleting}
+                className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 hover:bg-red-100 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                </svg>
+                Supprimer ({selected.size})
+              </button>
+            )}
+          </div>
+          <div className="flex gap-1">
+            {(['all', 'open', 'in_progress', 'resolved'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  filter === f ? 'bg-black text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {f === 'all' ? 'Tous' : f === 'open' ? 'Ouverts' : f === 'in_progress' ? 'En cours' : 'Résolus'}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {loading ? (
+          <div className="p-8 text-center text-sm text-gray-400">Chargement…</div>
+        ) : cases.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-400">Aucun cas trouvé</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  {isAdmin && (
+                    <th className="px-4 py-3 w-8">
+                      <input
+                        type="checkbox"
+                        checked={selected.size === cases.length && cases.length > 0}
+                        onChange={toggleAll}
+                        className="rounded"
+                      />
+                    </th>
+                  )}
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">#</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Problème</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Statut</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date</th>
+                  {isAdmin && <th className="px-4 py-3" />}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {cases.map(c => (
+                  <tr
+                    key={c.id}
+                    className={`transition-colors ${
+                      !isAdmin ? 'cursor-pointer hover:bg-blue-50/40' : 'hover:bg-gray-50/50'
+                    } ${isAdmin && selected.has(c.id) ? 'bg-red-50/30' : ''}`}
+                    onClick={!isAdmin ? () => openDetail(c) : undefined}
+                  >
+                    {isAdmin && (
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(c.id)}
+                          onChange={() => toggleSelect(c.id)}
+                          className="rounded"
+                        />
+                      </td>
+                    )}
+                    <td className="px-4 py-3 text-gray-400 font-mono text-xs">{c.case_number}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{c.origin_order}</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        {typeLabel(c.problem_type)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{c.problem_description}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(c.status)}`}>
+                        {statusLabel(c.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(c.created_at)}</td>
+                    {isAdmin && (
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={c.status}
+                            onChange={e => updateStatus(c.id, e.target.value)}
+                            className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-gray-300"
+                          >
+                            <option value="open">Ouvert</option>
+                            <option value="in_progress">En cours</option>
+                            <option value="resolved">Résolu</option>
+                          </select>
+                          <button
+                            onClick={() => openDetail(c)}
+                            className="text-gray-400 hover:text-gray-700 transition-colors p-1"
+                            title="Voir la conversation"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {loading ? (
-        <div className="p-8 text-center text-sm text-gray-400">Chargement…</div>
-      ) : cases.length === 0 ? (
-        <div className="p-8 text-center text-sm text-gray-400">Aucun cas trouvé</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400">#</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400">Order</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400">Type</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400">Problème</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400">Statut</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400">Date</th>
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {cases.map(c => (
-                <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-5 py-3 text-gray-400 font-mono text-xs">{c.case_number}</td>
-                  <td className="px-5 py-3 font-medium text-gray-900">{c.origin_order}</td>
-                  <td className="px-5 py-3">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                      {typeLabel(c.problem_type)}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-gray-600 max-w-xs truncate">{c.problem_description}</td>
-                  <td className="px-5 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(c.status)}`}>
-                      {statusLabel(c.status)}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-gray-400 text-xs">{formatDate(c.created_at)}</td>
-                  <td className="px-5 py-3">
-                    <select
-                      value={c.status}
-                      onChange={e => updateStatus(c.id, e.target.value)}
-                      className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-gray-300"
-                    >
-                      <option value="open">Ouvert</option>
-                      <option value="in_progress">En cours</option>
-                      <option value="resolved">Résolu</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {openCase && (
+        <ConversationDrawer c={openCase} onClose={() => setOpenCase(null)} />
       )}
-    </div>
+    </>
   )
 }
 
@@ -405,7 +553,6 @@ export default function ReturnsPage() {
 
   return (
     <div className="flex flex-col h-full gap-4 max-w-6xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Assistant retours</h1>
@@ -431,7 +578,6 @@ export default function ReturnsPage() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 min-h-0">
         {tab === 'chat' ? (
           <div className="h-full" style={{ minHeight: '600px' }}>
