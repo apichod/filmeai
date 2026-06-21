@@ -76,7 +76,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'add_tag',
-      description: 'Ajoute un ou plusieurs tags à une SAV order Booqable. Pour une casse : tags=["TO_BE_REPAIRED","LATE"]. Pour un retard seul : tags=["LATE"].',
+      description: 'Ajoute un ou plusieurs tags à une SAV order Booqable. Pour une casse : tags=["LATE","TO_BE_REPAIRED"]. Pour un retard seul : tags=["LATE"].',
       parameters: {
         type: 'object',
         properties: {
@@ -495,7 +495,7 @@ B2. Annonce : "J'ajoute [nom article] à la SAV order..."
 
 B3. Annonce : "J'ajoute les tags..."
     → Appelle add_tag UNE SEULE FOIS avec les deux tags en tableau :
-      - Casse → tags: ["TO_BE_REPAIRED", "LATE"]
+      - Casse → tags: ["LATE", "TO_BE_REPAIRED"]
       - Retard seul → tags: ["LATE"]
 
 B4. Annonce : "J'ajoute le commentaire SAV..."
