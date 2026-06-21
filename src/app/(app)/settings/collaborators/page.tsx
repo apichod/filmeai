@@ -115,6 +115,8 @@ export default function SettingsCollaboratorsPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [removing, setRemoving] = useState<string | null>(null)
+  const [resending, setResending] = useState<string | null>(null)
+  const [resendOk, setResendOk] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const fetchMembers = useCallback(async () => {
@@ -159,6 +161,23 @@ export default function SettingsCollaboratorsPage() {
     setMembers(prev =>
       prev.map(m => m.id === memberId ? { ...m, permissions } : m)
     )
+  }
+
+  async function resendInvite(memberId: string, email: string) {
+    setResending(memberId)
+    const res = await fetch('/api/collaborators', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, resend: true }),
+    })
+    const data = await res.json() as { error?: string }
+    setResending(null)
+    if (!res.ok) {
+      alert(data.error || "Erreur lors du renvoi.")
+    } else {
+      setResendOk(memberId)
+      setTimeout(() => setResendOk(null), 3000)
+    }
   }
 
   async function remove(memberId: string) {
@@ -316,6 +335,13 @@ export default function SettingsCollaboratorsPage() {
                 <div className="flex items-center gap-3">
                   <RoleBadge role={m.role} />
                   <StatusBadge status={m.status} />
+                  <button
+                    onClick={() => resendInvite(m.id, m.email)}
+                    disabled={resending === m.id}
+                    className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40"
+                  >
+                    {resending === m.id ? '…' : resendOk === m.id ? 'Envoyé ✓' : 'Renvoyer'}
+                  </button>
                   <button
                     onClick={() => remove(m.id)}
                     disabled={removing === m.id}

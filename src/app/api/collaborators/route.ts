@@ -37,7 +37,29 @@ export async function GET() {
 
 // ── POST — inviter un collaborateur ──────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  const { email, role = 'operator' } = await req.json() as { email: string; role?: string }
+  const { email, role = 'operator', resend = false } = await req.json() as {
+    email: string
+    role?: string
+    resend?: boolean
+  }
+
+  // ── Renvoi d'invitation ───────────────────────────────────────────────────
+  if (resend) {
+    if (!email?.includes('@')) return NextResponse.json({ error: 'Email invalide' }, { status: 400 })
+    const supabase = getSupabaseAdmin()
+    const orgId = await getDefaultOrgId(supabase)
+    if (!orgId) return NextResponse.json({ error: 'Organisation introuvable' }, { status: 404 })
+
+    const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email.toLowerCase(), {
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://filmeai.vercel.app'}/settings/collaborators`,
+      data: { organization_id: orgId },
+    })
+
+    if (inviteError) {
+      return NextResponse.json({ error: `Impossible de renvoyer : ${inviteError.message}` }, { status: 500 })
+    }
+    return NextResponse.json({ success: true })
+  }
 
   if (!email?.includes('@')) {
     return NextResponse.json({ error: 'Email invalide' }, { status: 400 })
