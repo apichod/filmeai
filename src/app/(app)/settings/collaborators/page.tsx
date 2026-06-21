@@ -59,34 +59,36 @@ function PermissionToggles({
   onUpdate: (id: string, permissions: string[]) => Promise<boolean>
 }) {
   const [permissions, setPermissions] = useState<string[]>(member.permissions || [])
+  const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
-  async function toggle(key: string) {
-    const next = permissions.includes(key)
-      ? permissions.filter(k => k !== key)
-      : [...permissions, key]
-    setPermissions(next)
+  function toggle(key: string) {
+    setPermissions(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    )
+    setDirty(true)
+    setSaved(false)
+  }
+
+  async function save() {
     setSaving(true)
-    const ok = await onUpdate(member.id, next)
+    setError('')
+    const ok = await onUpdate(member.id, permissions)
     setSaving(false)
     if (ok) {
+      setDirty(false)
       setSaved(true)
-      setTimeout(() => setSaved(false), 1500)
+      setTimeout(() => setSaved(false), 2000)
     } else {
-      // Rollback local state
-      setPermissions(permissions)
-      setError('Erreur lors de la sauvegarde. La colonne permissions existe-t-elle en base ?')
+      setError('Erreur lors de la sauvegarde.')
     }
   }
 
   return (
     <div className="px-6 pb-4 pt-1 border-t border-gray-50 bg-gray-50/50">
-      <p className="text-xs text-gray-500 mb-3">
-        Modules accessibles {saving && <span className="text-gray-400">· Enregistrement…</span>}
-        {saved && !saving && <span className="text-green-600">· Enregistré ✓</span>}
-      </p>
+      <p className="text-xs text-gray-500 mb-3">Modules accessibles</p>
       <div className="flex flex-wrap gap-2">
         {NAV_PERMISSIONS.map(nav => {
           const active = permissions.includes(nav.key)
@@ -106,8 +108,20 @@ function PermissionToggles({
           )
         })}
       </div>
-      {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
-      <p className="text-xs text-gray-400 mt-2.5">
+      <div className="flex items-center gap-3 mt-3">
+        {dirty && (
+          <button
+            onClick={save}
+            disabled={saving}
+            className="bg-black text-white rounded-lg px-4 py-1.5 text-xs font-medium hover:bg-gray-800 disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        )}
+        {saved && !dirty && <span className="text-xs text-green-600">Enregistré ✓</span>}
+        {error && <span className="text-xs text-red-500">{error}</span>}
+      </div>
+      <p className="text-xs text-gray-400 mt-2">
         Mot de passe toujours accessible, indépendamment des modules cochés.
       </p>
     </div>
