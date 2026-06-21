@@ -6,13 +6,14 @@
  *   - Jour de retour  : facturé si retour APRÈS 13h15, gratuit si AVANT 13h15
  *
  * Formule :
- *   billingDays = (endDate − startDate)
- *               + (pickupTime < PICKUP_PIVOT ? 1 : 0)
- *               + (returnTime > RETURN_PIVOT ? 1 : 0)
+ *   jours_calendaires = (endDate − startDate + 1)   ← inclusif start ET end
+ *   billingDays = jours_calendaires
+ *               − (pickupTime ≥ PICKUP_PIVOT ? 1 : 0)   ← retrait gratuit
+ *               − (returnTime ≤ RETURN_PIVOT ? 1 : 0)   ← retour gratuit
  *   minimum 1 jour
  *
  * Exemple avec les heures par défaut (retrait 14h00, retour 13h00) :
- *   lundi 14h → mercredi 13h = 2 jours facturés (ni le lundi ni le mercredi ne comptent)
+ *   lundi 14h → mercredi 13h = 3 jours calendaires − 1 − 1 = 1 jour facturé
  */
 
 /** Pivot Booqable pour le jour de retrait (avant = facturé, après = gratuit). */
@@ -54,10 +55,10 @@ export function billingDays(
 
   if (dayDiff < 0) return 1
 
-  const pickupBilled = timeToMinutes(pickupTime) < timeToMinutes(PICKUP_PIVOT) ? 1 : 0
-  const returnBilled = timeToMinutes(returnTime) > timeToMinutes(RETURN_PIVOT)  ? 1 : 0
+  const pickupFree = timeToMinutes(pickupTime) >= timeToMinutes(PICKUP_PIVOT) ? 1 : 0
+  const returnFree = timeToMinutes(returnTime) <= timeToMinutes(RETURN_PIVOT)  ? 1 : 0
 
-  return Math.max(1, dayDiff + pickupBilled + returnBilled)
+  return Math.max(1, dayDiff + 1 - pickupFree - returnFree)
 }
 
 /**

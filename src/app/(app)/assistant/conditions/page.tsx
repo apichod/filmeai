@@ -467,7 +467,7 @@ export default function AssistantConditionsPage() {
           </div>
           <p className="text-[11px] text-gray-400 pt-1">
             Avec les heures par défaut (retrait 14h00, retour 13h00) : ni le jour de retrait ni le jour de retour ne sont facturés.
-            Une location du lundi 14h au mercredi 13h = 2 jours de location.
+            Une location du lundi 14h au mercredi 13h = 1 jour de location.
           </p>
         </div>
       </div>
