@@ -313,13 +313,13 @@ IDs Booqable :
 - create_sav_order retourne aussi un "id" (UUID) : utilise-le pour add_tag, add_sav_comment, add_sav_line.
 - customer_id dans create_sav_order = champ "customer_id" de fetch_order.
 
-Identification des articles endommagés (étape obligatoire avant create_sav_order) :
+Identification des articles endommagés (étape OBLIGATOIRE avant create_sav_order) :
 1. Pour chaque article signalé, appelle search_products avec son nom.
-2. Si résultat trouvé avec tracking=bulk → pas besoin de préciser l'unité, utilise product_group_id.
-3. Si résultat trouvé avec tracking=trackable → demande à l'utilisateur de préciser l'unité (numéro de série ou identifiant). Utilise quand même le product_group_id pour la ligne (l'affectation de l'unité se fait dans Booqable).
+2. Si tracking=bulk → pas besoin de préciser l'unité, utilise product_group_id directement.
+3. Si tracking=trackable → STOP. Dis à l'utilisateur combien d'unités de ce modèle sont dans l'order (info dans les lignes de fetch_order) et demande-lui d'identifier précisément laquelle est en panne (numéro de série, identifiant ou description physique). Attends sa réponse AVANT de continuer. Note l'identifiant dans la SAV comment et le log_case metadata.
 4. Si aucun résultat → crée une ligne custom avec le nom descriptif.
-5. Plusieurs articles possibles : traite-les un par un.
-6. Ajoute les lignes avec add_sav_line APRÈS avoir créé la SAV order.`
+5. S'il y a plusieurs articles abîmés, traite-les un par un.
+6. Ajoute les lignes avec add_sav_line APRÈS avoir créé la SAV order (une ligne par article).`
 
   const systemPrompt = combinedPrompt
     ? combinedPrompt + '\n\n' + uuidReminder
