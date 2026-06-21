@@ -8,10 +8,10 @@ const nav = [
   { label: 'Tableau de bord', href: '/dashboard' },
   { label: 'Inbox', href: '/inbox' },
   { label: 'Contacts', href: '/contacts' },
-  { label: 'Demandes & devis', href: '/requests' },
-  { label: 'Mon assistant', href: '/assistant/appearance' },
+  { label: 'Assistant planning', href: '/requests' },
+  { label: 'Paramètres', href: '/assistant/appearance' },
   { label: 'Statistiques', href: '/statistics' },
-  { label: 'Réglages', href: '/settings/general' },
+  { label: 'Compte', href: '/settings/general' },
 ]
 
 function IconLogout() {

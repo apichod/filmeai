@@ -241,7 +241,7 @@ export default function AssistantCorrectionsPage() {
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Corrections IA</h2>
+          <h2 className="text-base font-semibold text-gray-900">Logs</h2>
           <p className="mt-1 max-w-3xl text-sm text-gray-500">
             Journal des corrections faites dans le back office ou dans le chat. Chaque entrée conserve le diagnostic IA, le choix proposé et la correction retenue.
           </p>

@@ -158,7 +158,7 @@ export default function RequestsPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Demandes &amp; devis</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Assistant planning</h1>
           <p className="text-sm text-gray-500 mt-1">Les demandes qualifiées et devis générés par votre assistant.</p>
         </div>
         <div className="flex items-center gap-2">

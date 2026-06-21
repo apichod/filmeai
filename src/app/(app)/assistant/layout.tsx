@@ -6,7 +6,7 @@ const tabs = [
   { label: 'Apparence', href: '/assistant/appearance' },
   { label: 'Comportement', href: '/assistant/behavior' },
   { label: 'Connaissances', href: '/assistant/knowledge' },
-  { label: 'Corrections IA', href: '/assistant/corrections' },
+  { label: 'Logs', href: '/assistant/corrections' },
   { label: 'Conditions', href: '/assistant/conditions' },
   { label: 'Devis', href: '/assistant/quotes' },
   { label: 'Intégration', href: '/assistant/integration' },
@@ -17,7 +17,7 @@ export default function AssistantLayout({ children }: { children: React.ReactNod
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">Mon assistant</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Paramètres</h1>
         <p className="text-sm text-gray-500 mt-0.5">Configurez votre assistant FilmeAI</p>
       </div>
       <div className="flex gap-1 border-b border-gray-200">

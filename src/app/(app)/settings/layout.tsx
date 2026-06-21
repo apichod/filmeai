@@ -16,7 +16,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">Réglages</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Compte</h1>
         <p className="text-sm text-gray-500 mt-0.5">Gérez votre compte et vos préférences</p>
       </div>
       <div className="flex gap-1 border-b border-gray-200">
