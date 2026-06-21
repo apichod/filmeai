@@ -2,6 +2,7 @@
 import { useCallback, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import TurnstileField from '@/components/TurnstileField'
+import { RENTAL_HOURS, billingDaysSummary } from '@/lib/billing-days'
 
 type Status = 'idle' | 'sending' | 'success' | 'error'
 
@@ -17,7 +18,9 @@ export default function FormPage() {
   const [phone, setPhone] = useState('')
   const [company, setCompany] = useState('')
   const [startDate, setStartDate] = useState('')
+  const [startTime, setStartTime] = useState('14:00')
   const [endDate, setEndDate] = useState('')
+  const [endTime, setEndTime] = useState('13:00')
   const [message, setMessage] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState('')
@@ -53,7 +56,9 @@ export default function FormPage() {
       fd.append('phone', phone)
       fd.append('company', company)
       fd.append('start_date', startDate)
+      fd.append('start_time', startTime)
       fd.append('end_date', endDate)
+      fd.append('end_time', endTime)
       fd.append('message', message)
       fd.append('website', '') // honeypot
       fd.append('cf-turnstile-response', turnstileToken)
@@ -132,13 +137,28 @@ export default function FormPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label style={labelStyle}>Début de location *</label>
-              <input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                <select value={startTime} onChange={e => setStartTime(e.target.value)} style={{ ...inputStyle, width: 'auto', flexShrink: 0 }}>
+                  {RENTAL_HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
             </div>
             <div>
               <label style={labelStyle}>Fin de location *</label>
-              <input required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                <select value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inputStyle, width: 'auto', flexShrink: 0 }}>
+                  {RENTAL_HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
             </div>
           </div>
+          {startDate && endDate && (
+            <p style={{ margin: '8px 0 0', fontSize: 13, color: '#555' }}>
+              {billingDaysSummary(startDate, startTime, endDate, endTime)}
+            </p>
+          )}
         </div>
 
         {/* Liste matériel */}

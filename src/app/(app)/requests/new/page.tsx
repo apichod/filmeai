@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { type MatchDebug, sourceLabel, rootCauseSummary, formatDiagnosticForCopy } from '@/lib/diagnostic-format'
+import { billingDays, billingDaysSummary, toLocalISOString, RENTAL_HOURS } from '@/lib/billing-days'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -116,10 +117,6 @@ function extractDatesFromText(text: string): { startsAt?: string; stopsAt?: stri
   }
 
   return {}
-}
-function daysBetween(a: string, b: string) {
-  if (!a || !b) return 1
-  return Math.max(1, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000))
 }
 function matchPercent(confidence?: number | null) {
   return Math.max(0, Math.min(100, Math.round((confidence || 0) * 100)))
@@ -550,9 +547,22 @@ export default function NewRequestPage() {
   // ── Quote items
   const [items, setItems] = useState<QuoteItem[]>([])
 
-  // ── Dates
+  // ── Dates + heures
   const [startsAt, setStartsAt] = useState('')
   const [stopsAt, setStopsAt] = useState('')
+  const [pickupTime, setPickupTime] = useState('14:00')
+  const [returnTime, setReturnTime] = useState('13:00')
+
+  // Charger les heures par défaut depuis les réglages
+  useEffect(() => {
+    fetch('/api/assistant-settings')
+      .then(r => r.json())
+      .then((d: { settings?: { default_pickup_time?: string; default_return_time?: string } }) => {
+        if (d.settings?.default_pickup_time) setPickupTime(d.settings.default_pickup_time)
+        if (d.settings?.default_return_time)  setReturnTime(d.settings.default_return_time)
+      })
+      .catch(() => {})
+  }, [])
 
   // ── Edit item
   const [editingUid, setEditingUid] = useState<string | null>(null)
@@ -901,8 +911,8 @@ export default function NewRequestPage() {
             reason: i.reason ?? null,
             debug: i.debug ?? null,
           })),
-          startsAt: new Date((startsAt || new Date().toISOString().split('T')[0]) + 'T09:00:00').toISOString(),
-          stopsAt: new Date((stopsAt || new Date(Date.now() + 86400000).toISOString().split('T')[0]) + 'T18:00:00').toISOString(),
+          startsAt: toLocalISOString(startsAt || new Date().toISOString().split('T')[0], pickupTime),
+          stopsAt:  toLocalISOString(stopsAt  || new Date(Date.now() + 86400000).toISOString().split('T')[0], returnTime),
         }),
       })
       const data = await res.json() as { conversationId?: string; error?: string }
@@ -922,7 +932,7 @@ export default function NewRequestPage() {
     acc + (item.type === 'product' ? (item.product?.price_per_day || 0) * item.quantity : 0), 0
   )
   const billableItemCount = items.filter(item => item.type !== 'section').length
-  const days = daysBetween(startsAt, stopsAt)
+  const days = billingDays(startsAt, pickupTime, stopsAt, returnTime)
 
   // ─────────────────────────────────────────────────────────────────────────────
   // STEP 1: Client info
@@ -1259,27 +1269,51 @@ export default function NewRequestPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Dates */}
+            {/* Dates + heures */}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Début de location</label>
-                <input
-                  type="date"
-                  value={startsAt}
-                  onChange={e => setStartsAt(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-gray-800"
-                />
+                <div className="flex gap-1">
+                  <input
+                    type="date"
+                    value={startsAt}
+                    onChange={e => setStartsAt(e.target.value)}
+                    className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-gray-800"
+                  />
+                  <select
+                    value={pickupTime}
+                    onChange={e => setPickupTime(e.target.value)}
+                    className="w-20 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm focus:outline-none focus:border-gray-800 bg-white"
+                  >
+                    {RENTAL_HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Fin de location</label>
-                <input
-                  type="date"
-                  value={stopsAt}
-                  onChange={e => setStopsAt(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-gray-800"
-                />
+                <div className="flex gap-1">
+                  <input
+                    type="date"
+                    value={stopsAt}
+                    onChange={e => setStopsAt(e.target.value)}
+                    className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-gray-800"
+                  />
+                  <select
+                    value={returnTime}
+                    onChange={e => setReturnTime(e.target.value)}
+                    className="w-20 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm focus:outline-none focus:border-gray-800 bg-white"
+                  >
+                    {RENTAL_HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
+            {/* Résumé facturation */}
+            {startsAt && stopsAt && (
+              <p className="text-xs text-gray-400 -mt-2">
+                {billingDaysSummary(startsAt, pickupTime, stopsAt, returnTime)}
+              </p>
+            )}
 
             {/* Ajouter un produit manuellement */}
             <ProductSearchDropdown
