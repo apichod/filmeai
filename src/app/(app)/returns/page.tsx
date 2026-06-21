@@ -582,20 +582,17 @@ function CasesTable() {
   const { isAdmin } = useUserRole()
   const [cases, setCases] = useState<ReturnCase[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'open' | 'in_progress' | 'resolved'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
   const [openCase, setOpenCase] = useState<ReturnCase | null>(null)
 
   useEffect(() => {
     setLoading(true)
-    setSelected(new Set())
-    const url = filter === 'all' ? '/api/returns/cases' : `/api/returns/cases?status=${filter}`
-    fetch(url)
+    fetch('/api/returns/cases')
       .then(r => r.json())
       .then(d => { setCases(d.cases || []); setLoading(false) })
       .catch(() => setLoading(false))
-  }, [filter])
+  }, [])
 
   function toggleSelect(id: string) {
     setSelected(prev => {
@@ -620,15 +617,6 @@ function CasesTable() {
     setCases(prev => prev.filter(c => !selected.has(c.id)))
     setSelected(new Set())
     setDeleting(false)
-  }
-
-  async function updateStatus(id: string, status: string) {
-    await fetch('/api/returns/cases', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status }),
-    })
-    setCases(prev => prev.map(c => c.id === id ? { ...c, status: status as ReturnCase['status'] } : c))
   }
 
   async function openDetail(c: ReturnCase) {
