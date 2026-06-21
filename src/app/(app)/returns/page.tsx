@@ -61,13 +61,78 @@ function typeLabel(t: string) {
 function toolLabel(name: string) {
   const labels: Record<string, string> = {
     fetch_order:       'Récupération de l\'order',
+    search_products:   'Recherche produit',
+    get_stock_items:   'Identification des unités',
     add_internal_note: 'Note interne ajoutée',
     create_sav_order:  'Création de la SAV order',
     add_tag:           'Tag ajouté',
     add_sav_comment:   'Commentaire SAV',
+    add_sav_line:      'Ajout ligne SAV',
     log_case:          'Cas enregistré',
+    draft_email:       'Rédaction email',
+    send_email:        'Envoi email',
   }
   return labels[name] || name
+}
+
+function toolStatus(result: string | undefined): 'pending' | 'success' | 'error' {
+  if (!result) return 'pending'
+  const lower = result.toLowerCase()
+  if (lower.startsWith('erreur') || lower.startsWith('impossible') || lower.startsWith('échec')) return 'error'
+  return 'success'
+}
+
+function toolSummary(name: string, result: string | undefined): string | null {
+  if (!result) return null
+  try {
+    // fetch_order retourne du JSON avec les infos de l'order
+    if (name === 'fetch_order') {
+      const d = JSON.parse(result) as { number?: string | number; customer?: { name?: string } }
+      const parts: string[] = []
+      if (d.customer?.name) parts.push(d.customer.name)
+      if (d.number) parts.push(`#${d.number}`)
+      return parts.length ? parts.join(' · ') : null
+    }
+  } catch { /* not JSON */ }
+
+  // create_sav_order retourne "✓ SAV order créée (numéro: XXXX) | id: ..."
+  if (name === 'create_sav_order' && result.includes('numéro:')) {
+    const m = result.match(/numéro:\s*(\S+)\)/)
+    return m ? `Order #${m[1]}` : null
+  }
+
+  // search_products retourne une liste "Produits trouvés : N items\n- Nom (tracking) ..."
+  if (name === 'search_products') {
+    const m = result.match(/^[^\n]+/)
+    return m ? m[0].replace('Produits trouvés : ', '') : null
+  }
+
+  // get_stock_items retourne "Stock items pour ... : N exemplaire(s)\n- ID-1 ..."
+  if (name === 'get_stock_items') {
+    const m = result.match(/:\s*(\d+)\s*exemplaire/)
+    if (m) return `${m[1]} exemplaire${parseInt(m[1]) > 1 ? 's' : ''} trouvé${parseInt(m[1]) > 1 ? 's' : ''}`
+    const m2 = result.match(/^[^\n]+/)
+    return m2 ? m2[0] : null
+  }
+
+  // add_sav_line retourne "✓ Ligne ajoutée : Nom"
+  if (name === 'add_sav_line' && result.startsWith('✓')) {
+    return result.replace('✓ ', '').slice(0, 60)
+  }
+
+  // log_case retourne "✓ Cas enregistré #N"
+  if (name === 'log_case') {
+    const m = result.match(/#\d+/)
+    return m ? `Cas ${m[0]}` : null
+  }
+
+  // send_email retourne "✓ Email envoyé à ..."
+  if (name === 'send_email' && result.includes('@')) {
+    const m = result.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)
+    return m ? `→ ${m[0]}` : null
+  }
+
+  return null
 }
 
 // ── Composant Chat ─────────────────────────────────────────────────────────────
@@ -343,15 +408,29 @@ function ChatPanel() {
             <div className="max-w-[80%] space-y-1.5">
               {msg.toolCalls && msg.toolCalls.length > 0 && (
                 <div className="space-y-1">
-                  {msg.toolCalls.map((tc, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-100">
-                      <svg className="w-3 h-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
-                      </svg>
-                      <span>{toolLabel(tc.name)}</span>
-                      {tc.result && tc.result.startsWith('✓') && <span className="text-green-500">✓</span>}
-                    </div>
-                  ))}
+                  {msg.toolCalls.map((tc, i) => {
+                    const status  = toolStatus(tc.result)
+                    const summary = toolSummary(tc.name, tc.result)
+                    return (
+                      <div key={i} className="text-xs bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-100">
+                        <div className="flex items-center gap-2 text-gray-400">
+                          {status === 'pending' && (
+                            <span className="w-3 h-3 rounded-full border-2 border-blue-300 border-t-blue-500 animate-spin flex-shrink-0" />
+                          )}
+                          {status === 'success' && (
+                            <span className="text-green-500 flex-shrink-0 font-medium">✓</span>
+                          )}
+                          {status === 'error' && (
+                            <span className="text-red-400 flex-shrink-0 font-medium">✗</span>
+                          )}
+                          <span className={status === 'error' ? 'text-red-400' : 'text-gray-500'}>{toolLabel(tc.name)}</span>
+                        </div>
+                        {summary && (
+                          <p className="mt-0.5 pl-5 text-gray-400 truncate">{summary}</p>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
               {(msg.content || msg.role === 'assistant') && (
