@@ -109,13 +109,25 @@ function getRelationshipId(resource: JsonRecord, relationName: string): string |
 // Booqable v1 — product_groups = catalogue client-facing principal
 // ─────────────────────────────────────────────────────────────────────────────
 
+async function fetchV1WithRetry(url: string): Promise<Response> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    if (res.status !== 429) return res
+    const retryAfter = Number(res.headers.get('Retry-After') || 0)
+    const wait = retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt
+    console.log(`Rate limited (v1), waiting ${wait}ms…`)
+    await sleep(wait)
+  }
+  throw new Error('Too many retries on v1 API')
+}
+
 async function fetchAllBooqableProductGroups(): Promise<CatalogItem[]> {
   const all: CatalogItem[] = []
   let page = 1
   let hasMore = true
 
   while (hasMore) {
-    const res = await fetch(
+    const res = await fetchV1WithRetry(
       `${BOOQABLE_V1_BASE}/product_groups?api_key=${BOOQABLE_KEY}&per=200&page=${page}`
     )
     if (!res.ok) throw new Error(`product_groups fetch error: ${res.status}`)
@@ -131,14 +143,13 @@ async function fetchAllBooqableProductGroups(): Promise<CatalogItem[]> {
       deposit_as_decimal: asString(group.deposit_as_decimal),
       photo_url: asString(group.photo_url),
       archived: asBoolean(group.archived) || false,
-      // Catalogue IA = uniquement ce qui est publié côté store Booqable.
-      // Si show_in_store est absent ou false, on ignore le product_group.
       show_in_store: asBoolean(group.show_in_store) === true,
       source_type: 'product_group' as const,
     })).filter(item => item.id))
 
     hasMore = groups.length === 200
     page++
+    await sleep(300)
   }
 
   return all
@@ -369,12 +380,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    console.log('Fetching Booqable product_groups + bundles + bundle_items...')
-    const [productGroups, bundles, bundleItems] = await Promise.all([
-      fetchAllBooqableProductGroups(),
-      fetchAllBooqableBundles(),
-      fetchAllBooqableBundleItems(),
-    ])
+    console.log('Fetching Booqable product_groups...')
+    const productGroups = await fetchAllBooqableProductGroups()
+    await sleep(500)
+    console.log('Fetching Booqable bundles...')
+    const bundles = await fetchAllBooqableBundles()
+    await sleep(500)
+    console.log('Fetching Booqable bundle_items...')
+    const bundleItems = await fetchAllBooqableBundleItems()
 
     const allRaw = attachBundleContext(productGroups, bundles, bundleItems)
     const active = allRaw.filter(item => !item.archived && item.show_in_store === true)
