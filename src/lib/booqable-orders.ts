@@ -242,17 +242,18 @@ export async function createSAVOrder(params: CreateSAVOrderParams): Promise<Booq
       const orderId = d.data?.id || (d.order as BooqableOrder | undefined)?.id
       const orderNumber = String(d.data?.attributes?.number || (d.order as BooqableOrder | undefined)?.number || '')
       if (orderId) {
-        // SAV orders → toujours 100% de remise, pas de caution
+        // SAV orders → toujours 100% de remise, pas de caution, customer_id explicite
         await fetch(`https://${subdomain}.booqable.com/api/1/orders/${orderId}?api_key=${key}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             order: {
+              customer_id: customerId,
               discount_percentage: 100,
               deposit_type: 'none',
             },
           }),
-        }).catch(e => console.warn('Failed to patch discount:', e))
+        }).catch(e => console.warn('Failed to patch discount/customer:', e))
         return { id: orderId, number: orderNumber, status: 'concept', starts_at: startsAt, stops_at: stopsAt, customer_id: customerId, customer: null, tags: [], lines: [], properties_attributes: {} }
       }
     }
@@ -325,6 +326,61 @@ export async function zeroOutOrderLines(orderId: string): Promise<void> {
       if (!r.ok) r.text().then(t => console.warn(`zeroOutOrderLines: PUT line ${line.id} failed (${r.status}): ${t}`))
     }).catch(e => console.warn(`zeroOutOrderLines: line ${line.id} error:`, e))
   ))
+}
+
+// ── Start (pickup) SAV order ───────────────────────────────────────────────────
+
+/**
+ * Passe la SAV order en statut "started" via order_transitions.
+ * Essaie reserved→started, puis concept→reserved si nécessaire.
+ * Non bloquant : retourne l'erreur sans throw.
+ */
+export async function startSAVOrder(orderId: string): Promise<{ error?: string }> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+
+  const tryTransition = async (from: string, to: string): Promise<boolean> => {
+    const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          type: 'order_transitions',
+          attributes: {
+            order_id:          orderId,
+            transition_from:   from,
+            transition_to:     to,
+            confirm_shortage:  false,
+            revert_until:      null,
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (res.ok) return true
+    const text = await res.text()
+    console.warn(`startSAVOrder: ${from}→${to} failed (${res.status}): ${text}`)
+    return false
+  }
+
+  try {
+    // Tentative directe reserved → started
+    if (await tryTransition('reserved', 'started')) {
+      console.log(`startSAVOrder: order ${orderId} started ✓`)
+      return {}
+    }
+    // Fallback : concept → reserved → started
+    if (await tryTransition('concept', 'reserved')) {
+      if (await tryTransition('reserved', 'started')) {
+        console.log(`startSAVOrder: order ${orderId} started via concept→reserved→started ✓`)
+        return {}
+      }
+    }
+    return { error: 'Transition de statut échouée (non bloquant)' }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.warn('startSAVOrder error:', msg)
+    return { error: msg }
+  }
 }
 
 // ── Add tag ────────────────────────────────────────────────────────────────────

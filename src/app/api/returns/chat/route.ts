@@ -12,6 +12,7 @@ import {
   searchProducts,
   getStockItems,
   addSAVLine,
+  startSAVOrder,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -276,7 +277,11 @@ async function executeTool(
       case 'add_tag': {
         const tagList = Array.isArray(args.tags) ? args.tags.map(String) : [String(args.tags || args.tag || '')]
         await addTagToOrder(String(args.order_id), tagList)
-        return { result: `✓ Tags ajoutés : ${tagList.join(', ')}` }
+        // Pickup automatique après ajout des tags (toutes les lignes sont déjà ajoutées à ce stade)
+        const { error: startErr } = await startSAVOrder(String(args.order_id))
+        let result = `✓ Tags ajoutés : ${tagList.join(', ')}`
+        if (startErr) result += ` | ⚠️ Pickup non bloquant : ${startErr}`
+        return { result }
       }
 
       case 'add_sav_comment': {
