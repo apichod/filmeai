@@ -1282,7 +1282,8 @@ export default function NewRequestPage() {
                     type="date"
                     value={startsAt}
                     onChange={e => setStartsAt(e.target.value)}
-                    className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-gray-800"
+                    onClick={e => { try { (e.target as HTMLInputElement).showPicker() } catch {} }}
+                    className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-gray-800 cursor-pointer"
                   />
                   <select
                     value={pickupTime}
@@ -1300,7 +1301,8 @@ export default function NewRequestPage() {
                     type="date"
                     value={stopsAt}
                     onChange={e => setStopsAt(e.target.value)}
-                    className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-gray-800"
+                    onClick={e => { try { (e.target as HTMLInputElement).showPicker() } catch {} }}
+                    className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-gray-800 cursor-pointer"
                   />
                   <select
                     value={returnTime}
