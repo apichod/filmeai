@@ -341,6 +341,139 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateId, string> = {
   facturation_vole:   '#12 – Facturation matériel volé',
 }
 
+// ── DB seed rows ───────────────────────────────────────────────────────────────
+
+export type EmailTemplateRow = {
+  template_id: EmailTemplateId
+  case_key: string
+  label: string
+  case_label: string
+  subject: string
+  body: string
+  conditions: Record<string, boolean>
+  sort_order: number
+}
+
+/**
+ * Retourne toutes les variantes de templates pour seed DB.
+ * Le body est rendu avec des marqueurs {{variable}} comme valeurs.
+ */
+export function getSeedRows(): EmailTemplateRow[] {
+  const P: EmailTemplateVars = {
+    customerName:      '{{customerName}}',
+    customerEmail:     '{{customerEmail}}',
+    orderNumber:       '{{orderNumber}}',
+    originOrderNumber: '{{originOrderNumber}}',
+    orderStartsAt:     '{{orderStartsAt}}',
+    orderStopsAt:      '{{orderStopsAt}}',
+    notesSav:          '{{notesSav}}',
+    paymentLink:       '{{paymentLink}}',
+    documentNumber:    '{{documentNumber}}',
+  }
+
+  function row(
+    template_id: EmailTemplateId,
+    case_key: string,
+    case_label: string,
+    conditions: Record<string, boolean>,
+    sort_order: number,
+    extra?: Partial<EmailTemplateVars>
+  ): EmailTemplateRow {
+    const { subject, body } = renderEmail(template_id, { ...P, ...extra })
+    return { template_id, case_key, label: EMAIL_TEMPLATE_LABELS[template_id], case_label, subject, body, conditions, sort_order }
+  }
+
+  return [
+    // #10 — Retour OK
+    row('retour_ok', 'default', '', {}, 0),
+
+    // #11 — Retour cassé (4 cas)
+    row('retour_casse', 'no_insurance_no_caution', 'Sans assurance, sans caution',
+      { insurance: false, caution: false }, 0, { insurance: false, caution: false }),
+    row('retour_casse', 'insurance_no_caution', 'Avec assurance, sans caution',
+      { insurance: true, caution: false }, 1, { insurance: true, caution: false }),
+    row('retour_casse', 'insurance_caution', 'Avec assurance + caution',
+      { insurance: true, caution: true }, 2, { insurance: true, caution: true }),
+    row('retour_casse', 'no_insurance_caution', 'Sans assurance + caution',
+      { insurance: false, caution: true }, 3, { insurance: false, caution: true }),
+
+    // #11 — Retour manquant
+    row('retour_manquant', 'default', '', {}, 0),
+
+    // #12 — Facturation cassé (7 cas)
+    row('facturation_casse', 'no_insurance_no_caution', 'Sans assurance, sans caution',
+      { insurance: false, caution: false }, 0, { insurance: false, caution: false }),
+    row('facturation_casse', 'no_insurance_caution', 'Sans assurance + caution',
+      { insurance: false, caution: true }, 1, { insurance: false, caution: true }),
+    row('facturation_casse', 'insurance_no_caution_low', 'Avec assurance, sans caution, < 500 €',
+      { insurance: true, caution: false, amountAbove500: false }, 2, { insurance: true, caution: false, amountAbove500: false }),
+    row('facturation_casse', 'insurance_no_caution_high', 'Avec assurance, sans caution, > 500 €',
+      { insurance: true, caution: false, amountAbove500: true }, 3, { insurance: true, caution: false, amountAbove500: true }),
+    row('facturation_casse', 'insurance_caution_low', 'Avec assurance + caution, < 500 €',
+      { insurance: true, caution: true, amountAbove500: false }, 4, { insurance: true, caution: true, amountAbove500: false }),
+    row('facturation_casse', 'insurance_caution_high', 'Avec assurance + caution, > 500 €',
+      { insurance: true, caution: true, amountAbove500: true }, 5, { insurance: true, caution: true, amountAbove500: true }),
+    row('facturation_casse', 'late_payment', 'Retard de paiement',
+      { latePayment: true }, 6, { latePayment: true }),
+
+    // #12 — Facturation perdu (5 cas)
+    row('facturation_perdu', 'no_insurance_no_caution', 'Sans assurance, sans caution',
+      { insurance: false, caution: false }, 0, { insurance: false, caution: false }),
+    row('facturation_perdu', 'no_insurance_caution', 'Sans assurance + caution',
+      { insurance: false, caution: true }, 1, { insurance: false, caution: true }),
+    row('facturation_perdu', 'insurance_no_caution', 'Avec assurance, sans caution',
+      { insurance: true, caution: false }, 2, { insurance: true, caution: false }),
+    row('facturation_perdu', 'insurance_caution', 'Avec assurance + caution',
+      { insurance: true, caution: true }, 3, { insurance: true, caution: true }),
+    row('facturation_perdu', 'late_payment', 'Retard de paiement',
+      { latePayment: true }, 4, { latePayment: true }),
+
+    // #12 — Facturation volé (7 cas)
+    row('facturation_vole', 'no_insurance_no_caution', 'Sans assurance, sans caution',
+      { insurance: false, caution: false }, 0, { insurance: false, caution: false }),
+    row('facturation_vole', 'no_insurance_caution', 'Sans assurance + caution',
+      { insurance: false, caution: true }, 1, { insurance: false, caution: true }),
+    row('facturation_vole', 'insurance_no_caution_low', 'Avec assurance, sans caution, < 500 €',
+      { insurance: true, caution: false, amountAbove500: false }, 2, { insurance: true, caution: false, amountAbove500: false }),
+    row('facturation_vole', 'insurance_no_caution_high', 'Avec assurance, sans caution, > 500 €',
+      { insurance: true, caution: false, amountAbove500: true }, 3, { insurance: true, caution: false, amountAbove500: true }),
+    row('facturation_vole', 'insurance_caution_low', 'Avec assurance + caution, < 500 €',
+      { insurance: true, caution: true, amountAbove500: false }, 4, { insurance: true, caution: true, amountAbove500: false }),
+    row('facturation_vole', 'insurance_caution_high', 'Avec assurance + caution, > 500 €',
+      { insurance: true, caution: true, amountAbove500: true }, 5, { insurance: true, caution: true, amountAbove500: true }),
+    row('facturation_vole', 'late_payment', 'Retard de paiement',
+      { latePayment: true }, 6, { latePayment: true }),
+  ]
+}
+
+/**
+ * Rend un email depuis une ligne DB (remplace les {{variables}}).
+ */
+export function renderEmailFromRow(
+  row: Pick<EmailTemplateRow, 'subject' | 'body'>,
+  vars: EmailTemplateVars
+): RenderedEmail {
+  const replacements: Record<string, string> = {
+    customerName:      vars.customerName || '',
+    customerEmail:     vars.customerEmail || '',
+    orderNumber:       vars.orderNumber || '',
+    originOrderNumber: vars.originOrderNumber || '',
+    orderStartsAt:     vars.orderStartsAt || '',
+    orderStopsAt:      vars.orderStopsAt || '',
+    notesSav:          vars.notesSav || '',
+    paymentLink:       vars.paymentLink || '',
+    documentNumber:    vars.documentNumber || '',
+  }
+  const replace = (str: string) =>
+    str.replace(/\{\{(\w+)\}\}/g, (_, key) => replacements[key] ?? `{{${key}}}`)
+
+  return {
+    subject: replace(row.subject),
+    body:    replace(row.body),
+    to:      vars.customerEmail || '',
+  }
+}
+
 /**
  * Génère un email à partir du template et des variables fournies.
  */

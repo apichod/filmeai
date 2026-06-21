@@ -11,6 +11,7 @@ const tabs = [
   { label: 'Devis', href: '/assistant/quotes' },
   { label: 'Intégration', href: '/assistant/integration' },
   { label: 'Workflows retours', href: '/assistant/workflows' },
+  { label: 'Templates email',  href: '/assistant/emails' },
 ]
 
 export default function AssistantLayout({ children }: { children: React.ReactNode }) {
