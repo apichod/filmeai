@@ -10,7 +10,17 @@ type Member = {
   status: 'pending' | 'active'
   invited_at: string
   joined_at: string | null
+  permissions: string[]
 }
+
+const NAV_PERMISSIONS = [
+  { key: 'dashboard',  label: 'Tableau de bord' },
+  { key: 'inbox',      label: 'Inbox' },
+  { key: 'contacts',   label: 'Contacts' },
+  { key: 'requests',   label: 'Assistant planning' },
+  { key: 'assistant',  label: 'Paramètres' },
+  { key: 'statistics', label: 'Statistiques' },
+]
 
 function Avatar({ name }: { name: string }) {
   return (
@@ -41,6 +51,61 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+function PermissionToggles({
+  member,
+  onUpdate,
+}: {
+  member: Member
+  onUpdate: (id: string, permissions: string[]) => Promise<void>
+}) {
+  const [permissions, setPermissions] = useState<string[]>(member.permissions || [])
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function toggle(key: string) {
+    const next = permissions.includes(key)
+      ? permissions.filter(k => k !== key)
+      : [...permissions, key]
+    setPermissions(next)
+    setSaving(true)
+    await onUpdate(member.id, next)
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1500)
+  }
+
+  return (
+    <div className="px-6 pb-4 pt-1 border-t border-gray-50 bg-gray-50/50">
+      <p className="text-xs text-gray-500 mb-3">
+        Modules accessibles {saving && <span className="text-gray-400">· Enregistrement…</span>}
+        {saved && !saving && <span className="text-green-600">· Enregistré ✓</span>}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {NAV_PERMISSIONS.map(nav => {
+          const active = permissions.includes(nav.key)
+          return (
+            <button
+              key={nav.key}
+              onClick={() => toggle(nav.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                active
+                  ? 'bg-black text-white border-black'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-gray-300'}`} />
+              {nav.label}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-xs text-gray-400 mt-2.5">
+        Mot de passe toujours accessible, indépendamment des modules cochés.
+      </p>
+    </div>
+  )
+}
+
 export default function SettingsCollaboratorsPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,6 +115,7 @@ export default function SettingsCollaboratorsPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [removing, setRemoving] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const fetchMembers = useCallback(async () => {
     setLoading(true)
@@ -82,6 +148,17 @@ export default function SettingsCollaboratorsPage() {
       await fetchMembers()
     }
     setInviting(false)
+  }
+
+  async function updatePermissions(memberId: string, permissions: string[]) {
+    await fetch('/api/collaborators', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId, permissions }),
+    })
+    setMembers(prev =>
+      prev.map(m => m.id === memberId ? { ...m, permissions } : m)
+    )
   }
 
   async function remove(memberId: string) {
@@ -120,8 +197,6 @@ export default function SettingsCollaboratorsPage() {
             placeholder="email@entreprise.fr"
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
           />
-
-          {/* Sélecteur de rôle */}
           <select
             value={inviteRole}
             onChange={e => setInviteRole(e.target.value as 'admin' | 'operator')}
@@ -130,7 +205,6 @@ export default function SettingsCollaboratorsPage() {
             <option value="operator">Opérateur</option>
             <option value="admin">Admin</option>
           </select>
-
           <button
             onClick={invite}
             disabled={inviting}
@@ -164,26 +238,54 @@ export default function SettingsCollaboratorsPage() {
         ) : (
           <div className="divide-y divide-gray-50">
             {active.map(m => (
-              <div key={m.id} className="flex items-center justify-between px-6 py-3.5">
-                <div className="flex items-center gap-3">
-                  <Avatar name={m.name || m.email} />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{m.name || m.email.split('@')[0]}</p>
-                    <p className="text-xs text-gray-400">{m.email}</p>
+              <div key={m.id}>
+                <div
+                  className={`flex items-center justify-between px-6 py-3.5 ${
+                    m.role === 'operator' ? 'cursor-pointer hover:bg-gray-50 transition-colors' : ''
+                  }`}
+                  onClick={() => {
+                    if (m.role !== 'operator') return
+                    setExpanded(expanded === m.id ? null : m.id)
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <Avatar name={m.name || m.email} />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{m.name || m.email.split('@')[0]}</p>
+                      <p className="text-xs text-gray-400">{m.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <RoleBadge role={m.role} />
+                    {m.role === 'operator' && (
+                      <span className="text-xs text-gray-400">
+                        {(m.permissions || []).length}/{NAV_PERMISSIONS.length} modules
+                      </span>
+                    )}
+                    {m.role === 'operator' && (
+                      <svg
+                        className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded === m.id ? 'rotate-180' : ''}`}
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
+                    {m.role !== 'admin' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); remove(m.id) }}
+                        disabled={removing === m.id}
+                        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40"
+                      >
+                        {removing === m.id ? '…' : 'Retirer'}
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <RoleBadge role={m.role} />
-                  {m.role !== 'admin' && (
-                    <button
-                      onClick={() => remove(m.id)}
-                      disabled={removing === m.id}
-                      className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40"
-                    >
-                      {removing === m.id ? '…' : 'Retirer'}
-                    </button>
-                  )}
-                </div>
+
+                {/* Expandable permissions panel */}
+                {m.role === 'operator' && expanded === m.id && (
+                  <PermissionToggles member={m} onUpdate={updatePermissions} />
+                )}
               </div>
             ))}
           </div>
@@ -227,7 +329,6 @@ export default function SettingsCollaboratorsPage() {
           </div>
         </div>
       )}
-
     </div>
   )
 }

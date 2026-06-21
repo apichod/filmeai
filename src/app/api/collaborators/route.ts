@@ -98,6 +98,26 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ success: true, email })
 }
 
+// ── PATCH — mettre à jour les permissions d'un opérateur ─────────────────────
+export async function PATCH(req: NextRequest) {
+  const { memberId, permissions } = await req.json() as {
+    memberId: string
+    permissions: string[]
+  }
+
+  if (!memberId) return NextResponse.json({ error: 'memberId manquant' }, { status: 400 })
+  if (!Array.isArray(permissions)) return NextResponse.json({ error: 'permissions doit être un tableau' }, { status: 400 })
+
+  const supabase = getSupabaseAdmin()
+  const { error } = await supabase
+    .from('organization_members')
+    .update({ permissions })
+    .eq('id', memberId)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
+}
+
 // ── DELETE — retirer un membre ────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
   const { memberId } = await req.json() as { memberId: string }
