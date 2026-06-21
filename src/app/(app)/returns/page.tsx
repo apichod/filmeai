@@ -87,10 +87,11 @@ function toolSummary(name: string, result: string | undefined): string | null {
   try {
     // fetch_order retourne du JSON avec les infos de l'order
     if (name === 'fetch_order') {
-      const d = JSON.parse(result) as { number?: string | number; customer?: { name?: string } }
+      const d = JSON.parse(result) as { number?: string | number; customer?: string; lines?: Array<{ product_name: string }> }
       const parts: string[] = []
-      if (d.customer?.name) parts.push(d.customer.name)
+      if (d.customer) parts.push(d.customer)
       if (d.number) parts.push(`#${d.number}`)
+      if (d.lines?.length) parts.push(`${d.lines.length} article${d.lines.length > 1 ? 's' : ''}`)
       return parts.length ? parts.join(' · ') : null
     }
   } catch { /* not JSON */ }
@@ -101,18 +102,23 @@ function toolSummary(name: string, result: string | undefined): string | null {
     return m ? `Order #${m[1]}` : null
   }
 
-  // search_products retourne une liste "Produits trouvés : N items\n- Nom (tracking) ..."
+  // search_products retourne "Produits trouvés :\n- Nom | id: ... | tracking: ..."
   if (name === 'search_products') {
-    const m = result.match(/^[^\n]+/)
-    return m ? m[0].replace('Produits trouvés : ', '') : null
+    const lines = result.split('\n').filter(l => l.startsWith('- '))
+    if (lines.length === 0) return result.includes('Aucun') ? 'Aucun résultat' : null
+    const firstName = lines[0].split(' | ')[0].replace('- ', '')
+    return lines.length === 1 ? firstName : `${firstName} +${lines.length - 1}`
   }
 
-  // get_stock_items retourne "Stock items pour ... : N exemplaire(s)\n- ID-1 ..."
+  // get_stock_items retourne "Stock items :\n- ID-1 | uuid: ... | ..."
   if (name === 'get_stock_items') {
-    const m = result.match(/:\s*(\d+)\s*exemplaire/)
-    if (m) return `${m[1]} exemplaire${parseInt(m[1]) > 1 ? 's' : ''} trouvé${parseInt(m[1]) > 1 ? 's' : ''}`
-    const m2 = result.match(/^[^\n]+/)
-    return m2 ? m2[0] : null
+    const lines = result.split('\n').filter(l => l.startsWith('- '))
+    if (lines.length === 0) return result.includes('Aucun') ? 'Aucun stock item' : null
+    const ids = lines.map(l => {
+      const m = l.match(/ID-\d+/)
+      return m ? m[0] : null
+    }).filter(Boolean).join(', ')
+    return `${lines.length} exemplaire${lines.length > 1 ? 's' : ''}${ids ? ' : ' + ids : ''}`
   }
 
   // add_sav_line retourne "✓ Ligne ajoutée : Nom"

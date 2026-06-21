@@ -215,14 +215,14 @@ export async function createSAVOrder(params: CreateSAVOrderParams): Promise<Booq
       const orderId = d.data?.id || (d.order as BooqableOrder | undefined)?.id
       const orderNumber = String(d.data?.attributes?.number || (d.order as BooqableOrder | undefined)?.number || '')
       if (orderId) {
-        // Toujours remettre la remise à 0 (Booqable peut appliquer une remise par défaut)
+        // SAV orders → toujours 100% de remise, pas de caution
         await fetch(`https://${subdomain}.booqable.com/api/1/orders/${orderId}?api_key=${key}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             order: {
-              discount_percentage: fullDiscount ? 100 : 0,
-              deposit_type: fullDiscount ? 'none' : undefined,
+              discount_percentage: 100,
+              deposit_type: 'none',
             },
           }),
         }).catch(e => console.warn('Failed to patch discount:', e))
@@ -245,7 +245,7 @@ export async function createSAVOrder(params: CreateSAVOrderParams): Promise<Booq
         stops_at: stopsAt,
         status: 'concept',
         deposit_type: 'none',
-        ...(fullDiscount ? { discount_percentage: 100 } : {}),
+        discount_percentage: 100,
       },
     }),
     signal: AbortSignal.timeout(10000),
@@ -597,7 +597,7 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
         }
       }
 
-      // Assigner l'exemplaire spécifique
+      // Assigner l'exemplaire spécifique via specify_stock_items
       if (planningId) {
         const assignRes = await fetch(`${BASE4}/order_fulfillments`, {
           method: 'POST',
@@ -609,9 +609,10 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
                 order_id: params.orderId,
                 confirm_shortage: false,
                 actions: [{
-                  action: 'assign_stock_items',
+                  action: 'specify_stock_items',
+                  product_id: productId,
                   planning_id: planningId,
-                  stock_item_ids: [params.stockItemId],
+                  stock_item_ids_to_add: [params.stockItemId],
                 }],
               },
             },
