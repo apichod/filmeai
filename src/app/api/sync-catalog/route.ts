@@ -186,6 +186,10 @@ async function fetchBundlePrices(bundleIds: string[]): Promise<Map<string, strin
 // Booqable v4 — bundles + bundle_items
 // ─────────────────────────────────────────────────────────────────────────────
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 async function fetchAllV4(path: string): Promise<JsonRecord[]> {
   const all: JsonRecord[] = []
   let pageNumber = 1
@@ -193,14 +197,20 @@ async function fetchAllV4(path: string): Promise<JsonRecord[]> {
 
   while (true) {
     const url = `${BOOQABLE_V4_BASE}${path}?page[size]=${pageSize}&page[number]=${pageNumber}`
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${BOOQABLE_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    })
 
-    if (!res.ok) throw new Error(`Booqable v4 ${path} error: ${res.status}`)
+    let res: Response | null = null
+    for (let attempt = 0; attempt < 5; attempt++) {
+      res = await fetch(url, {
+        headers: { Authorization: `Bearer ${BOOQABLE_KEY}`, 'Content-Type': 'application/json' },
+      })
+      if (res.status !== 429) break
+      const retryAfter = Number(res.headers.get('Retry-After') || 0)
+      const wait = retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt
+      console.log(`Rate limited on ${path} page ${pageNumber}, waiting ${wait}ms…`)
+      await sleep(wait)
+    }
+
+    if (!res || !res.ok) throw new Error(`Booqable v4 ${path} error: ${res?.status}`)
 
     const json = await res.json() as { data?: JsonRecord[] }
     const data = json.data || []
@@ -208,6 +218,7 @@ async function fetchAllV4(path: string): Promise<JsonRecord[]> {
 
     if (data.length < pageSize) break
     pageNumber++
+    await sleep(200) // petit délai entre pages pour éviter le rate limit
   }
 
   return all
