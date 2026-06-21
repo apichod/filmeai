@@ -214,6 +214,9 @@ export async function zeroOutOrderLines(orderId: string): Promise<void> {
  * GET retourne `tags`, PUT accepte `tag_list` (array).
  */
 export async function addTagToOrder(orderId: string, tag: string): Promise<void> {
+  // Booqable stocke les tags en minuscule
+  const tagLower = tag.toLowerCase()
+
   const getRes = await fetch(`${BASE}/orders/${orderId}`, {
     headers: headers(),
     signal: AbortSignal.timeout(10000),
@@ -223,7 +226,7 @@ export async function addTagToOrder(orderId: string, tag: string): Promise<void>
   const getData = await getRes.json() as { order?: BooqableOrder }
   const existingTags = getData.order?.tags || []   // GET retourne "tags"
 
-  if (existingTags.includes(tag)) return           // déjà présent
+  if (existingTags.includes(tagLower)) return      // déjà présent
 
   // v4 PUT — format vérifié sur Google Apps Script setDirectTagFromInvoiceV4
   const res = await fetch(`${BASE4}/orders/${orderId}`, {
@@ -233,7 +236,7 @@ export async function addTagToOrder(orderId: string, tag: string): Promise<void>
       data: {
         id:   orderId,
         type: 'orders',
-        attributes: { tag_list: [...existingTags, tag] },
+        attributes: { tag_list: [...existingTags, tagLower] },
       },
     }),
     signal: AbortSignal.timeout(10000),

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const BASE4     = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/4`
+const BASE      = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
 const KEY       = process.env.BOOQABLE_API_KEY
 const SUBDOMAIN = process.env.BOOQABLE_SUBDOMAIN || ''
 
@@ -27,26 +27,29 @@ function headers() {
 /**
  * GET /api/returns/booqable-orders?tag=LATE
  *
- * Utilise POST /api/4/orders/search (advanced search) avec filter tag_list eq.
- * Inclut customer + properties pour avoir order_sav et notes_sav.
+ * Utilise l'API boomerang de Booqable (API interne utilisée par le web app).
+ * Filtre par tag avec filter[tag_list][]=<tag_en_minuscule>.
  */
 export async function GET(req: NextRequest) {
   const tag = req.nextUrl.searchParams.get('tag')
   if (!tag) return NextResponse.json({ error: 'tag param required' }, { status: 400 })
 
-  // Advanced search v4 : POST sur l'endpoint liste (pas /search)
-  // Selon les docs, les resources supportant l'advanced search utilisent POST sur leur endpoint liste.
-  const res = await fetch(`${BASE4}/orders?include=customer,properties&page[size]=100`, {
-    method: 'POST',
+  // Booqable stocke les tags en minuscule
+  const tagLower = tag.toLowerCase()
+
+  const url =
+    `${BASE}/orders` +
+    `?sort=-number` +
+    `&filter[tag_list][]=${encodeURIComponent(tagLower)}` +
+    `&filter[statuses][not_eq][]=canceled` +
+    `&filter[statuses][not_eq][]=archived` +
+    `&filter[statuses][not_eq][]=new` +
+    `&include=customer,properties` +
+    `&page[number]=1&page[size]=100`
+
+  const res = await fetch(url, {
+    method: 'GET',
     headers: headers(),
-    body: JSON.stringify({
-      filter: {
-        conditions: {
-          operator: 'and',
-          attributes: [{ tag_list: { eq: tag } }],
-        },
-      },
-    }),
     signal: AbortSignal.timeout(15000),
   })
 
@@ -59,7 +62,7 @@ export async function GET(req: NextRequest) {
 
   // Index des ressources incluses
   const included = data.included || []
-  const customerMap = new Map<string, string>()   // id → name
+  const customerMap  = new Map<string, string>()             // id → name
   const propsByOrder = new Map<string, Map<string, string>>() // orderId → {identifier: value}
 
   for (const item of included) {
@@ -67,8 +70,7 @@ export async function GET(req: NextRequest) {
       customerMap.set(item.id, (item.attributes as CustomerAttrs).name || '—')
     }
     if (item.type === 'properties') {
-      const attrs = item.attributes as PropAttrs
-      // owner_id de la property = l'order_id
+      const attrs   = item.attributes as PropAttrs
       const ownerId = (item.relationships as PropRels)?.owner?.data?.id
       if (ownerId) {
         if (!propsByOrder.has(ownerId)) propsByOrder.set(ownerId, new Map())
@@ -77,38 +79,28 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const rows: BooqableOrderRow[] = (data.data || [])
-    // Filtre côté serveur sur tag_list (l'API ne filtre pas toujours correctement)
-    .filter(order => {
-      const attrs = order.attributes as OrderAttrs
-      const tags  = attrs.tag_list
-      if (!tags) return false
-      if (Array.isArray(tags)) return tags.includes(tag)
-      // tag_list peut être une string "TAG1,TAG2"
-      return String(tags).split(',').map(t => t.trim()).includes(tag)
-    })
-    .map(order => {
-      const attrs  = order.attributes as OrderAttrs
-      const custId = (order.relationships as OrderRels)?.customer?.data?.id
-      const props  = propsByOrder.get(order.id) || new Map()
+  const rows: BooqableOrderRow[] = (data.data || []).map(order => {
+    const attrs  = order.attributes as OrderAttrs
+    const custId = (order.relationships as OrderRels)?.customer?.data?.id
+    const props  = propsByOrder.get(order.id) || new Map()
 
-      return {
-        id:            order.id,
-        number:        attrs.number ?? '',
-        customer_name: custId ? (customerMap.get(custId) || '—') : '—',
-        order_sav:     props.get('order_sav')  || props.get('order_origin') || '',
-        notes_sav:     props.get('notes_sav')  || props.get('note_interne') || '',
-        starts_at:     attrs.starts_at || '',
-        stops_at:      attrs.stops_at  || '',
-        status:        attrs.status    || '',
-        url:           `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`,
-      }
-    })
+    return {
+      id:            order.id,
+      number:        attrs.number ?? '',
+      customer_name: custId ? (customerMap.get(custId) || '—') : '—',
+      order_sav:     props.get('order_sav')  || props.get('order_origin') || '',
+      notes_sav:     props.get('notes_sav')  || props.get('note_interne') || '',
+      starts_at:     attrs.starts_at || '',
+      stops_at:      attrs.stops_at  || '',
+      status:        attrs.status    || '',
+      url:           `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`,
+    }
+  })
 
   return NextResponse.json({ orders: rows })
 }
 
-// ── Types internes (JSON:API v4) ───────────────────────────────────────────────
+// ── Types internes (JSON:API) ──────────────────────────────────────────────────
 
 type V4Resource = {
   id: string
@@ -123,8 +115,8 @@ type V4Response = {
   meta?: Record<string, unknown>
 }
 
-type OrderAttrs   = { number?: string | number; status?: string; starts_at?: string; stops_at?: string; tag_list?: string | string[] }
-type OrderRels    = { customer?: { data?: { id: string } } }
+type OrderAttrs    = { number?: string | number; status?: string; starts_at?: string; stops_at?: string; tag_list?: string | string[] }
+type OrderRels     = { customer?: { data?: { id: string } } }
 type CustomerAttrs = { name?: string }
-type PropAttrs    = { identifier?: string; value?: string; name?: string }
-type PropRels     = { owner?: { data?: { id: string; type: string } } }
+type PropAttrs     = { identifier?: string; value?: string }
+type PropRels      = { owner?: { data?: { id: string } } }
