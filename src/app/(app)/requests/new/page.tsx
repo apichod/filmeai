@@ -566,27 +566,6 @@ export default function NewRequestPage() {
       .catch(() => {})
   }, [])
 
-  // ── Prix live fetchés pour les items sans price_per_day (bundles)
-  const [fetchedPrices, setFetchedPrices] = useState<Record<string, number>>({})
-
-  useEffect(() => {
-    const missing = items.filter(
-      item => item.type === 'product' && item.product && !item.product.price_per_day && !fetchedPrices[item.product.id]
-    )
-    for (const item of missing) {
-      const pid = item.product!.id
-      setFetchedPrices(prev => ({ ...prev, [pid]: -1 })) // marqueur "en cours"
-      fetch(`/api/item-price?id=${pid}`)
-        .then(r => r.json())
-        .then((d: { price_per_day?: number | null }) => {
-          if (d.price_per_day && d.price_per_day > 0) {
-            setFetchedPrices(prev => ({ ...prev, [pid]: d.price_per_day! }))
-          }
-        })
-        .catch(() => {})
-    }
-  }, [items, fetchedPrices])
-
   // ── Edit item
   const [editingUid, setEditingUid] = useState<string | null>(null)
   const [debugUid, setDebugUid] = useState<string | null>(null)
@@ -955,15 +934,8 @@ export default function NewRequestPage() {
   const days = billingDays(startsAt, pickupTime, stopsAt, returnTime)
   const tierMul = getTierMultiplier(days)
 
-  // Prix effectif d'un produit : cache en priorité, sinon prix fetché live
-  function effectivePrice(product: Product): number | null {
-    if (product.price_per_day && product.price_per_day > 0) return product.price_per_day
-    const fetched = fetchedPrices[product.id]
-    return (fetched && fetched > 0) ? fetched : null
-  }
-
   const totalHT = items.reduce((acc, item) =>
-    acc + (item.type === 'product' && item.product ? lineTotal(effectivePrice(item.product), item.quantity, days) : 0), 0
+    acc + (item.type === 'product' ? lineTotal(item.product?.price_per_day, item.quantity, days) : 0), 0
   )
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1436,22 +1408,20 @@ export default function NewRequestPage() {
                               )}
                             </div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              {item.type === 'product' && item.product ? (() => {
-                                const price = effectivePrice(item.product)
-                                const fetching = !item.product.price_per_day && fetchedPrices[item.product.id] === -1
-                                if (fetching) return <span className="text-xs text-gray-400">Récupération du prix…</span>
-                                if (!price) return <span className="text-xs text-gray-400">Prix non renseigné</span>
-                                return (
+                              {item.type === 'product' ? (
+                                item.product?.price_per_day ? (
                                   <>
-                                    <span className="text-xs text-gray-400">{price}€/j</span>
+                                    <span className="text-xs text-gray-400">{item.product.price_per_day}€/j</span>
                                     {startsAt && stopsAt && (
                                       <span className="text-xs font-semibold text-gray-700">
-                                        = {formatPrice(lineTotal(price, item.quantity, days))}
+                                        = {formatPrice(lineTotal(item.product.price_per_day, item.quantity, days))}
                                       </span>
                                     )}
                                   </>
+                                ) : (
+                                  <span className="text-xs text-gray-400">Prix non renseigné</span>
                                 )
-                              })() : (
+                              ) : (
                                 <span className="text-xs text-amber-600">Ligne custom Booqable — à vérifier</span>
                               )}
                             </div>

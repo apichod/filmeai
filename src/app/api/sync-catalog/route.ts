@@ -145,6 +145,39 @@ async function fetchAllBooqableProductGroups(): Promise<CatalogItem[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Booqable v1 — bundles prices (une seule requête, prix non dispo en v4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function fetchBundlePricesV1(): Promise<Map<string, string>> {
+  const prices = new Map<string, string>()
+  let page = 1
+  let hasMore = true
+
+  while (hasMore) {
+    const url = `${BOOQABLE_V1_BASE}/bundles?api_key=${BOOQABLE_KEY}&per=200&page=${page}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    if (!res.ok) break
+
+    const data = await res.json() as { bundles?: JsonRecord[] }
+    const bundles = data.bundles || []
+
+    for (const b of bundles) {
+      const id = asString(b.id)
+      const price =
+        asString(b.base_price_as_decimal) ||
+        asString(b.price_as_decimal) ||
+        centsToDecimalString(asNumber(b.base_price_in_cents) ?? asNumber(b.price_in_cents))
+      if (id && price) prices.set(id, price)
+    }
+
+    hasMore = bundles.length === 200
+    page++
+  }
+
+  return prices
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Booqable v4 — bundles + bundle_items
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -175,22 +208,27 @@ async function fetchAllV4(path: string): Promise<JsonRecord[]> {
   return all
 }
 
-async function fetchAllBooqableBundles(): Promise<CatalogItem[]> {
+async function fetchAllBooqableBundles(v1Prices: Map<string, string>): Promise<CatalogItem[]> {
   const resources = await fetchAllV4('/bundles')
 
   return resources.map(resource => {
     const attrs = getAttributes(resource)
+    const id = getResourceId(resource) || ''
     const descriptionParts = [
       firstString(attrs, ['description', 'excerpt', 'extra_information']),
     ].filter(Boolean)
 
+    // Prix : v4 attrs en priorité, sinon v1 (une seule requête faite en amont)
+    const base_price_as_decimal =
+      firstString(attrs, ['base_price_as_decimal', 'price_as_decimal', 'structure_price_as_decimal']) ||
+      centsToDecimalString(firstNumber(attrs, ['base_price_in_cents', 'price_in_cents', 'structure_price_in_cents'])) ||
+      v1Prices.get(id)
+
     return {
-      id: getResourceId(resource) || '',
+      id,
       name: firstString(attrs, ['name', 'title']) || 'Bundle sans nom',
       description: descriptionParts.join(' '),
-      base_price_as_decimal:
-        firstString(attrs, ['base_price_as_decimal', 'price_as_decimal', 'structure_price_as_decimal']) ||
-        centsToDecimalString(firstNumber(attrs, ['base_price_in_cents', 'price_in_cents', 'structure_price_in_cents'])),
+      base_price_as_decimal,
       deposit_as_decimal:
         firstString(attrs, ['deposit_as_decimal']) ||
         centsToDecimalString(firstNumber(attrs, ['deposit_in_cents'])),
@@ -307,11 +345,12 @@ export async function POST(req: NextRequest) {
 
   try {
     console.log('Fetching Booqable product_groups + bundles + bundle_items...')
-    const [productGroups, bundles, bundleItems] = await Promise.all([
+    const [productGroups, v1Prices, bundleItems] = await Promise.all([
       fetchAllBooqableProductGroups(),
-      fetchAllBooqableBundles(),
+      fetchBundlePricesV1(),
       fetchAllBooqableBundleItems(),
     ])
+    const bundles = await fetchAllBooqableBundles(v1Prices)
 
     const allRaw = attachBundleContext(productGroups, bundles, bundleItems)
     const active = allRaw.filter(item => !item.archived && item.show_in_store === true)
