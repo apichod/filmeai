@@ -477,7 +477,9 @@ A2. Pour chaque article concerné, identifie le product_group_id et stock_item_i
     CAS MANQUANT — article bulk ou trackable :
     → SI la ligne fetch_order a product_group_id : utilise-le directement.
     → SI pas de product_group_id : appelle search_products.
-    → Pour un trackable manquant : demande si on connaît l'ID de l'unité (optionnel).
+    → Pour un trackable manquant : si l'utilisateur a précisé un numéro d'ID (ex: "ID 8", "ID 1"),
+      appelle get_stock_items pour trouver le stock_item_id correspondant, puis utilise-le dans add_sav_line.
+      Si l'ID n'est pas précisé, ajoute quand même la ligne (sans stock_item_id).
     → Si aucun résultat catalogue : crée une ligne custom.
 
 A3. Répète A2 pour chaque article avant de passer à B.
@@ -485,6 +487,10 @@ A3. Répète A2 pour chaque article avant de passer à B.
 ═══════════════════════════════════════════════════
 ÉTAPE B — CRÉER LA SAV ORDER
 ═══════════════════════════════════════════════════
+
+B0. AVANT de créer la SAV order, annonce à l'opérateur :
+    "⚠️ Avant de continuer, merci de retourner manuellement les articles [liste] dans l'order d'origine #[numéro] dans Booqable."
+    Attends une confirmation ou un "ok" avant de passer à B1.
 
 B1. "Je crée la nouvelle order SAV..."
     → create_sav_order(customer_id). Mémorise l'"id" retourné.
