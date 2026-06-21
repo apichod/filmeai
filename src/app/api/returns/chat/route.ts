@@ -246,7 +246,7 @@ async function executeTool(
             id: order.id,
             number: order.number,
             status: order.status,
-            customer: order.customer?.name,
+            customer_name: order.customer?.name,
             customer_email: order.customer?.email || null,
             customer_id: order.customer_id,
             starts_at: order.starts_at,
@@ -543,7 +543,8 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
 
 - fetch_order → "id" (UUID) pour toutes les actions sur l'order d'origine / "number" pour affichage humain.
 - create_sav_order → "id" (UUID) pour add_tag, add_sav_comment, add_sav_line.
-- customer_id pour create_sav_order = champ "customer_id" de fetch_order.`
+- customer_id pour create_sav_order = champ "customer_id" de fetch_order.
+- Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.`
 
   const systemPrompt = combinedPrompt
     ? combinedPrompt + '\n\n' + uuidReminder

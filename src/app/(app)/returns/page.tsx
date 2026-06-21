@@ -91,9 +91,9 @@ function toolSummary(name: string, result: string | undefined): string | null {
   try {
     // fetch_order retourne du JSON avec les infos de l'order
     if (name === 'fetch_order') {
-      const d = JSON.parse(result) as { number?: string | number; customer?: string; lines?: Array<{ product_name: string }> }
+      const d = JSON.parse(result) as { number?: string | number; customer_name?: string; lines?: Array<{ product_name: string }> }
       const parts: string[] = []
-      if (d.customer) parts.push(d.customer)
+      if (d.customer_name) parts.push(d.customer_name)
       if (d.number) parts.push(`#${d.number}`)
       if (d.lines?.length) parts.push(`${d.lines.length} article${d.lines.length > 1 ? 's' : ''}`)
       return parts.length ? parts.join(' · ') : null

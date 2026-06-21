@@ -211,81 +211,81 @@ export async function createSAVOrder(params: CreateSAVOrderParams): Promise<Booq
   const startsAt = bqDate(today())
   const stopsAt  = bqDate(inDays(returnDays))
 
-  // ── Essai v4 ─────────────────────────────────────────────────────────────────
+  // ── v1 en premier (gère customer_id nativement) ───────────────────────────────
   try {
-    const v4Url = `https://${subdomain}.booqable.com/api/4/orders`
-    const v4Res = await fetch(v4Url, {
+    const v1Url = `https://${subdomain}.booqable.com/api/1/orders?api_key=${key}`
+    const v1Res = await fetch(v1Url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        data: {
-          type: 'orders',
-          attributes: {
-            customer_id: customerId,
-            starts_at: startsAt,
-            stops_at: stopsAt,
-            status: 'draft',
-            ...(fullDiscount ? { deposit_type: 'none' } : {}),
-          },
+        order: {
+          customer_id: customerId,
+          starts_at: startsAt,
+          stops_at: stopsAt,
+          status: 'concept',
+          deposit_type: 'none',
+          discount_percentage: 100,
         },
       }),
       signal: AbortSignal.timeout(10000),
     })
-    if (v4Res.ok) {
-      const d = await v4Res.json() as {
-        data?: { id: string; attributes?: { number?: string | number } }
-        order?: BooqableOrder
-      }
-      const orderId = d.data?.id || (d.order as BooqableOrder | undefined)?.id
-      const orderNumber = String(d.data?.attributes?.number || (d.order as BooqableOrder | undefined)?.number || '')
-      if (orderId) {
-        // SAV orders → toujours 100% de remise, pas de caution, customer_id explicite
-        await fetch(`https://${subdomain}.booqable.com/api/1/orders/${orderId}?api_key=${key}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            order: {
-              customer_id: customerId,
-              discount_percentage: 100,
-              deposit_type: 'none',
-            },
-          }),
-        }).catch(e => console.warn('Failed to patch discount/customer:', e))
-        return { id: orderId, number: orderNumber, status: 'concept', starts_at: startsAt, stops_at: stopsAt, customer_id: customerId, customer: null, tags: [], lines: [], properties_attributes: {} }
-      }
+    if (v1Res.ok) {
+      const v1Data = await v1Res.json() as { order?: BooqableOrder }
+      if (v1Data.order) return v1Data.order
+    } else {
+      const text = await v1Res.text()
+      console.warn(`createSAVOrder v1 error ${v1Res.status}: ${text}`)
     }
   } catch (e) {
-    console.warn('SAV order v4 failed, trying v1:', e)
+    console.warn('SAV order v1 failed, trying v4:', e)
   }
 
-  // ── Fallback v1 ───────────────────────────────────────────────────────────────
-  const v1Url = `https://${subdomain}.booqable.com/api/1/orders?api_key=${key}`
-  const v1Res = await fetch(v1Url, {
+  // ── Fallback v4 (avec relationships pour customer) ────────────────────────────
+  const v4Url = `https://${subdomain}.booqable.com/api/4/orders`
+  const v4Res = await fetch(v4Url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      order: {
-        customer_id: customerId,
-        starts_at: startsAt,
-        stops_at: stopsAt,
-        status: 'concept',
-        deposit_type: 'none',
-        discount_percentage: 100,
+      data: {
+        type: 'orders',
+        attributes: {
+          starts_at: startsAt,
+          stops_at: stopsAt,
+          status: 'draft',
+        },
+        relationships: {
+          customer: { data: { type: 'customers', id: customerId } },
+        },
       },
     }),
     signal: AbortSignal.timeout(10000),
   })
 
-  if (!v1Res.ok) {
-    const text = await v1Res.text()
-    throw new Error(`Booqable createSAVOrder v1 error ${v1Res.status}: ${text}`)
+  if (!v4Res.ok) {
+    const text = await v4Res.text()
+    throw new Error(`Booqable createSAVOrder v4 error ${v4Res.status}: ${text}`)
   }
 
-  const v1Data = await v1Res.json() as { order?: BooqableOrder }
-  return v1Data.order || null
+  const d = await v4Res.json() as {
+    data?: { id: string; attributes?: { number?: string | number } }
+  }
+  const orderId = d.data?.id
+  if (!orderId) throw new Error('createSAVOrder v4: pas d\'ID dans la réponse')
+  const orderNumber = String(d.data?.attributes?.number || '')
+
+  // Applique discount + deposit via v1 PATCH
+  await fetch(`https://${subdomain}.booqable.com/api/1/orders/${orderId}?api_key=${key}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      order: { discount_percentage: 100, deposit_type: 'none' },
+    }),
+  }).catch(e => console.warn('Failed to patch discount on v4 order:', e))
+
+  return { id: orderId, number: orderNumber, status: 'concept', starts_at: startsAt, stops_at: stopsAt, customer_id: customerId, customer: null, tags: [], lines: [], properties_attributes: {} }
 }
 
 // ── Zero out order lines prices ────────────────────────────────────────────────
