@@ -9,6 +9,7 @@
  */
 
 const BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
+const BASE4 = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/4`
 const KEY  = process.env.BOOQABLE_API_KEY
 
 function headers() {
@@ -244,5 +245,88 @@ export async function addSAVComment(
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`Booqable addSAVComment error ${res.status}: ${text}`)
+  }
+}
+
+// ── Search products ────────────────────────────────────────────────────────────
+
+export type ProductSearchResult = {
+  id: string           // product_group_id Booqable
+  name: string
+  tracking: 'bulk' | 'trackable' | 'no_tracking' | 'unknown'
+  price_per_day: number | null
+}
+
+/**
+ * Cherche des produits dans le catalogue Booqable par nom.
+ * Retourne le type de tracking (bulk/trackable) pour guider la SAV.
+ */
+export async function searchProducts(query: string): Promise<ProductSearchResult[]> {
+  const url = `${BASE}/product_groups?q=${encodeURIComponent(query)}&per=8&api_key=${KEY}`
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) throw new Error(`Booqable searchProducts error: ${res.status}`)
+
+  const data = await res.json() as {
+    product_groups?: Array<{
+      id: string
+      name: string
+      tracking: string
+      base_price_as_decimal?: string
+      archived_at?: string | null
+    }>
+  }
+
+  return (data.product_groups || [])
+    .filter(pg => !pg.archived_at)
+    .map(pg => ({
+      id: pg.id,
+      name: pg.name,
+      tracking: (['bulk', 'trackable', 'no_tracking'].includes(pg.tracking)
+        ? pg.tracking
+        : 'unknown') as ProductSearchResult['tracking'],
+      price_per_day: pg.base_price_as_decimal ? parseFloat(pg.base_price_as_decimal) : null,
+    }))
+}
+
+// ── Add line to SAV order ──────────────────────────────────────────────────────
+
+export type SAVLineParams =
+  | { type: 'product'; orderId: string; productGroupId: string; quantity: number }
+  | { type: 'custom';  orderId: string; title: string; quantity: number; note?: string }
+
+/**
+ * Ajoute une ligne à la SAV order via l'API v4.
+ * - type 'product' : ligne produit Booqable (product_group_id)
+ * - type 'custom'  : ligne custom (article non référencé)
+ */
+export async function addSAVLine(params: SAVLineParams): Promise<void> {
+  const attributes: Record<string, unknown> = {
+    owner_id:   params.orderId,
+    owner_type: 'orders',
+    quantity:   params.quantity,
+  }
+
+  if (params.type === 'product') {
+    attributes.product_group_id = params.productGroupId
+  } else {
+    attributes.line_type   = 'charge'
+    attributes.title       = params.title
+    attributes.price_each_in_cents = 0
+    if (params.note) attributes.extra_information = params.note
+  }
+
+  const res = await fetch(`${BASE4}/lines`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ data: { type: 'lines', attributes } }),
+    signal: AbortSignal.timeout(10000),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable addSAVLine error ${res.status}: ${text}`)
   }
 }

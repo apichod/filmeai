@@ -7,6 +7,8 @@ import {
   addTagToOrder,
   addInternalNote,
   addSAVComment,
+  searchProducts,
+  addSAVLine,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -113,6 +115,39 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'search_products',
+      description: 'Cherche un produit dans le catalogue Booqable par nom. Retourne le type (bulk/trackable) pour chaque résultat. À appeler pour chaque article endommagé avant de créer la SAV order.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Nom ou description du produit à chercher' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_sav_line',
+      description: 'Ajoute une ligne à la SAV order. Pour un produit trouvé dans le catalogue (bulk ou trackable) : utiliser type=product avec product_group_id. Pour un article non référencé : utiliser type=custom avec un titre descriptif.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id:         { type: 'string', description: 'UUID de la SAV order (champ "id" de create_sav_order)' },
+          line_type:        { type: 'string', enum: ['product', 'custom'], description: '"product" si trouvé dans le catalogue, "custom" sinon' },
+          product_group_id: { type: 'string', description: 'ID du product_group Booqable (si line_type=product)' },
+          custom_title:     { type: 'string', description: 'Nom descriptif (si line_type=custom)' },
+          quantity:         { type: 'number', description: 'Quantité' },
+          note:             { type: 'string', description: 'Note optionnelle (numéro de série, détail du problème)' },
+        },
+        required: ['order_id', 'line_type', 'quantity'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'log_case',
       description: 'Enregistre le cas dans le tableau de suivi FilmeAI',
       parameters: {
@@ -191,6 +226,31 @@ async function executeTool(
         return { result: `✓ Commentaire SAV ajouté (order origine: ${args.origin_order_number})` }
       }
 
+      case 'search_products': {
+        const results = await searchProducts(String(args.query))
+        if (results.length === 0) {
+          return { result: `Aucun produit trouvé pour "${args.query}" dans le catalogue Booqable. Il faudra créer une ligne custom.` }
+        }
+        const summary = results.map(r =>
+          `- ${r.name} | id: ${r.id} | tracking: ${r.tracking}${r.price_per_day ? ` | ${r.price_per_day}€/j` : ''}`
+        ).join('\n')
+        return { result: `Produits trouvés :\n${summary}` }
+      }
+
+      case 'add_sav_line': {
+        const orderId = String(args.order_id)
+        const qty = typeof args.quantity === 'number' ? args.quantity : 1
+
+        if (args.line_type === 'product' && args.product_group_id) {
+          await addSAVLine({ type: 'product', orderId, productGroupId: String(args.product_group_id), quantity: qty })
+          return { result: `✓ Ligne produit ajoutée à la SAV order (product_group_id: ${args.product_group_id}, qté: ${qty})` }
+        } else {
+          const title = args.custom_title ? String(args.custom_title) : 'Article non référencé'
+          await addSAVLine({ type: 'custom', orderId, title, quantity: qty, note: args.note ? String(args.note) : undefined })
+          return { result: `✓ Ligne custom ajoutée : "${title}" (qté: ${qty})` }
+        }
+      }
+
       case 'log_case': {
         const supabase = getSupabaseAdmin()
         const { data, error } = await supabase
@@ -246,11 +306,20 @@ export async function POST(req: NextRequest) {
     .join('\n\n---\n\n')
 
   const uuidReminder = `
-RÈGLE CRITIQUE — IDs Booqable :
-- fetch_order retourne un champ "id" (UUID comme "f0d5301b-...") et un champ "number" (lisible comme "8648").
-- Pour TOUTES les actions suivantes (add_internal_note, add_tag, add_sav_comment), utilise TOUJOURS le champ "id" (UUID), jamais le "number".
-- create_sav_order retourne aussi un "id" (UUID) : utilise-le pour add_tag et add_sav_comment sur la SAV order.
-- customer_id dans create_sav_order = le champ "customer_id" de fetch_order (UUID du client).`
+RÈGLES CRITIQUES :
+
+IDs Booqable :
+- fetch_order retourne "id" (UUID ex: "f0d5301b-...") et "number" (ex: "8648"). Utilise TOUJOURS "id" pour add_internal_note, add_tag, add_sav_comment — jamais le "number".
+- create_sav_order retourne aussi un "id" (UUID) : utilise-le pour add_tag, add_sav_comment, add_sav_line.
+- customer_id dans create_sav_order = champ "customer_id" de fetch_order.
+
+Identification des articles endommagés (étape obligatoire avant create_sav_order) :
+1. Pour chaque article signalé, appelle search_products avec son nom.
+2. Si résultat trouvé avec tracking=bulk → pas besoin de préciser l'unité, utilise product_group_id.
+3. Si résultat trouvé avec tracking=trackable → demande à l'utilisateur de préciser l'unité (numéro de série ou identifiant). Utilise quand même le product_group_id pour la ligne (l'affectation de l'unité se fait dans Booqable).
+4. Si aucun résultat → crée une ligne custom avec le nom descriptif.
+5. Plusieurs articles possibles : traite-les un par un.
+6. Ajoute les lignes avec add_sav_line APRÈS avoir créé la SAV order.`
 
   const systemPrompt = combinedPrompt
     ? combinedPrompt + '\n\n' + uuidReminder

@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 
 const BOOQABLE_TOOLS = [
   { value: 'fetch_order',       label: 'fetch_order — récupérer l\'order' },
+  { value: 'search_products',   label: 'search_products — identifier les articles (bulk/trackable/custom)' },
   { value: 'add_internal_note', label: 'add_internal_note — note interne' },
   { value: 'create_sav_order',  label: 'create_sav_order — créer la SAV order' },
+  { value: 'add_sav_line',      label: 'add_sav_line — ajouter un article à la SAV order' },
   { value: 'add_tag',           label: 'add_tag — ajouter un tag' },
   { value: 'add_sav_comment',   label: 'add_sav_comment — commentaire SAV' },
   { value: 'log_case',          label: 'log_case — logger le cas FilmeAI' },
