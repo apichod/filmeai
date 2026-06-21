@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
+import nodemailer from 'nodemailer'
 import {
   fetchOrderByNumber,
   createSAVOrder,
@@ -10,6 +11,7 @@ import {
   searchProducts,
   getStockItems,
   addSAVLine,
+  zeroOutOrderLines,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -168,6 +170,42 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'draft_email',
+      description: 'Génère un email client basé sur le template Filme (casse ou manquant). À appeler après log_case. Affiche l\'email à l\'opérateur et demande confirmation avant envoi.',
+      parameters: {
+        type: 'object',
+        properties: {
+          problem_type:        { type: 'string', enum: ['casse', 'manquant'], description: 'Type de problème' },
+          insurance:           { type: 'boolean', description: 'Le client a une assurance ?' },
+          caution:             { type: 'boolean', description: 'Une caution est active ?' },
+          customer_name:       { type: 'string', description: 'Prénom/nom du client' },
+          customer_email:      { type: 'string', description: 'Email du client (champ customer_email de fetch_order)' },
+          origin_order_number: { type: 'string', description: 'Numéro de l\'order d\'origine' },
+          sav_comment:         { type: 'string', description: 'Détail du problème (identique au commentaire SAV)' },
+        },
+        required: ['problem_type', 'insurance', 'caution', 'customer_name', 'origin_order_number', 'sav_comment'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_email',
+      description: 'Envoie l\'email au client. À appeler UNIQUEMENT si l\'opérateur a confirmé l\'envoi.',
+      parameters: {
+        type: 'object',
+        properties: {
+          to:      { type: 'string', description: 'Adresse email du destinataire' },
+          subject: { type: 'string', description: 'Objet de l\'email' },
+          body:    { type: 'string', description: 'Corps de l\'email (texte brut)' },
+        },
+        required: ['to', 'subject', 'body'],
+      },
+    },
+  },
 ]
 
 // ── Exécution des outils ──────────────────────────────────────────────────────
@@ -189,6 +227,7 @@ async function executeTool(
             number: order.number,
             status: order.status,
             customer: order.customer?.name,
+            customer_email: order.customer?.email || null,
             customer_id: order.customer_id,
             starts_at: order.starts_at,
             stops_at: order.stops_at,
@@ -205,15 +244,14 @@ async function executeTool(
       }
 
       case 'create_sav_order': {
-        const products = (args.products as Array<{ product_id: string; quantity: number }>) || []
         const sav = await createSAVOrder({
           customerId:   String(args.customer_id),
-          products:     products.map(p => ({ productId: p.product_id, quantity: p.quantity })),
           fullDiscount: Boolean(args.full_discount),
           returnDays:   typeof args.return_days === 'number' ? args.return_days : 30,
         })
         if (!sav) return { result: 'Erreur : SAV order non créée' }
-        return { result: JSON.stringify({ id: sav.id, number: sav.number, status: sav.status }) }
+        const numDisplay = sav.number ? ` (numéro: ${sav.number})` : ''
+        return { result: `✓ SAV order créée${numDisplay} | id: ${sav.id} | status: ${sav.status}\nUtilise cet "id" pour add_sav_line, add_tag, add_sav_comment.` }
       }
 
       case 'add_tag': {
@@ -293,6 +331,69 @@ async function executeTool(
           result: `✓ Cas #${data.case_number} loggué avec succès (ID: ${data.id})`,
           caseId: data.id,
         }
+      }
+
+      case 'draft_email': {
+        const problemType    = String(args.problem_type || 'casse')
+        const insurance      = Boolean(args.insurance)
+        const caution        = Boolean(args.caution)
+        const customerName   = String(args.customer_name || '')
+        const originOrderNum = String(args.origin_order_number || '')
+        const savComment     = String(args.sav_comment || '')
+
+        // Détermine le cas (1–4)
+        let caseBlock = ''
+        if (problemType === 'casse') {
+          if (insurance && !caution) {
+            caseBlock = `Vous avez souscrit à notre assurance.\nConformément à nos conditions générales, une franchise de 20 % du montant des dommages s'applique, avec un minimum de 500 € HT.\nPour les réparations inférieures à 500 €, le montant total vous sera facturé.\nDès réception du devis, nous vous adresserons la facture correspondante, accompagnée du détail des réparations.`
+          } else if (insurance && caution) {
+            caseBlock = `Vous avez souscrit à notre assurance.\nConformément à nos conditions générales, une franchise de 20 % du montant des dommages s'applique, avec un minimum de 500 € HT.\nPour les réparations inférieures à 500 €, le montant total vous sera facturé.\nUne caution est actuellement active ; nous la conservons à titre de garantie jusqu'à réception du devis de réparation.\nDès réception du devis, nous vous adresserons la facture correspondante, accompagnée du détail des réparations.`
+          } else if (!insurance && !caution) {
+            caseBlock = `Vous n'avez pas souscrit à notre assurance.\nL'intégralité du coût de la réparation sera donc à votre charge.\nDès réception du devis, nous vous adresserons la facture correspondante, accompagnée du détail des réparations.`
+          } else {
+            caseBlock = `Vous n'avez pas souscrit à notre assurance.\nL'intégralité du coût de la réparation sera donc à votre charge.\nUne caution est actuellement active ; nous la conservons à titre de garantie le temps d'obtenir le devis.\nDès réception du devis, nous vous adresserons la facture correspondante, accompagnée du détail des réparations.`
+          }
+        }
+
+        let subject = ''
+        let body    = ''
+
+        if (problemType === 'casse') {
+          subject = `filme – Dommage matériel constaté lors du retour de votre commande ${originOrderNum}`
+          body = `Hello ${customerName},\n\nNous venons de procéder à la vérification du retour de votre commande #${originOrderNum}.\nLors du contrôle, nous avons relevé les points suivants :\n${savComment}\n\n${caseBlock}\n\nN'hésitez pas à nous contacter par retour d'email à location@filme.fr ou par téléphone au 07 57 83 07 07.\nNous comptons sur votre réactivité et restons à votre disposition.\n\nL'équipe Filme`
+        } else {
+          subject = `filme – Matériel manquant lors du retour de votre commande ${originOrderNum}`
+          body = `Hello ${customerName},\n\nNous venons de finaliser la vérification du retour de votre commande #${originOrderNum}.\nLors du contrôle, nous avons relevé les points suivants :\n${savComment}\n\n👉 Afin de régulariser rapidement la situation, merci de rapporter le matériel manquant dès que possible dans nos locaux de Montreuil.\nSi cela n'est pas possible, merci de nous contacter sans délai afin que nous trouvions ensemble la solution la plus adaptée.\n\nMerci de bien vouloir nous tenir informés par retour d'email à location@filme.fr ou par téléphone au 07 57 83 07 07.\nNous comptons sur votre réactivité et restons à votre disposition.\n\nL'équipe Filme`
+        }
+
+        return { result: JSON.stringify({ subject, body, to: args.customer_email || '' }) }
+      }
+
+      case 'send_email': {
+        const to      = String(args.to)
+        const subject = String(args.subject)
+        const body    = String(args.body)
+
+        if (!to || !to.includes('@')) {
+          return { result: 'Erreur : adresse email destinataire manquante ou invalide.' }
+        }
+
+        const transporter = nodemailer.createTransport({
+          host:   'smtp.gmail.com',
+          port:   465,
+          secure: true,
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        })
+
+        await transporter.sendMail({
+          from:    `"filme" <${process.env.SMTP_USER}>`,
+          to,
+          subject,
+          text: body,
+          html: body.replace(/\n/g, '<br>'),
+        })
+
+        return { result: `✓ Email envoyé à ${to}` }
       }
 
       default:
@@ -377,6 +478,24 @@ B5. Annonce : "J'ajoute une note interne à l'order d'origine..."
 
 B6. Annonce : "J'enregistre le cas dans le suivi..."
     → Appelle log_case.
+
+═══════════════════════════════════════════════════
+ÉTAPE C — EMAIL CLIENT (après log_case)
+═══════════════════════════════════════════════════
+
+C1. Appelle draft_email avec : problem_type, insurance, caution, customer_name, customer_email (de fetch_order), origin_order_number, sav_comment.
+
+C2. Présente l'email généré à l'opérateur :
+    "Voici l'email que je propose d'envoyer à [customer_email] :
+
+    Objet : [subject]
+
+    [body]
+
+    Souhaitez-vous envoyer cet email ?"
+
+C3. Si l'opérateur confirme → appelle send_email avec to, subject, body.
+    Si l'opérateur dit non ou veut modifier → propose des ajustements ou abandonne.
 
 ═══════════════════════════════════════════════════
 RÈGLES IDs — JAMAIS LES MÉLANGER

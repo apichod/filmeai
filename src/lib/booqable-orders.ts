@@ -78,7 +78,6 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
 
 export type CreateSAVOrderParams = {
   customerId: string
-  products: Array<{ productId: string; quantity: number }>
   /** Si true → remise 100% + caution = aucune (matériel manquant) */
   fullDiscount?: boolean
   returnDays?: number
@@ -92,7 +91,7 @@ export async function createSAVOrder(params: CreateSAVOrderParams): Promise<Booq
   const startsAt = bqDate(today())
   const stopsAt  = bqDate(inDays(returnDays))
 
-  // ── Essai v4 (même pattern que createBooqableOrder dans booqable.ts) ─────────
+  // ── Essai v4 ─────────────────────────────────────────────────────────────────
   try {
     const v4Url = `https://${subdomain}.booqable.com/api/4/orders`
     const v4Res = await fetch(v4Url, {
@@ -116,10 +115,13 @@ export async function createSAVOrder(params: CreateSAVOrderParams): Promise<Booq
       signal: AbortSignal.timeout(10000),
     })
     if (v4Res.ok) {
-      const d = await v4Res.json() as { data?: { id: string }; order?: BooqableOrder }
+      const d = await v4Res.json() as {
+        data?: { id: string; attributes?: { number?: string | number } }
+        order?: BooqableOrder
+      }
       const orderId = d.data?.id || (d.order as BooqableOrder | undefined)?.id
+      const orderNumber = String(d.data?.attributes?.number || (d.order as BooqableOrder | undefined)?.number || '')
       if (orderId) {
-        // Si remise 100%, appliquer via PATCH v1
         if (fullDiscount) {
           await fetch(`https://${subdomain}.booqable.com/api/1/orders/${orderId}?api_key=${key}`, {
             method: 'PATCH',
@@ -127,14 +129,14 @@ export async function createSAVOrder(params: CreateSAVOrderParams): Promise<Booq
             body: JSON.stringify({ order: { discount_percentage: 100, deposit_type: 'none' } }),
           })
         }
-        return { id: orderId, number: '', status: 'concept', starts_at: startsAt, stops_at: stopsAt, customer_id: customerId, customer: null, tags: [], lines: [], properties_attributes: {} }
+        return { id: orderId, number: orderNumber, status: 'concept', starts_at: startsAt, stops_at: stopsAt, customer_id: customerId, customer: null, tags: [], lines: [], properties_attributes: {} }
       }
     }
   } catch (e) {
     console.warn('SAV order v4 failed, trying v1:', e)
   }
 
-  // ── Fallback v1 avec api_key en query param ───────────────────────────────────
+  // ── Fallback v1 ───────────────────────────────────────────────────────────────
   const v1Url = `https://${subdomain}.booqable.com/api/1/orders?api_key=${key}`
   const v1Res = await fetch(v1Url, {
     method: 'POST',
@@ -159,6 +161,47 @@ export async function createSAVOrder(params: CreateSAVOrderParams): Promise<Booq
 
   const v1Data = await v1Res.json() as { order?: BooqableOrder }
   return v1Data.order || null
+}
+
+// ── Zero out order lines prices ────────────────────────────────────────────────
+
+/**
+ * Remet le prix de toutes les lignes d'une order à 0 via PATCH v4.
+ */
+export async function zeroOutOrderLines(orderId: string): Promise<void> {
+  // Récupérer les lignes via v4
+  const res = await fetch(
+    `${BASE4}/lines?filter[owner_id]=${orderId}&filter[owner_type]=orders&page[size]=50`,
+    { headers: headers(), signal: AbortSignal.timeout(10000) }
+  )
+  if (!res.ok) {
+    console.warn(`zeroOutOrderLines: could not fetch lines (${res.status})`)
+    return
+  }
+
+  const data = await res.json() as { data?: Array<{ id: string; type: string }> }
+  const lines = (data.data || []).filter(l => l.type === 'lines')
+
+  await Promise.all(lines.map(line =>
+    fetch(`${BASE4}/lines/${line.id}`, {
+      method: 'PUT',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          id:   line.id,
+          type: 'lines',
+          attributes: {
+            price_each_in_cents:  0,
+            price_as_decimal:     '0.0',
+            base_price_as_decimal: '0.0',
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(8000),
+    }).then(r => {
+      if (!r.ok) console.warn(`zeroOutOrderLines: PATCH line ${line.id} failed (${r.status})`)
+    })
+  ))
 }
 
 // ── Add tag ────────────────────────────────────────────────────────────────────
@@ -409,21 +452,42 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
     const productId = await resolveProductId(params.productGroupId)
     if (!productId) throw new Error(`Impossible de résoudre le product_id pour product_group ${params.productGroupId}`)
 
-    // Pour un stock item spécifique (trackable) → book_specific_stock_items
+    // Pour un stock item spécifique (trackable) : essayer plusieurs formats
     // Sinon → book_product classique
-    const action: Record<string, unknown> = params.stockItemId
-      ? {
-          action: 'book_specific_stock_items',
-          product_id: productId,
-          stock_item_ids: [params.stockItemId],
-        }
-      : {
-          action: 'book_product',
-          mode: 'create_new',
-          product_id: productId,
-          quantity: params.quantity,
-        }
+    if (params.stockItemId) {
+      const stockAttempts = [
+        // Format 1 : stock_item_ids sans product_id
+        { action: 'book_specific_stock_items', stock_item_ids: [params.stockItemId] },
+        // Format 2 : avec product_id
+        { action: 'book_specific_stock_items', product_id: productId, stock_item_ids: [params.stockItemId] },
+        // Fallback : book_product générique
+        { action: 'book_product', mode: 'create_new', product_id: productId, quantity: params.quantity },
+      ]
 
+      let lastError = ''
+      for (const action of stockAttempts) {
+        const res = await fetch(`${BASE4}/order_fulfillments`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            data: {
+              type: 'order_fulfillments',
+              attributes: { order_id: params.orderId, confirm_shortage: false, actions: [action] },
+            },
+          }),
+          signal: AbortSignal.timeout(15000),
+        })
+        if (res.ok) {
+          await zeroOutOrderLines(params.orderId)
+          return
+        }
+        lastError = `${res.status}: ${await res.text()}`
+        console.warn(`addSAVLine action "${action.action}" failed (${lastError})`)
+      }
+      throw new Error(`Booqable addSAVLine: all attempts failed. Last error: ${lastError}`)
+    }
+
+    // Produit bulk → book_product
     const res = await fetch(`${BASE4}/order_fulfillments`, {
       method: 'POST',
       headers: headers(),
@@ -433,7 +497,7 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
           attributes: {
             order_id: params.orderId,
             confirm_shortage: false,
-            actions: [action],
+            actions: [{ action: 'book_product', mode: 'create_new', product_id: productId, quantity: params.quantity }],
           },
         },
       }),
@@ -442,32 +506,9 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
 
     if (!res.ok) {
       const text = await res.text()
-      // Fallback: si book_specific_stock_items échoue, essayer book_product sans stock_item
-      if (params.stockItemId) {
-        console.warn(`book_specific_stock_items failed (${res.status}), trying book_product fallback`)
-        const fallback = await fetch(`https://${subdomain}.booqable.com/api/4/order_fulfillments`, {
-          method: 'POST',
-          headers: headers(),
-          body: JSON.stringify({
-            data: {
-              type: 'order_fulfillments',
-              attributes: {
-                order_id: params.orderId,
-                confirm_shortage: false,
-                actions: [{ action: 'book_product', mode: 'create_new', product_id: productId, quantity: params.quantity }],
-              },
-            },
-          }),
-          signal: AbortSignal.timeout(15000),
-        })
-        if (!fallback.ok) {
-          const fallbackText = await fallback.text()
-          throw new Error(`Booqable addSAVLine fallback error ${fallback.status}: ${fallbackText}`)
-        }
-        return
-      }
       throw new Error(`Booqable addSAVLine error ${res.status}: ${text}`)
     }
+    await zeroOutOrderLines(params.orderId)
     return
   }
 
