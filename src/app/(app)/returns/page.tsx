@@ -658,19 +658,7 @@ function CasesTable() {
               </button>
             )}
           </div>
-          <div className="flex gap-1">
-            {(['all', 'open', 'in_progress', 'resolved'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  filter === f ? 'bg-black text-white' : 'text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                {f === 'all' ? 'Tous' : f === 'open' ? 'Ouverts' : f === 'in_progress' ? 'En cours' : 'Résolus'}
-              </button>
-            ))}
-          </div>
+          <div />
         </div>
 
         {loading ? (
@@ -696,7 +684,6 @@ function CasesTable() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Type</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Problème</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Statut</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date</th>
                   {isAdmin && <th className="px-4 py-3" />}
                 </tr>
@@ -728,24 +715,10 @@ function CasesTable() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{c.problem_description}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(c.status)}`}>
-                        {statusLabel(c.status)}
-                      </span>
-                    </td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(c.created_at)}</td>
                     {isAdmin && (
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
-                          <select
-                            value={c.status}
-                            onChange={e => updateStatus(c.id, e.target.value)}
-                            className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-gray-300"
-                          >
-                            <option value="open">Ouvert</option>
-                            <option value="in_progress">En cours</option>
-                            <option value="resolved">Résolu</option>
-                          </select>
                           <button
                             onClick={() => openDetail(c)}
                             className="text-gray-400 hover:text-gray-700 transition-colors p-1"
