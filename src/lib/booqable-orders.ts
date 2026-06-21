@@ -179,15 +179,22 @@ export async function addTagToOrder(orderId: string, tag: string): Promise<void>
 
   if (existingTags.includes(tag)) return           // déjà présent
 
-  const res = await fetch(`${BASE}/orders/${orderId}`, {
-    method: 'PATCH',
+  // v4 PUT — format vérifié sur Google Apps Script setDirectTagFromInvoiceV4
+  const res = await fetch(`${BASE4}/orders/${orderId}`, {
+    method: 'PUT',
     headers: headers(),
-    body: JSON.stringify({ order: { tag_list: [...existingTags, tag] } }),
+    body: JSON.stringify({
+      data: {
+        id:   orderId,
+        type: 'orders',
+        attributes: { tag_list: [...existingTags, tag] },
+      },
+    }),
     signal: AbortSignal.timeout(10000),
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Booqable addTag error ${res.status}: ${text}`)
+    throw new Error(`Booqable addTag v4 error ${res.status}: ${text}`)
   }
 }
 
@@ -236,7 +243,7 @@ export async function addSAVComment(
       order: {
         properties_attributes: [
           { name: 'Order SAV', identifier: 'order_sav', value: originOrderNumber },
-          { name: 'Note interne', identifier: 'note_interne', value: comment },
+          { name: 'Notes SAV', identifier: 'notes_sav', value: comment },
         ],
       },
     }),
