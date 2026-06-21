@@ -403,7 +403,6 @@ async function resolveProductId(productGroupId: string): Promise<string | null> 
  */
 export async function addSAVLine(params: SAVLineParams): Promise<void> {
   const subdomain = process.env.BOOQABLE_SUBDOMAIN
-  const key = KEY
 
   if (params.type === 'product') {
     // Résoudre le product_id depuis le product_group_id
