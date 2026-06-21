@@ -38,6 +38,10 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 function statusLabel(s: string) {
   if (s === 'open')        return 'Ouvert'
   if (s === 'in_progress') return 'En cours'
@@ -703,7 +707,7 @@ function CasesTable() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{c.problem_description}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(c.created_at)}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{formatDateTime(c.created_at)}</td>
                     {isAdmin && (
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
