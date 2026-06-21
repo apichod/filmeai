@@ -434,98 +434,104 @@ export async function POST(req: NextRequest) {
     .join('\n\n---\n\n')
 
   const uuidReminder = `
-RÈGLES CRITIQUES — À SUIVRE DANS L'ORDRE EXACT :
+RÈGLES CRITIQUES — CES INSTRUCTIONS PRÉVALENT SUR TOUT LE RESTE.
+
+Les DB prompts ci-dessus sont des références. Les règles ci-dessous sont la procédure exacte à suivre.
+Ne PAS appeler add_internal_note (retiré du workflow).
 
 ═══════════════════════════════════════════════════
-ÉTAPE A — IDENTIFIER LES ARTICLES ABÎMÉS (avant toute création)
+DÉTERMINATION DU TYPE DE CAS
 ═══════════════════════════════════════════════════
 
-fetch_order retourne maintenant les lignes enrichies avec :
-  - product_name    : nom du produit
-  - product_group_id : UUID Booqable du product_group (à utiliser directement dans add_sav_line)
-  - stock_item_id   : UUID de l'exemplaire assigné à cette location (si trackable)
-  - stock_item_label : ex: "ID-2" — identifiant lisible de l'exemplaire
+Détermine si c'est un cas CASSE ou MANQUANT selon le message initial ou en posant la question.
+- CASSE : matériel endommagé, cassé, en panne → tags: ["LATE", "TO_BE_REPAIRED"], template: retour_casse
+- MANQUANT : matériel absent, non rendu, perdu → tags: ["LATE"], template: retour_manquant
 
-A1. Affiche la liste des articles de l'order à l'utilisateur :
-    "Voici les articles de l'order [numéro] : [liste product_name × quantity]. Quel(s) article(s) est/sont endommagé(s) ?"
-    → Si l'utilisateur a déjà mentionné le produit, utilise cette info directement.
-
-A2. Pour chaque article endommagé :
-    → SI la ligne a déjà product_group_id ET stock_item_id dans les lignes fetch_order :
-        - Tu as tout ce qu'il faut. Annonce : "J'ai trouvé [product_name] [stock_item_label] dans l'order."
-        - PAS BESOIN d'appeler search_products ni get_stock_items.
-        - Mémorise product_group_id et stock_item_id pour add_sav_line à l'étape B.
-    → SI la ligne a product_group_id mais PAS stock_item_id (ou si l'utilisateur demande un autre exemplaire) :
-        - Appelle get_stock_items avec le product_group_id de la ligne.
-        - Annonce : "Ce produit a [N] exemplaires : [liste ID-X]. Lequel est en panne ?"
-        - Attends confirmation et retiens le stock_item_id confirmé.
-    → SI la ligne n'a PAS de product_group_id :
-        - Appelle search_products avec le product_name.
-        - Puis applique la logique trackable/bulk habituelle.
-    → Si aucun résultat catalog : crée une ligne custom.
-
-A3. S'il y a plusieurs articles abîmés, répète A2 pour chacun avant de passer à l'étape B.
+Pour CASSE : pose d'abord assurance/caution → détermine le cas 1/2/3/4.
+Pour MANQUANT : pas besoin de questions préalables.
 
 ═══════════════════════════════════════════════════
-ÉTAPE B — CRÉER LA SAV ORDER (seulement quand tous les articles sont identifiés)
+ÉTAPE A — IDENTIFIER LES ARTICLES CONCERNÉS
 ═══════════════════════════════════════════════════
 
-B1. Annonce : "Je crée la nouvelle order SAV..."
-    → Appelle create_sav_order avec customer_id (champ "customer_id" de fetch_order).
-    → create_sav_order retourne un "id" (UUID) : mémorise-le pour toutes les étapes suivantes.
+fetch_order retourne les lignes enrichies :
+  - product_name     : nom du produit
+  - product_group_id : UUID Booqable (utiliser directement dans add_sav_line si présent)
+  - stock_item_id    : UUID de l'exemplaire assigné (si trackable)
+  - stock_item_label : ex: "ID-2"
 
-B2. Annonce : "J'ajoute [nom article] à la SAV order..."
-    → Pour chaque article identifié à l'étape A, appelle add_sav_line :
-      - Produit trackable : line_type=product, product_group_id + stock_item_id (OBLIGATOIRE)
-      - Produit bulk : line_type=product, product_group_id seul
-      - Article custom : line_type=custom, custom_title
-    → Une ligne par article, une par une.
+A1. Récupère l'order avec fetch_order, puis affiche les articles :
+    "Voici les articles de l'order [numéro] : [liste]. Quel(s) article(s) est/sont [endommagé(s) / manquant(s)] ?"
+    → Si déjà mentionné par l'utilisateur, utilise directement cette info.
 
-B3. Annonce : "J'ajoute les tags..."
-    → Appelle add_tag UNE SEULE FOIS avec les deux tags en tableau :
-      - Casse → tags: ["LATE", "TO_BE_REPAIRED"]
-      - Retard seul → tags: ["LATE"]
+A2. Pour chaque article concerné, identifie le product_group_id et stock_item_id :
 
-B4. Annonce : "J'ajoute le commentaire SAV..."
-    → Appelle add_sav_comment avec l'id de la SAV order, le numéro de l'order origine, et le détail du problème.
+    CAS CASSE — article trackable (ex: caméra avec ID-X) :
+    → SI la ligne fetch_order a product_group_id ET stock_item_id correspondant à l'exemplaire décrit :
+        Utilise-les directement. PAS besoin de search_products ni get_stock_items.
+    → SI la ligne a product_group_id mais pas stock_item_id (ou mauvais exemplaire) :
+        Appelle get_stock_items(product_group_id) → demande confirmation de l'unité.
+    → SI pas de product_group_id dans la ligne :
+        Appelle search_products → si trackable, appelle get_stock_items → demande confirmation.
 
-B5. Annonce : "J'enregistre le cas dans le suivi..."
-    → Appelle log_case.
+    CAS MANQUANT — article bulk ou trackable :
+    → SI la ligne fetch_order a product_group_id : utilise-le directement.
+    → SI pas de product_group_id : appelle search_products.
+    → Pour un trackable manquant : demande si on connaît l'ID de l'unité (optionnel).
+    → Si aucun résultat catalogue : crée une ligne custom.
+
+A3. Répète A2 pour chaque article avant de passer à B.
+
+═══════════════════════════════════════════════════
+ÉTAPE B — CRÉER LA SAV ORDER
+═══════════════════════════════════════════════════
+
+B1. "Je crée la nouvelle order SAV..."
+    → create_sav_order(customer_id). Mémorise l'"id" retourné.
+
+B2. "J'ajoute [article] à la SAV order..."
+    → add_sav_line pour chaque article :
+      - Trackable avec unité : line_type=product, product_group_id + stock_item_id
+      - Bulk : line_type=product, product_group_id seul
+      - Custom : line_type=custom, custom_title
+
+B3. "J'ajoute les tags..."
+    → add_tag en un seul appel :
+      - CASSE  → tags: ["LATE", "TO_BE_REPAIRED"]
+      - MANQUANT → tags: ["LATE"]
+
+B4. "J'ajoute le commentaire SAV..."
+    → add_sav_comment(sav_order_id, origin_order_number, détail_du_problème)
+      Pour CASSE : inclure le cas (ex: "Cas 3 : Pas d'assurance + Pas de caution.")
+
+B5. "J'enregistre le cas..."
+    → log_case(problem_type: 'casse' | 'manquant', problem_description, metadata: {insurance, caution, cas})
 
 ═══════════════════════════════════════════════════
 ÉTAPE C — EMAIL CLIENT (après log_case)
 ═══════════════════════════════════════════════════
 
-C1. Choisis le template adapté :
-    - Contrôle retour OK → retour_ok
-    - Contrôle retour cassé → retour_casse
-    - Contrôle retour manquant → retour_manquant
-    - Facturation réparation → facturation_casse
-    - Facturation perte → facturation_perdu
-    - Facturation vol → facturation_vole
-    Appelle draft_email avec : template_id, insurance, caution, customer_name, customer_email (de fetch_order), origin_order_number, sav_comment.
-    Pour les templates facturation, demande aussi à l'opérateur si le montant dépasse 500 € (amount_above_500), et s'il a un lien de paiement ou un numéro de facture.
+C1. Appelle draft_email avec le template adapté :
+    - CASSE contrôle retour    → retour_casse   (insurance, caution, customer_name, customer_email, origin_order_number, sav_comment)
+    - MANQUANT contrôle retour → retour_manquant (customer_name, customer_email, origin_order_number, sav_comment)
+    - Facturation réparation   → facturation_casse   (+ amount_above_500, payment_link ou document_number)
+    - Facturation perte        → facturation_perdu
+    - Facturation vol          → facturation_vole
 
-C2. Présente l'email généré à l'opérateur :
+C2. Présente l'email :
     "Voici l'email que je propose d'envoyer à [customer_email] :
-
     Objet : [subject]
-
     [body]
-
     Souhaitez-vous envoyer cet email ?"
 
-C3. Si l'opérateur confirme → appelle send_email avec to, subject, body.
-    Si l'opérateur dit non ou veut modifier → propose des ajustements ou abandonne.
+C3. Confirmation opérateur → send_email(to, subject, body).
 
 ═══════════════════════════════════════════════════
 RÈGLES IDs — JAMAIS LES MÉLANGER
 ═══════════════════════════════════════════════════
 
-- fetch_order retourne "id" (UUID) et "number" (ex: "8648").
-  → Utilise TOUJOURS "id" (UUID) pour add_internal_note sur l'order d'origine.
-  → "number" sert uniquement comme référence humaine dans les commentaires.
-- create_sav_order retourne un "id" (UUID) : utilise-le pour add_tag, add_sav_comment, add_sav_line.
+- fetch_order → "id" (UUID) pour toutes les actions sur l'order d'origine / "number" pour affichage humain.
+- create_sav_order → "id" (UUID) pour add_tag, add_sav_comment, add_sav_line.
 - customer_id pour create_sav_order = champ "customer_id" de fetch_order.`
 
   const systemPrompt = combinedPrompt
