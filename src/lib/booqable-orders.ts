@@ -204,7 +204,7 @@ export type CreateSAVOrderParams = {
 }
 
 export async function createSAVOrder(params: CreateSAVOrderParams): Promise<BooqableOrder | null> {
-  const { customerId, fullDiscount = false, returnDays = 30 } = params
+  const { customerId, returnDays = 30 } = params
 
   const subdomain = process.env.BOOQABLE_SUBDOMAIN
   const key = process.env.BOOQABLE_API_KEY
