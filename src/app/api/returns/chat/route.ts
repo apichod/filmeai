@@ -31,7 +31,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'fetch_order',
-      description: 'Récupère les détails d\'une order Booqable par son numéro',
+      description: 'Récupère les détails d\'une order Booqable par son numéro. Retourne les lignes enrichies avec product_name, product_group_id, stock_item_id et stock_item_label (ex: "ID-2"). Si product_group_id et stock_item_id sont présents dans une ligne, tu peux passer directement à create_sav_order sans appeler search_products ni get_stock_items.',
       parameters: {
         type: 'object',
         properties: {
@@ -232,7 +232,24 @@ async function executeTool(
       case 'fetch_order': {
         const order = await fetchOrderByNumber(String(args.order_number))
         if (!order) return { result: `Aucune order trouvée avec le numéro ${args.order_number}` }
-        const lines = order.lines?.map(l => `${l.quantity}× ${l.product_name}`).join(', ') || 'aucun article'
+
+        // Lignes structurées : product_name + product_group_id + stock_item_id (si trackable assigné)
+        const linesStructured = (order.lines || []).map(l => {
+          const stockLabel = l.stock_item_identifier
+            ? (() => {
+                const m = l.stock_item_identifier.match(/-(\d+)$/)
+                return m ? `ID-${m[1]}` : l.stock_item_identifier
+              })()
+            : null
+          return {
+            product_name: l.product_name,
+            quantity: l.quantity,
+            product_group_id: l.product_group_id || null,
+            stock_item_id: l.stock_item_id || null,
+            stock_item_label: stockLabel, // ex: "ID-2" — utile si l'exemplaire est déjà connu
+          }
+        })
+
         return {
           result: JSON.stringify({
             id: order.id,
@@ -244,7 +261,7 @@ async function executeTool(
             starts_at: order.starts_at,
             stops_at: order.stops_at,
             tags: order.tags,
-            lines,
+            lines: linesStructured,
             note_interne: order.properties_attributes?.note_interne || null,
           }),
         }
@@ -430,23 +447,31 @@ RÈGLES CRITIQUES — À SUIVRE DANS L'ORDRE EXACT :
 ÉTAPE A — IDENTIFIER LES ARTICLES ABÎMÉS (avant toute création)
 ═══════════════════════════════════════════════════
 
-A1. Dis à l'utilisateur : "Voici les articles de l'order [numéro] : [liste des lignes fetch_order]. Quel(s) article(s) est/sont endommagé(s) ?"
-    → Si l'utilisateur a déjà mentionné le produit dans la conversation, utilise cette info directement sans redemander.
+fetch_order retourne maintenant les lignes enrichies avec :
+  - product_name    : nom du produit
+  - product_group_id : UUID Booqable du product_group (à utiliser directement dans add_sav_line)
+  - stock_item_id   : UUID de l'exemplaire assigné à cette location (si trackable)
+  - stock_item_label : ex: "ID-2" — identifiant lisible de l'exemplaire
 
-A2. Pour chaque article endommagé, appelle search_products avec son nom.
-    Annonce : "Je recherche [nom du produit] dans le catalogue..."
+A1. Affiche la liste des articles de l'order à l'utilisateur :
+    "Voici les articles de l'order [numéro] : [liste product_name × quantity]. Quel(s) article(s) est/sont endommagé(s) ?"
+    → Si l'utilisateur a déjà mentionné le produit, utilise cette info directement.
 
-A3. Si tracking=trackable :
-    → Appelle get_stock_items avec le product_group_id
-    → Annonce : "Ce produit a [N] exemplaires dans votre parc : [liste des ID-X]."
-    → Si l'utilisateur n'a pas encore précisé l'unité : "Lequel est en panne ?"
-    → Attends confirmation AVANT de continuer.
-    → Retiens le stock_item_id de l'unité confirmée.
+A2. Pour chaque article endommagé :
+    → SI la ligne a déjà product_group_id ET stock_item_id dans les lignes fetch_order :
+        - Tu as tout ce qu'il faut. Annonce : "J'ai trouvé [product_name] [stock_item_label] dans l'order."
+        - PAS BESOIN d'appeler search_products ni get_stock_items.
+        - Mémorise product_group_id et stock_item_id pour add_sav_line à l'étape B.
+    → SI la ligne a product_group_id mais PAS stock_item_id (ou si l'utilisateur demande un autre exemplaire) :
+        - Appelle get_stock_items avec le product_group_id de la ligne.
+        - Annonce : "Ce produit a [N] exemplaires : [liste ID-X]. Lequel est en panne ?"
+        - Attends confirmation et retiens le stock_item_id confirmé.
+    → SI la ligne n'a PAS de product_group_id :
+        - Appelle search_products avec le product_name.
+        - Puis applique la logique trackable/bulk habituelle.
+    → Si aucun résultat catalog : crée une ligne custom.
 
-    Si tracking=bulk : utilise directement le product_group_id, aucune confirmation nécessaire.
-    Si aucun résultat catalog : crée une ligne custom avec le nom descriptif.
-
-A4. S'il y a plusieurs articles abîmés, répète A2-A3 pour chacun avant de passer à l'étape B.
+A3. S'il y a plusieurs articles abîmés, répète A2 pour chacun avant de passer à l'étape B.
 
 ═══════════════════════════════════════════════════
 ÉTAPE B — CRÉER LA SAV ORDER (seulement quand tous les articles sont identifiés)

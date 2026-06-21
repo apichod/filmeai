@@ -33,6 +33,9 @@ export type BooqableOrderLine = {
   product_id: string
   product_name: string
   quantity: number
+  product_group_id?: string   // UUID Booqable du product_group (disponible via boomerang)
+  stock_item_id?: string      // UUID de l'exemplaire assigné (disponible via boomerang stock_item_plannings)
+  stock_item_identifier?: string // ex: "camera-sony-fx3-nue-id-2"
 }
 
 export type BooqableOrder = {
@@ -65,13 +68,103 @@ function inDays(n: number): Date {
 // ── Fetch order ────────────────────────────────────────────────────────────────
 
 export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableOrder | null> {
-  const url = `${BASE}/orders?q=${encodeURIComponent(orderNumber)}&include=customer,lines&per=5`
+  // Étape 1 : recherche par numéro via v1 (customer + properties_attributes)
+  const url = `${BASE}/orders?q=${encodeURIComponent(orderNumber)}&include=customer&per=5`
   const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(10000) })
   if (!res.ok) throw new Error(`Booqable fetchOrder error: ${res.status}`)
 
   const data = await res.json() as { orders?: BooqableOrder[] }
   const orders = data.orders || []
-  return orders.find(o => String(o.number) === String(orderNumber)) || orders[0] || null
+  const order = orders.find(o => String(o.number) === String(orderNumber)) || orders[0] || null
+  if (!order) return null
+
+  // Étape 2 : récupérer les lignes + produits + stock_item_plannings via boomerang
+  // L'API v1 ne retourne pas product_name dans les lignes — boomerang le fait via included.
+  try {
+    const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+    const boomRes = await fetch(
+      `${BASE_BOOMERANG}/orders/${order.id}?include=lines,products,stock_item_plannings,stock_items`,
+      { headers: headers(), signal: AbortSignal.timeout(12000) }
+    )
+
+    if (boomRes.ok) {
+      const boomData = await boomRes.json() as {
+        included?: Array<{
+          type: string
+          id: string
+          attributes: Record<string, unknown>
+          relationships?: Record<string, unknown>
+        }>
+      }
+
+      const included = boomData.included || []
+
+      // Index des produits : id → { name, product_group_id }
+      const productMap = new Map<string, { name: string; product_group_id: string }>()
+      for (const r of included) {
+        if (r.type === 'products') {
+          productMap.set(r.id, {
+            name: String(r.attributes.name || ''),
+            product_group_id: String(r.attributes.product_group_id || ''),
+          })
+        }
+      }
+
+      // Index des stock_item_plannings : planning_id → stock_item_id (premier assigné)
+      // Structure : stock_item_planning.attributes.planning_id + stock_item_id
+      const planningStockMap = new Map<string, string>()
+      for (const r of included) {
+        if (r.type === 'stock_item_plannings') {
+          const planningId = String(r.attributes.planning_id || '')
+          const stockItemId = String(r.attributes.stock_item_id || '')
+          if (planningId && stockItemId && !planningStockMap.has(planningId)) {
+            planningStockMap.set(planningId, stockItemId)
+          }
+        }
+      }
+
+      // Index des stock_items : id → identifier
+      const stockItemMap = new Map<string, string>()
+      for (const r of included) {
+        if (r.type === 'stock_items') {
+          stockItemMap.set(r.id, String(r.attributes.identifier || ''))
+        }
+      }
+
+      // Construire les lignes depuis les included de type "lines"
+      const lines: BooqableOrderLine[] = []
+      for (const r of included) {
+        if (r.type !== 'lines') continue
+        const attrs = r.attributes
+        const qty = Number(attrs.quantity) || 0
+        if (qty <= 0) continue
+
+        const itemId = String(attrs.item_id || '')
+        const product = productMap.get(itemId)
+
+        // Trouver le stock_item_id assigné via planning_id
+        const planningId = String(attrs.planning_id || '')
+        const stockItemId = planningStockMap.get(planningId) || undefined
+        const stockItemIdentifier = stockItemId ? stockItemMap.get(stockItemId) : undefined
+
+        lines.push({
+          id: r.id,
+          product_id: itemId,
+          product_name: product?.name || String(attrs.description || 'Article inconnu'),
+          quantity: qty,
+          product_group_id: product?.product_group_id || undefined,
+          stock_item_id: stockItemId,
+          stock_item_identifier: stockItemIdentifier,
+        })
+      }
+
+      if (lines.length > 0) order.lines = lines
+    }
+  } catch (e) {
+    console.warn('fetchOrderByNumber: boomerang enrichment failed, lines may be empty:', e)
+  }
+
+  return order
 }
 
 // ── Create SAV order ───────────────────────────────────────────────────────────
