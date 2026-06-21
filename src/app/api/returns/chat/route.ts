@@ -58,27 +58,15 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'create_sav_order',
-      description: 'Crée une nouvelle order SAV dans Booqable pour le même client',
+      description: 'Crée une nouvelle order SAV vide dans Booqable pour le même client. NE PAS passer de produits ici — les ajouter ensuite avec add_sav_line.',
       parameters: {
         type: 'object',
         properties: {
           customer_id:   { type: 'string', description: 'UUID Booqable du client — utiliser le champ "customer_id" retourné par fetch_order' },
-          products:      {
-            type: 'array',
-            description: 'Liste des produits à inclure',
-            items: {
-              type: 'object',
-              properties: {
-                product_id: { type: 'string' },
-                quantity:   { type: 'number' },
-              },
-              required: ['product_id', 'quantity'],
-            },
-          },
           full_discount: { type: 'boolean', description: 'Si true → remise 100%, caution = aucune (matériel manquant)' },
           return_days:   { type: 'number',  description: 'Durée en jours avant retour (défaut 30)' },
         },
-        required: ['customer_id', 'products'],
+        required: ['customer_id'],
       },
     },
   },
@@ -339,20 +327,66 @@ export async function POST(req: NextRequest) {
     .join('\n\n---\n\n')
 
   const uuidReminder = `
-RÈGLES CRITIQUES :
+RÈGLES CRITIQUES — À SUIVRE DANS L'ORDRE EXACT :
 
-IDs Booqable :
-- fetch_order retourne "id" (UUID ex: "f0d5301b-...") et "number" (ex: "8648"). Utilise TOUJOURS "id" pour add_internal_note, add_tag, add_sav_comment — jamais le "number".
-- create_sav_order retourne aussi un "id" (UUID) : utilise-le pour add_tag, add_sav_comment, add_sav_line.
-- customer_id dans create_sav_order = champ "customer_id" de fetch_order.
+═══════════════════════════════════════════════════
+ÉTAPE A — IDENTIFIER LES ARTICLES ABÎMÉS (avant toute création)
+═══════════════════════════════════════════════════
 
-Identification des articles endommagés (étape OBLIGATOIRE avant create_sav_order) :
-1. Pour chaque article signalé, appelle search_products avec son nom.
-2. Si tracking=bulk → pas besoin de préciser l'unité, utilise product_group_id directement.
-3. Si tracking=trackable → appelle get_stock_items avec le product_group_id pour obtenir la liste des unités. Présente-les à l'utilisateur (ex: "Il y a 8 FX3 dans le parc : ID-1, ID-2, ... Laquelle est en panne ?"). Attends sa réponse. Quand il dit "ID-2", trouve l'item dont l'identifier se termine par "-2" et utilise son UUID comme stock_item_id dans add_sav_line.
-4. Si aucun résultat → crée une ligne custom avec le nom descriptif.
-5. S'il y a plusieurs articles abîmés, traite-les un par un.
-6. Ajoute les lignes avec add_sav_line APRÈS avoir créé la SAV order (une ligne par article). Pour les produits trackables, inclure TOUJOURS stock_item_id.`
+A1. Dis à l'utilisateur : "Voici les articles de l'order [numéro] : [liste des lignes fetch_order]. Quel(s) article(s) est/sont endommagé(s) ?"
+    → Si l'utilisateur a déjà mentionné le produit dans la conversation, utilise cette info directement sans redemander.
+
+A2. Pour chaque article endommagé, appelle search_products avec son nom.
+    Annonce : "Je recherche [nom du produit] dans le catalogue..."
+
+A3. Si tracking=trackable :
+    → Appelle get_stock_items avec le product_group_id
+    → Annonce : "Ce produit a [N] exemplaires dans votre parc : [liste des ID-X]."
+    → Si l'utilisateur n'a pas encore précisé l'unité : "Lequel est en panne ?"
+    → Attends confirmation AVANT de continuer.
+    → Retiens le stock_item_id de l'unité confirmée.
+
+    Si tracking=bulk : utilise directement le product_group_id, aucune confirmation nécessaire.
+    Si aucun résultat catalog : crée une ligne custom avec le nom descriptif.
+
+A4. S'il y a plusieurs articles abîmés, répète A2-A3 pour chacun avant de passer à l'étape B.
+
+═══════════════════════════════════════════════════
+ÉTAPE B — CRÉER LA SAV ORDER (seulement quand tous les articles sont identifiés)
+═══════════════════════════════════════════════════
+
+B1. Annonce : "Je crée la nouvelle order SAV..."
+    → Appelle create_sav_order avec customer_id (champ "customer_id" de fetch_order).
+    → create_sav_order retourne un "id" (UUID) : mémorise-le pour toutes les étapes suivantes.
+
+B2. Annonce : "J'ajoute [nom article] à la SAV order..."
+    → Pour chaque article identifié à l'étape A, appelle add_sav_line :
+      - Produit trackable : line_type=product, product_group_id + stock_item_id (OBLIGATOIRE)
+      - Produit bulk : line_type=product, product_group_id seul
+      - Article custom : line_type=custom, custom_title
+    → Une ligne par article, une par une.
+
+B3. Annonce : "J'ajoute les tags..."
+    → Appelle add_tag selon le cas (TOBEREPAIRED pour casse, LATE pour retard).
+
+B4. Annonce : "J'ajoute le commentaire SAV..."
+    → Appelle add_sav_comment avec l'id de la SAV order, le numéro de l'order origine, et le détail du problème.
+
+B5. Annonce : "J'ajoute une note interne à l'order d'origine..."
+    → Appelle add_internal_note sur l'order D'ORIGINE (pas la SAV order) avec un résumé.
+
+B6. Annonce : "J'enregistre le cas dans le suivi..."
+    → Appelle log_case.
+
+═══════════════════════════════════════════════════
+RÈGLES IDs — JAMAIS LES MÉLANGER
+═══════════════════════════════════════════════════
+
+- fetch_order retourne "id" (UUID) et "number" (ex: "8648").
+  → Utilise TOUJOURS "id" (UUID) pour add_internal_note sur l'order d'origine.
+  → "number" sert uniquement comme référence humaine dans les commentaires.
+- create_sav_order retourne un "id" (UUID) : utilise-le pour add_tag, add_sav_comment, add_sav_line.
+- customer_id pour create_sav_order = champ "customer_id" de fetch_order.`
 
   const systemPrompt = combinedPrompt
     ? combinedPrompt + '\n\n' + uuidReminder
