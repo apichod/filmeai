@@ -206,6 +206,115 @@ function ChatPanel() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
 
+  async function quickSend(text: string) {
+    setInput(text)
+    // Petit délai pour que setInput soit pris en compte, puis on envoie directement
+    await new Promise(r => setTimeout(r, 10))
+    setInput('')
+
+    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: text }
+    const assistantId = `a-${Date.now()}`
+    setMessages(prev => [
+      ...prev,
+      userMsg,
+      { id: assistantId, role: 'assistant', content: '', toolCalls: [] },
+    ])
+    setSending(true)
+
+    try {
+      const apiMessages = [...messages, userMsg]
+        .filter(m => m.role === 'user' || (m.role === 'assistant' && m.content))
+        .map(m => ({ role: m.role, content: m.content }))
+
+      const res = await fetch('/api/returns/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages, caseId }),
+      })
+      if (!res.body) throw new Error('No body')
+
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buffer = ''
+      let finishedCaseId: string | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += dec.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const json = line.slice(6)
+          if (!json) continue
+          try {
+            const event = JSON.parse(json) as StreamEvent
+            if (event.type === 'text') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId ? { ...m, content: m.content + event.content } : m
+              ))
+            }
+            if (event.type === 'tool_call') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, toolCalls: [...(m.toolCalls || []), { name: event.name }] }
+                  : m
+              ))
+            }
+            if (event.type === 'tool_result') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, toolCalls: (m.toolCalls || []).map((tc, i) =>
+                      i === (m.toolCalls?.length ?? 1) - 1 && tc.name === event.name
+                        ? { ...tc, result: event.result } : tc) }
+                  : m
+              ))
+            }
+            if (event.type === 'done') {
+              finishedCaseId = event.caseId
+              if (event.caseId) setCaseId(event.caseId)
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      if (finishedCaseId) {
+        setMessages(current => {
+          const toSave = current.filter(m => m.id !== 'welcome').map(m => ({ role: m.role, content: m.content }))
+          fetch('/api/returns/cases', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: finishedCaseId, messages: toSave }),
+          }).catch(() => {})
+          return current
+        })
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId ? { ...m, content: `Erreur : ${msg}` } : m
+      ))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // Quick replies : affichés quand le dernier message assistant contient une question
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.content)
+  const lastContent = lastAssistant?.content || ''
+  const hasQuestion = !sending && lastContent.includes('?')
+
+  // Suggestions contextuelles
+  const quickReplies: string[] = hasQuestion ? (() => {
+    const lower = lastContent.toLowerCase()
+    const questionCount = (lastContent.match(/\?/g) || []).length
+    if (questionCount >= 2 && (lower.includes('assurance') || lower.includes('caution'))) {
+      return ['Oui et oui', 'Non et non', 'Oui mais pas de caution', 'Non mais caution oui']
+    }
+    return ['Oui', 'Non']
+  })() : []
+
   function reset() {
     setMessages([{
       id: 'welcome',
@@ -266,7 +375,22 @@ function ChatPanel() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-3 border-t border-gray-100">
+      <div className="p-3 border-t border-gray-100 space-y-2">
+        {/* Quick replies */}
+        {quickReplies.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-1">
+            {quickReplies.map(r => (
+              <button
+                key={r}
+                onClick={() => quickSend(r)}
+                disabled={sending}
+                className="px-3 py-1 text-xs font-medium rounded-full border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-gray-700 transition-colors disabled:opacity-40"
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2 bg-gray-50 rounded-xl border border-gray-200 px-3 py-2">
           <textarea
             value={input}
