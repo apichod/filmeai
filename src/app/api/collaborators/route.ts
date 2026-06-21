@@ -75,8 +75,11 @@ export async function POST(req: NextRequest) {
   )
 
   if (inviteError) {
-    // L'utilisateur existe peut-être déjà — on crée quand même l'entrée membre
-    console.warn('Supabase invite warning:', inviteError.message)
+    console.error('Supabase invite error:', inviteError.message)
+    return NextResponse.json(
+      { error: `Impossible d'envoyer l'invitation : ${inviteError.message}` },
+      { status: 500 }
+    )
   }
 
   // Créer l'entrée dans organization_members
