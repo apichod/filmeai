@@ -76,15 +76,15 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'add_tag',
-      description: 'Ajoute un ou plusieurs tags à une SAV order Booqable. Pour une casse : tags=["TOBEREPAIRED","LATE"]. Pour un retard seul : tags=["LATE"].',
+      description: 'Ajoute un ou plusieurs tags à une SAV order Booqable. Pour une casse : tags=["TO_BE_REPAIRED","LATE"]. Pour un retard seul : tags=["LATE"].',
       parameters: {
         type: 'object',
         properties: {
           order_id: { type: 'string', description: 'UUID Booqable de la SAV order — utiliser le champ "id" retourné par create_sav_order' },
           tags: {
             type: 'array',
-            items: { type: 'string', enum: ['LATE', 'TOBEREPAIRED'] },
-            description: 'Liste de tags à ajouter. Casse → ["TOBEREPAIRED","LATE"]. Retard → ["LATE"].',
+            items: { type: 'string', enum: ['LATE', 'TO_BE_REPAIRED'] },
+            description: 'Liste de tags à ajouter. Casse → ["TO_BE_REPAIRED","LATE"]. Retard → ["LATE"].',
           },
         },
         required: ['order_id', 'tags'],
@@ -495,7 +495,7 @@ B2. Annonce : "J'ajoute [nom article] à la SAV order..."
 
 B3. Annonce : "J'ajoute les tags..."
     → Appelle add_tag UNE SEULE FOIS avec les deux tags en tableau :
-      - Casse → tags: ["TOBEREPAIRED", "LATE"]
+      - Casse → tags: ["TO_BE_REPAIRED", "LATE"]
       - Retard seul → tags: ["LATE"]
 
 B4. Annonce : "J'ajoute le commentaire SAV..."

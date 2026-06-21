@@ -121,7 +121,7 @@ function toolSummary(name: string, result: string | undefined): string | null {
     return `${lines.length} exemplaire${lines.length > 1 ? 's' : ''}${ids ? ' : ' + ids : ''}`
   }
 
-  // add_tag → "✓ Tags ajoutés : TOBEREPAIRED, LATE"
+  // add_tag → "✓ Tags ajoutés : TO_BE_REPAIRED, LATE"
   if (name === 'add_tag' && result.startsWith('✓')) {
     const m = result.match(/:\s*(.+)$/)
     return m ? m[1].trim() : null
