@@ -56,11 +56,12 @@ function PermissionToggles({
   onUpdate,
 }: {
   member: Member
-  onUpdate: (id: string, permissions: string[]) => Promise<void>
+  onUpdate: (id: string, permissions: string[]) => Promise<boolean>
 }) {
   const [permissions, setPermissions] = useState<string[]>(member.permissions || [])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
 
   async function toggle(key: string) {
     const next = permissions.includes(key)
@@ -68,10 +69,16 @@ function PermissionToggles({
       : [...permissions, key]
     setPermissions(next)
     setSaving(true)
-    await onUpdate(member.id, next)
+    const ok = await onUpdate(member.id, next)
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+    if (ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1500)
+    } else {
+      // Rollback local state
+      setPermissions(permissions)
+      setError('Erreur lors de la sauvegarde. La colonne permissions existe-t-elle en base ?')
+    }
   }
 
   return (
@@ -99,6 +106,7 @@ function PermissionToggles({
           )
         })}
       </div>
+      {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
       <p className="text-xs text-gray-400 mt-2.5">
         Mot de passe toujours accessible, indépendamment des modules cochés.
       </p>
@@ -152,15 +160,21 @@ export default function SettingsCollaboratorsPage() {
     setInviting(false)
   }
 
-  async function updatePermissions(memberId: string, permissions: string[]) {
-    await fetch('/api/collaborators', {
+  async function updatePermissions(memberId: string, permissions: string[]): Promise<boolean> {
+    const res = await fetch('/api/collaborators', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ memberId, permissions }),
     })
+    if (!res.ok) {
+      const data = await res.json() as { error?: string }
+      console.error('Permissions update error:', data.error)
+      return false
+    }
     setMembers(prev =>
       prev.map(m => m.id === memberId ? { ...m, permissions } : m)
     )
+    return true
   }
 
   async function resendInvite(memberId: string, email: string) {
