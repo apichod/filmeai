@@ -599,38 +599,42 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
           const toolCalls = Object.values(toolCallsAccum)
           if (toolCalls.length === 0) break
 
-          // Ajoute le message assistant avec les tool calls
+          // Génère les IDs UNE SEULE FOIS pour que assistant + tool results soient cohérents
+          const ts = Date.now()
+          const toolCallEntries = Object.entries(toolCallsAccum).map(([idx, tc]) => ({
+            id: `call_${idx}_${ts}`,
+            name: tc.name,
+            arguments: tc.arguments,
+          }))
+
           const assistantMessage: OpenAI.Chat.ChatCompletionAssistantMessageParam = {
             role: 'assistant',
             content: assistantContent || null,
-            tool_calls: Object.entries(toolCallsAccum).map(([idx, tc]) => ({
-              id: `call_${idx}_${Date.now()}`,
+            tool_calls: toolCallEntries.map(entry => ({
+              id: entry.id,
               type: 'function' as const,
-              function: { name: tc.name, arguments: tc.arguments },
+              function: { name: entry.name, arguments: entry.arguments },
             })),
           }
           currentMessages = [...currentMessages, assistantMessage]
 
-          // Exécute chaque tool call
-          for (let i = 0; i < toolCalls.length; i++) {
-            const tc = toolCalls[i]
-            const toolCallId = `call_${i}_${Date.now()}`
-
-            send(JSON.stringify({ type: 'tool_call', name: tc.name }))
+          // Exécute chaque tool call en réutilisant les mêmes IDs
+          for (const entry of toolCallEntries) {
+            send(JSON.stringify({ type: 'tool_call', name: entry.name }))
 
             let args: Record<string, unknown> = {}
-            try { args = JSON.parse(tc.arguments) } catch { /* ignore */ }
+            try { args = JSON.parse(entry.arguments) } catch { /* ignore */ }
 
-            const { result, caseId: newCaseId } = await executeTool(tc.name, args)
+            const { result, caseId: newCaseId } = await executeTool(entry.name, args)
             if (newCaseId) currentCaseId = newCaseId
 
-            send(JSON.stringify({ type: 'tool_result', name: tc.name, result }))
+            send(JSON.stringify({ type: 'tool_result', name: entry.name, result }))
 
             currentMessages = [
               ...currentMessages,
               {
                 role: 'tool' as const,
-                tool_call_id: toolCallId,
+                tool_call_id: entry.id,
                 content: result,
               },
             ]
