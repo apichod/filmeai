@@ -44,7 +44,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
-          order_id:  { type: 'string', description: 'ID Booqable de l\'order' },
+          order_id:  { type: 'string', description: 'UUID Booqable de l\'order — utiliser le champ "id" retourné par fetch_order, PAS le numéro lisible' },
           note:      { type: 'string', description: 'Texte de la note interne' },
         },
         required: ['order_id', 'note'],
@@ -59,7 +59,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
-          customer_id:   { type: 'string', description: 'ID Booqable du client' },
+          customer_id:   { type: 'string', description: 'UUID Booqable du client — utiliser le champ "customer_id" retourné par fetch_order' },
           products:      {
             type: 'array',
             description: 'Liste des produits à inclure',
@@ -87,7 +87,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
-          order_id: { type: 'string', description: 'ID Booqable de la SAV order' },
+          order_id: { type: 'string', description: 'UUID Booqable de la SAV order — utiliser le champ "id" retourné par create_sav_order' },
           tag:      { type: 'string', description: 'LATE ou TOBEREPAIRED', enum: ['LATE', 'TOBEREPAIRED'] },
         },
         required: ['order_id', 'tag'],
@@ -102,7 +102,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
-          order_id:             { type: 'string', description: 'ID de la SAV order' },
+          order_id:             { type: 'string', description: 'UUID Booqable de la SAV order — utiliser le champ "id" retourné par create_sav_order' },
           origin_order_number:  { type: 'string', description: 'Numéro de l\'order d\'origine' },
           comment:              { type: 'string', description: 'Détail du problème (et cas si cassé)' },
         },
@@ -245,8 +245,16 @@ export async function POST(req: NextRequest) {
     .map(w => w.prompt)
     .join('\n\n---\n\n')
 
-  const systemPrompt = combinedPrompt || `Tu es un assistant de gestion des retours.
-Guide le responsable de stock à travers les procédures de retour étape par étape.`
+  const uuidReminder = `
+RÈGLE CRITIQUE — IDs Booqable :
+- fetch_order retourne un champ "id" (UUID comme "f0d5301b-...") et un champ "number" (lisible comme "8648").
+- Pour TOUTES les actions suivantes (add_internal_note, add_tag, add_sav_comment), utilise TOUJOURS le champ "id" (UUID), jamais le "number".
+- create_sav_order retourne aussi un "id" (UUID) : utilise-le pour add_tag et add_sav_comment sur la SAV order.
+- customer_id dans create_sav_order = le champ "customer_id" de fetch_order (UUID du client).`
+
+  const systemPrompt = combinedPrompt
+    ? combinedPrompt + '\n\n' + uuidReminder
+    : `Tu es un assistant de gestion des retours. Guide le responsable de stock étape par étape.\n\n${uuidReminder}`
 
   const systemMessage: OpenAI.Chat.ChatCompletionSystemMessageParam = {
     role: 'system',
