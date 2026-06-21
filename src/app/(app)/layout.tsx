@@ -16,7 +16,7 @@ const ALL_NAV = [
   { key: 'assistant', label: 'Paramètres',         href: '/assistant/appearance' },
   { key: 'statistics',label: 'Statistiques',       href: '/statistics' },
   { key: 'compte',    label: 'Compte',             href: '/settings/general', adminOnly: true },
-] as const
+]
 
 function IconLogout() {
   return (
