@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { type MatchDebug, sourceLabel, rootCauseSummary, formatDiagnosticForCopy } from '@/lib/diagnostic-format'
 import { billingDays, billingDaysSummary, toLocalISOString, RENTAL_HOURS } from '@/lib/billing-days'
+import { getTierMultiplier, lineTotal, formatPrice } from '@/lib/pricing'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ type Product = {
   price_per_day: number | null
   deposit?: number | null
   description?: string | null
+  source_type?: 'product_group' | 'bundle' | null
 }
 
 
@@ -928,11 +930,12 @@ export default function NewRequestPage() {
   }
 
   // ── Total
-  const totalPerDay = items.reduce((acc, item) =>
-    acc + (item.type === 'product' ? (item.product?.price_per_day || 0) * item.quantity : 0), 0
-  )
   const billableItemCount = items.filter(item => item.type !== 'section').length
   const days = billingDays(startsAt, pickupTime, stopsAt, returnTime)
+  const tierMul = getTierMultiplier(days)
+  const totalHT = items.reduce((acc, item) =>
+    acc + (item.type === 'product' ? lineTotal(item.product?.price_per_day, item.quantity, days) : 0), 0
+  )
 
   // ─────────────────────────────────────────────────────────────────────────────
   // STEP 1: Client info
@@ -1395,14 +1398,32 @@ export default function NewRequestPage() {
                           </span>
                           {/* Product info */}
                           <div className="flex-1 min-w-0 select-text cursor-auto">
-                            <p className="text-sm font-medium text-gray-900 leading-snug">
-                              {item.type === 'product' ? item.product?.name : item.title || item.requestedName}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              {item.type === 'product'
-                                ? (item.product?.price_per_day != null && item.product.price_per_day > 0 ? `${item.product.price_per_day}€/jour` : '')
-                                : 'Ligne custom Booqable — à vérifier'}
-                            </p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-sm font-medium text-gray-900 leading-snug">
+                                {item.type === 'product' ? item.product?.name : item.title || item.requestedName}
+                              </p>
+                              {item.type === 'product' && item.product?.source_type === 'bundle' && (
+                                <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">Bundle</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {item.type === 'product' ? (
+                                item.product?.price_per_day != null && item.product.price_per_day > 0 ? (
+                                  <>
+                                    <span className="text-xs text-gray-400">{item.product.price_per_day}€/j</span>
+                                    {startsAt && stopsAt && (
+                                      <span className="text-xs font-semibold text-gray-700">
+                                        = {formatPrice(lineTotal(item.product.price_per_day, item.quantity, days))}
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-gray-400">Prix non renseigné</span>
+                                )
+                              ) : (
+                                <span className="text-xs text-amber-600">Ligne custom Booqable — à vérifier</span>
+                              )}
+                            </div>
                             {item.confidence != null && (
                               <MatchGauge confidence={item.confidence} type={item.type} requestedName={item.requestedName} />
                             )}
@@ -1467,15 +1488,21 @@ export default function NewRequestPage() {
 
             {/* Total */}
             {billableItemCount > 0 && (
-              <div className="border-t border-gray-100 pt-3 space-y-1">
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>{days} jour{days > 1 ? 's' : ''} × {totalPerDay}€/jour</span>
-                  <span>{totalPerDay}€/j</span>
-                </div>
-                <div className="flex justify-between text-sm font-semibold text-gray-900">
-                  <span>Total estimé</span>
-                  <span>{(totalPerDay * days).toFixed(2)}€</span>
-                </div>
+              <div className="border-t border-gray-100 pt-3 space-y-1.5">
+                {startsAt && stopsAt ? (
+                  <>
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>{billingDaysSummary(startsAt, pickupTime, stopsAt, returnTime)}</span>
+                      <span>Palier ×{tierMul}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-bold text-gray-900">
+                      <span>Total HT estimé</span>
+                      <span>{formatPrice(totalHT)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-400 text-center">Sélectionnez les dates pour voir le total</p>
+                )}
               </div>
             )}
           </div>

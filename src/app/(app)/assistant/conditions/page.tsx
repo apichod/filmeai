@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { PRICE_TIERS } from '@/lib/pricing'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,16 +67,6 @@ const DEFAULT_OPENING_HOURS: OpeningHours = {
   dimanche: { enabled: false, open: '09:00', close: '19:00' },
 }
 
-const PRICE_TIERS = [
-  { days: 1,  mul: 1.00 }, { days: 2,  mul: 1.50 }, { days: 3,  mul: 2.00 },
-  { days: 4,  mul: 2.50 }, { days: 5,  mul: 2.95 }, { days: 6,  mul: 3.40 },
-  { days: 7,  mul: 3.85 }, { days: 8,  mul: 4.30 }, { days: 9,  mul: 4.75 },
-  { days: 10, mul: 5.15 }, { days: 11, mul: 5.55 }, { days: 12, mul: 5.95 },
-  { days: 13, mul: 6.35 }, { days: 14, mul: 6.75 }, { days: 15, mul: 7.10 },
-  { days: 16, mul: 7.45 }, { days: 17, mul: 7.80 }, { days: 18, mul: 8.15 },
-  { days: 19, mul: 8.50 }, { days: 20, mul: 8.80 }, { days: 21, mul: 9.10 },
-  { days: 22, mul: 9.40 }, { days: 23, mul: 9.70 }, { days: 24, mul: 10.00 },
-]
 
 const defaults: Settings = {
   delivery_enabled: false,

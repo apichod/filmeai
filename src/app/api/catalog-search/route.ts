@@ -11,6 +11,7 @@ type CatalogProduct = {
   price_per_day: number | null
   deposit: number | null
   photo_url: string | null
+  source_type: 'product_group' | 'bundle' | null
   similarity?: number | null
 }
 
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
     // Fallback to simple text search
     const { data } = await supabase
       .from('products_cache')
-      .select('id, name, description, price_per_day, deposit, photo_url')
+      .select('id, name, description, price_per_day, deposit, photo_url, source_type')
       .eq('archived', false)
       .eq('show_in_store', true)
       .ilike('name', `%${q}%`)
