@@ -298,10 +298,55 @@ export async function searchProducts(query: string): Promise<ProductSearchResult
     }))
 }
 
+// ── Get stock items ────────────────────────────────────────────────────────────
+
+export type StockItemResult = {
+  id: string           // UUID Booqable
+  identifier: string   // ex: "camera-sony-fx3-nue-id-2"
+  status: string       // "in_stock", "picked_up", etc.
+  serial_number?: string
+}
+
+/**
+ * Retourne tous les exemplaires (stock items) d'un product_group trackable.
+ * Filtrage des entrées temporaires (TMP-).
+ */
+export async function getStockItems(productGroupId: string): Promise<StockItemResult[]> {
+  const url = `${BASE}/product_groups/${productGroupId}?api_key=${KEY}`
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) throw new Error(`Booqable getStockItems error: ${res.status}`)
+
+  const data = await res.json() as {
+    product_group?: {
+      products?: Array<{
+        stock_items?: Array<{
+          id: string
+          identifier: string
+          status: string
+          properties?: Array<{ identifier: string; value: string }>
+        }>
+      }>
+    }
+  }
+
+  const items = data.product_group?.products?.[0]?.stock_items || []
+  return items
+    .filter(item => !item.identifier.toUpperCase().startsWith('TMP-'))
+    .map(item => ({
+      id: item.id,
+      identifier: item.identifier,
+      status: item.status,
+      serial_number: item.properties?.find(p => p.identifier === 's_n')?.value || undefined,
+    }))
+}
+
 // ── Add line to SAV order ──────────────────────────────────────────────────────
 
 export type SAVLineParams =
-  | { type: 'product'; orderId: string; productGroupId: string; quantity: number }
+  | { type: 'product'; orderId: string; productGroupId: string; quantity: number; stockItemId?: string }
   | { type: 'custom';  orderId: string; title: string; quantity: number; note?: string }
 
 /**
@@ -318,6 +363,7 @@ export async function addSAVLine(params: SAVLineParams): Promise<void> {
 
   if (params.type === 'product') {
     attributes.product_group_id = params.productGroupId
+    if (params.stockItemId) attributes.stock_item_id = params.stockItemId
   } else {
     attributes.line_type   = 'charge'
     attributes.title       = params.title

@@ -8,6 +8,7 @@ import {
   addInternalNote,
   addSAVComment,
   searchProducts,
+  getStockItems,
   addSAVLine,
 } from '@/lib/booqable-orders'
 
@@ -129,14 +130,29 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'get_stock_items',
+      description: 'Récupère tous les exemplaires (stock items) d\'un produit trackable. Appelle cette fonction avec le productGroupId retourné par search_products dès que tracking=trackable. Retourne la liste des unités avec leur UUID et identifiant (ex: "camera-sony-fx3-nue-id-2"). Quand l\'utilisateur dit "ID-2", trouve l\'item dont l\'identifier se termine par "-2" et utilise son UUID comme stock_item_id dans add_sav_line.',
+      parameters: {
+        type: 'object',
+        properties: {
+          product_group_id: { type: 'string', description: 'UUID du product_group Booqable (champ "id" de search_products)' },
+        },
+        required: ['product_group_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'add_sav_line',
-      description: 'Ajoute une ligne à la SAV order. Pour un produit trouvé dans le catalogue (bulk ou trackable) : utiliser type=product avec product_group_id. Pour un article non référencé : utiliser type=custom avec un titre descriptif.',
+      description: 'Ajoute une ligne à la SAV order. Pour un produit trackable avec unité identifiée : utiliser type=product avec product_group_id ET stock_item_id. Pour un produit bulk : utiliser type=product avec product_group_id seul. Pour un article non référencé : utiliser type=custom avec un titre descriptif.',
       parameters: {
         type: 'object',
         properties: {
           order_id:         { type: 'string', description: 'UUID de la SAV order (champ "id" de create_sav_order)' },
           line_type:        { type: 'string', enum: ['product', 'custom'], description: '"product" si trouvé dans le catalogue, "custom" sinon' },
           product_group_id: { type: 'string', description: 'ID du product_group Booqable (si line_type=product)' },
+          stock_item_id:    { type: 'string', description: 'UUID du stock item spécifique (si produit trackable — obtenu via get_stock_items)' },
           custom_title:     { type: 'string', description: 'Nom descriptif (si line_type=custom)' },
           quantity:         { type: 'number', description: 'Quantité' },
           note:             { type: 'string', description: 'Note optionnelle (numéro de série, détail du problème)' },
@@ -237,13 +253,30 @@ async function executeTool(
         return { result: `Produits trouvés :\n${summary}` }
       }
 
+      case 'get_stock_items': {
+        const items = await getStockItems(String(args.product_group_id))
+        if (items.length === 0) {
+          return { result: 'Aucun stock item trouvé pour ce produit.' }
+        }
+        const summary = items.map(item => {
+          const snPart = item.serial_number ? ` | S/N: ${item.serial_number}` : ''
+          // Extract the ID number from identifier suffix (e.g. "camera-sony-fx3-nue-id-2" → "ID-2")
+          const match = item.identifier.match(/-(\d+)$/)
+          const label = match ? `ID-${match[1]}` : item.identifier
+          return `- ${label} | uuid: ${item.id} | identifier: ${item.identifier} | statut: ${item.status}${snPart}`
+        }).join('\n')
+        return { result: `Stock items :\n${summary}` }
+      }
+
       case 'add_sav_line': {
         const orderId = String(args.order_id)
         const qty = typeof args.quantity === 'number' ? args.quantity : 1
 
         if (args.line_type === 'product' && args.product_group_id) {
-          await addSAVLine({ type: 'product', orderId, productGroupId: String(args.product_group_id), quantity: qty })
-          return { result: `✓ Ligne produit ajoutée à la SAV order (product_group_id: ${args.product_group_id}, qté: ${qty})` }
+          const stockItemId = args.stock_item_id ? String(args.stock_item_id) : undefined
+          await addSAVLine({ type: 'product', orderId, productGroupId: String(args.product_group_id), quantity: qty, stockItemId })
+          const stockInfo = stockItemId ? ` | stock_item_id: ${stockItemId}` : ''
+          return { result: `✓ Ligne produit ajoutée à la SAV order (product_group_id: ${args.product_group_id}${stockInfo}, qté: ${qty})` }
         } else {
           const title = args.custom_title ? String(args.custom_title) : 'Article non référencé'
           await addSAVLine({ type: 'custom', orderId, title, quantity: qty, note: args.note ? String(args.note) : undefined })
@@ -316,10 +349,10 @@ IDs Booqable :
 Identification des articles endommagés (étape OBLIGATOIRE avant create_sav_order) :
 1. Pour chaque article signalé, appelle search_products avec son nom.
 2. Si tracking=bulk → pas besoin de préciser l'unité, utilise product_group_id directement.
-3. Si tracking=trackable → STOP. Dis à l'utilisateur combien d'unités de ce modèle sont dans l'order (info dans les lignes de fetch_order) et demande-lui d'identifier précisément laquelle est en panne (numéro de série, identifiant ou description physique). Attends sa réponse AVANT de continuer. Note l'identifiant dans la SAV comment et le log_case metadata.
+3. Si tracking=trackable → appelle get_stock_items avec le product_group_id pour obtenir la liste des unités. Présente-les à l'utilisateur (ex: "Il y a 8 FX3 dans le parc : ID-1, ID-2, ... Laquelle est en panne ?"). Attends sa réponse. Quand il dit "ID-2", trouve l'item dont l'identifier se termine par "-2" et utilise son UUID comme stock_item_id dans add_sav_line.
 4. Si aucun résultat → crée une ligne custom avec le nom descriptif.
 5. S'il y a plusieurs articles abîmés, traite-les un par un.
-6. Ajoute les lignes avec add_sav_line APRÈS avoir créé la SAV order (une ligne par article).`
+6. Ajoute les lignes avec add_sav_line APRÈS avoir créé la SAV order (une ligne par article). Pour les produits trackables, inclure TOUJOURS stock_item_id.`
 
   const systemPrompt = combinedPrompt
     ? combinedPrompt + '\n\n' + uuidReminder
