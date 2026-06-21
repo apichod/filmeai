@@ -26,7 +26,8 @@ type CatalogItem = {
 type BundleLink = {
   bundleId: string
   productGroupId: string
-  quantity?: number
+  quantity: number
+  discountPercentage: number
 }
 
 function getSupabaseAdmin() {
@@ -155,43 +156,6 @@ async function fetchAllBooqableProductGroups(): Promise<CatalogItem[]> {
   return all
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Booqable v3 — /bundles/{id}/configuration : prix calculé par Booqable
-// ─────────────────────────────────────────────────────────────────────────────
-
-const BOOQABLE_V3_BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/3`
-
-async function fetchBundlePriceV3(id: string): Promise<string | undefined> {
-  try {
-    const url = `${BOOQABLE_V3_BASE}/bundles/${id}/configuration?id=${id}`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${BOOQABLE_KEY}` },
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!res.ok) return undefined
-    const json = await res.json() as { data?: { configuration?: { price_each_in_cents?: number } } }
-    const cents = json.data?.configuration?.price_each_in_cents
-    if (cents && cents > 0) return String(cents / 100)
-  } catch { /* ignore */ }
-  return undefined
-}
-
-async function fetchBundlePrices(bundleIds: string[]): Promise<Map<string, string>> {
-  const prices = new Map<string, string>()
-  if (bundleIds.length === 0) return prices
-
-  // Paralléliser par batch de 10 pour ne pas surcharger l'API
-  const BATCH = 10
-  for (let i = 0; i < bundleIds.length; i += BATCH) {
-    const batch = bundleIds.slice(i, i + BATCH)
-    const results = await Promise.all(batch.map(id => fetchBundlePriceV3(id).then(price => ({ id, price }))))
-    for (const { id, price } of results) {
-      if (price) prices.set(id, price)
-    }
-  }
-
-  return prices
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Booqable v4 — bundles + bundle_items
@@ -238,44 +202,20 @@ async function fetchAllV4(path: string): Promise<JsonRecord[]> {
 async function fetchAllBooqableBundles(): Promise<CatalogItem[]> {
   const resources = await fetchAllV4('/bundles')
 
-  // Premier passage : construire les items sans prix
-  const items: CatalogItem[] = resources.map(resource => {
+  return resources.map(resource => {
     const attrs = getAttributes(resource)
     const id = getResourceId(resource) || ''
-    const descriptionParts = [
-      firstString(attrs, ['description', 'excerpt', 'extra_information']),
-    ].filter(Boolean)
-
     return {
       id,
       name: firstString(attrs, ['name', 'title']) || 'Bundle sans nom',
-      description: descriptionParts.join(' '),
-      base_price_as_decimal:
-        firstString(attrs, ['base_price_as_decimal', 'price_as_decimal', 'structure_price_as_decimal']) ||
-        centsToDecimalString(firstNumber(attrs, ['base_price_in_cents', 'price_in_cents', 'structure_price_in_cents'])),
-      deposit_as_decimal:
-        firstString(attrs, ['deposit_as_decimal']) ||
-        centsToDecimalString(firstNumber(attrs, ['deposit_in_cents'])),
+      description: firstString(attrs, ['description', 'excerpt', 'extra_information']),
       photo_url: firstString(attrs, ['photo_url', 'photo_large_url', 'large_url', 'image_url']),
       archived: asBoolean(attrs.archived) || false,
       show_in_store: attrs.show_in_store === undefined ? true : asBoolean(attrs.show_in_store) === true,
       source_type: 'bundle' as const,
+      // Prix calculé localement dans attachBundleContext à partir des bundle_items
     }
   }).filter(item => item.id)
-
-  // Second passage : récupérer les prix Booqable pour les bundles sans prix
-  const missingPriceIds = items.filter(b => !b.base_price_as_decimal).map(b => b.id)
-  if (missingPriceIds.length > 0) {
-    console.log(`Fetching item_prices for ${missingPriceIds.length} bundles without price...`)
-    const booqablePrices = await fetchBundlePrices(missingPriceIds)
-    for (const item of items) {
-      if (!item.base_price_as_decimal && booqablePrices.has(item.id)) {
-        item.base_price_as_decimal = booqablePrices.get(item.id)
-      }
-    }
-  }
-
-  return items
 }
 
 async function fetchAllBooqableBundleItems(): Promise<BundleLink[]> {
@@ -293,11 +233,11 @@ async function fetchAllBooqableBundleItems(): Promise<BundleLink[]> {
 
     if (!bundleId || !productGroupId) continue
 
-    const quantity = firstNumber(attrs, ['quantity'])
     links.push({
       bundleId,
       productGroupId,
-      ...(quantity !== undefined ? { quantity } : {}),
+      quantity: firstNumber(attrs, ['quantity']) ?? 1,
+      discountPercentage: firstNumber(attrs, ['discount_percentage']) ?? 0,
     })
   }
 
@@ -313,6 +253,7 @@ function attachBundleContext(
   const bundleById = new Map(bundles.map(item => [item.id, item]))
   const bundleNamesByProductGroupId = new Map<string, string[]>()
   const productGroupNamesByBundleId = new Map<string, string[]>()
+  const bundlePriceSumById = new Map<string, number>()
 
   for (const link of links) {
     const bundle = bundleById.get(link.bundleId)
@@ -320,12 +261,19 @@ function attachBundleContext(
     if (!bundle || !productGroup) continue
 
     const bundleNames = bundleNamesByProductGroupId.get(link.productGroupId) || []
-    bundleNames.push(link.quantity && link.quantity > 1 ? `${link.quantity}× ${bundle.name}` : bundle.name)
+    bundleNames.push(link.quantity > 1 ? `${link.quantity}× ${bundle.name}` : bundle.name)
     bundleNamesByProductGroupId.set(link.productGroupId, bundleNames)
 
     const itemNames = productGroupNamesByBundleId.get(link.bundleId) || []
-    itemNames.push(link.quantity && link.quantity > 1 ? `${link.quantity}× ${productGroup.name}` : productGroup.name)
+    itemNames.push(link.quantity > 1 ? `${link.quantity}× ${productGroup.name}` : productGroup.name)
     productGroupNamesByBundleId.set(link.bundleId, itemNames)
+
+    // Prix bundle = Σ (prix_produit × qty × (1 - remise/100))
+    const pgPrice = productGroup.base_price_as_decimal ? parseFloat(productGroup.base_price_as_decimal) : 0
+    if (pgPrice > 0) {
+      const linePrice = pgPrice * link.quantity * (1 - link.discountPercentage / 100)
+      bundlePriceSumById.set(link.bundleId, (bundlePriceSumById.get(link.bundleId) ?? 0) + linePrice)
+    }
   }
 
   return [
@@ -336,6 +284,9 @@ function attachBundleContext(
     ...bundles.map(item => ({
       ...item,
       bundle_item_names: productGroupNamesByBundleId.get(item.id) || [],
+      base_price_as_decimal: bundlePriceSumById.has(item.id)
+        ? String(Math.round(bundlePriceSumById.get(item.id)! * 100) / 100)
+        : undefined,
     })),
   ]
 }
@@ -380,12 +331,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const supabase = getSupabaseAdmin()
+
     console.log('Fetching Booqable product_groups...')
     const productGroups = await fetchAllBooqableProductGroups()
     await sleep(500)
     console.log('Fetching Booqable bundles...')
     const bundles = await fetchAllBooqableBundles()
-    await sleep(500)
+    await sleep(2000)
     console.log('Fetching Booqable bundle_items...')
     const bundleItems = await fetchAllBooqableBundleItems()
 
@@ -402,8 +355,6 @@ export async function POST(req: NextRequest) {
 
     console.log('Generating embeddings...')
     const embeddings = await generateEmbeddings(enrichedTexts)
-
-    const supabase = getSupabaseAdmin()
 
     // products_cache est un cache, pas un historique : on le reconstruit proprement
     // à chaque sync pour éviter les anciennes lignes archivées et les faux doublons
