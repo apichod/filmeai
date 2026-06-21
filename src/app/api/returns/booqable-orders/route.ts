@@ -34,22 +34,34 @@ export async function GET(req: NextRequest) {
   const tag = req.nextUrl.searchParams.get('tag')
   if (!tag) return NextResponse.json({ error: 'tag param required' }, { status: 400 })
 
-  // Advanced search v4 — seule méthode fiable pour filtrer sur tag_list
-  const res = await fetch(`${BASE4}/orders/search?include=customer,properties&page[size]=100`, {
+  // Tentative 1 — advanced search v4 (conditions sans wrapper "filter")
+  let res = await fetch(`${BASE4}/orders/search?include=customer,properties&page[size]=100`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({
-      filter: {
-        conditions: {
-          operator: 'and',
-          attributes: [
-            { tag_list: { eq: tag } },
-          ],
-        },
+      conditions: {
+        operator: 'and',
+        attributes: [{ tag_list: { eq: tag } }],
       },
     }),
     signal: AbortSignal.timeout(15000),
   })
+
+  // Tentative 2 — GET avec filter[tag_list][] (Array eq)
+  if (!res.ok) {
+    res = await fetch(
+      `${BASE4}/orders?filter[tag_list][]=${encodeURIComponent(tag)}&include=customer,properties&page[size]=100`,
+      { method: 'GET', headers: headers(), signal: AbortSignal.timeout(15000) }
+    )
+  }
+
+  // Tentative 3 — GET avec filter[tag_list] sans []
+  if (!res.ok) {
+    res = await fetch(
+      `${BASE4}/orders?filter[tag_list]=${encodeURIComponent(tag)}&include=customer,properties&page[size]=100`,
+      { method: 'GET', headers: headers(), signal: AbortSignal.timeout(15000) }
+    )
+  }
 
   if (!res.ok) {
     const text = await res.text()
