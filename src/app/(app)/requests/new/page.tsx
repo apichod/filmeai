@@ -373,6 +373,7 @@ export default function NewRequestPage() {
 
   // ── Submit
   const [submitting, setSubmitting] = useState(false)
+  const [submittingPush, setSubmittingPush] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   // ── Customer search
@@ -672,58 +673,82 @@ export default function NewRequestPage() {
     dragItem.current = null
   }
 
-  // ── Submit quote
-  async function handleSubmit() {
+  // ── Submit quote — helper partagé
+  async function saveQuoteDraft(): Promise<string> {
     const quoteLines = items.filter(item => item.type !== 'section' || item.title?.trim())
-    const billableLines = quoteLines.filter(item => item.type !== 'section')
-    if (billableLines.length === 0 || submitting) return
+    const res = await fetch('/api/save-quote-draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer: {
+          type: clientType,
+          name: clientName,
+          email: clientEmail || undefined,
+          phone: clientPhone || undefined,
+          addressLine1: clientAddressLine1 || undefined,
+          addressLine2: clientAddressLine2 || undefined,
+          postalCode: clientPostalCode || undefined,
+          city: clientCity || undefined,
+          country: clientCountry || undefined,
+          booqableId: clientBooqableId || undefined,
+        },
+        items: quoteLines.map((i, index) => ({
+          type: i.type,
+          productId: i.type === 'product' ? i.product?.id : undefined,
+          quantity: i.type === 'section' ? 1 : i.quantity,
+          name: i.type === 'product' ? i.product?.name : i.title || i.requestedName,
+          title: i.type === 'section' ? i.title : undefined,
+          requestedName: i.requestedName,
+          section: i.section || null,
+          unitPrice: i.type === 'product' ? i.product?.price_per_day || 0 : 0,
+          deposit: i.type === 'product' ? i.product?.deposit || 0 : 0,
+          position: index + 1,
+          confidence: i.confidence ?? null,
+          reason: i.reason ?? null,
+          debug: i.debug ?? null,
+        })),
+        startsAt: toLocalISOString(startsAt || new Date().toISOString().split('T')[0], pickupTime),
+        stopsAt:  toLocalISOString(stopsAt  || new Date(Date.now() + 86400000).toISOString().split('T')[0], returnTime),
+      }),
+    })
+    const data = await res.json() as { conversationId?: string; error?: string }
+    if (!res.ok || data.error) throw new Error(data.error || `Erreur HTTP ${res.status}`)
+    if (!data.conversationId) throw new Error('conversationId manquant dans la réponse')
+    return data.conversationId
+  }
+
+  async function handleSubmit() {
+    if (billableItemCount === 0 || submitting || submittingPush) return
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const res = await fetch('/api/save-quote-draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer: {
-            type: clientType,
-            name: clientName,
-            email: clientEmail || undefined,
-            phone: clientPhone || undefined,
-            addressLine1: clientAddressLine1 || undefined,
-            addressLine2: clientAddressLine2 || undefined,
-            postalCode: clientPostalCode || undefined,
-            city: clientCity || undefined,
-            country: clientCountry || undefined,
-            booqableId: clientBooqableId || undefined,
-          },
-          items: quoteLines.map((i, index) => ({
-            type: i.type,
-            productId: i.type === 'product' ? i.product?.id : undefined,
-            quantity: i.type === 'section' ? 1 : i.quantity,
-            name: i.type === 'product' ? i.product?.name : i.title || i.requestedName,
-            title: i.type === 'section' ? i.title : undefined,
-            requestedName: i.requestedName,
-            section: i.section || null,
-            unitPrice: i.type === 'product' ? i.product?.price_per_day || 0 : 0,
-            deposit: i.type === 'product' ? i.product?.deposit || 0 : 0,
-            position: index + 1,
-            confidence: i.confidence ?? null,
-            reason: i.reason ?? null,
-            debug: i.debug ?? null,
-          })),
-          startsAt: toLocalISOString(startsAt || new Date().toISOString().split('T')[0], pickupTime),
-          stopsAt:  toLocalISOString(stopsAt  || new Date(Date.now() + 86400000).toISOString().split('T')[0], returnTime),
-        }),
-      })
-      const data = await res.json() as { conversationId?: string; error?: string }
-      if (!res.ok || data.error) throw new Error(data.error || `Erreur HTTP ${res.status}`)
-      if (data.conversationId) {
-        router.push('/requests/' + data.conversationId + '?autoEdit=1')
-      }
+      const conversationId = await saveQuoteDraft()
+      router.push('/requests/' + conversationId + '?autoEdit=1')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde du devis')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleSubmitAndPush() {
+    if (billableItemCount === 0 || submitting || submittingPush) return
+    setSubmittingPush(true)
+    setSubmitError(null)
+    try {
+      const conversationId = await saveQuoteDraft()
+      const pushRes = await fetch('/api/push-to-booqable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId }),
+      })
+      const pushData = await pushRes.json() as { success?: boolean; orderId?: string; orderUrl?: string; customerWarning?: string; error?: string }
+      if (!pushRes.ok || pushData.error) throw new Error(pushData.error || `Erreur push Booqable`)
+      router.push('/requests/' + conversationId)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Erreur lors du push vers Booqable')
+    } finally {
+      setSubmittingPush(false)
     }
   }
 
@@ -1310,22 +1335,33 @@ export default function NewRequestPage() {
 
           {/* Submit */}
           <div className="border-t border-gray-100 p-4 flex-shrink-0">
-            <>
-              {submitError && (
-                <p className="text-xs text-red-500 mb-2 text-center">{submitError}</p>
-              )}
+            {submitError && (
+              <p className="text-xs text-red-500 mb-2 text-center">{submitError}</p>
+            )}
+            <div className="flex gap-2">
               <button
                 onClick={handleSubmit}
-                disabled={billableItemCount === 0 || submitting}
-                className="w-full bg-gray-900 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                disabled={billableItemCount === 0 || submitting || submittingPush}
+                className="flex-1 border border-gray-200 text-gray-700 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
               >
                 {submitting ? (
-                  <><Spinner size={16} white /> Enregistrement…</>
+                  <><Spinner size={14} /> Enregistrement…</>
                 ) : (
-                  'Enregistrer le devis'
+                  'Enregistrer'
                 )}
               </button>
-            </>
+              <button
+                onClick={handleSubmitAndPush}
+                disabled={billableItemCount === 0 || submitting || submittingPush}
+                className="flex-1 bg-gray-900 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+              >
+                {submittingPush ? (
+                  <><Spinner size={14} white /> Push Booqable…</>
+                ) : (
+                  '↑ Pousser vers Booqable'
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
