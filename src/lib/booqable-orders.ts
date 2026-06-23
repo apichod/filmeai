@@ -83,7 +83,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
   try {
     const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
     const boomRes = await fetch(
-      `${BASE_BOOMERANG}/orders/${order.id}?include=lines,products,stock_item_plannings,stock_items`,
+      `${BASE_BOOMERANG}/orders/${order.id}?include=lines,products,product_groups,stock_item_plannings,stock_items`,
       { headers: headers(), signal: AbortSignal.timeout(12000) }
     )
 
@@ -167,8 +167,15 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         }
 
         // attrs.description = nom du produit sur la ligne (le plus fiable dans boomerang)
-        const productName = String(attrs.description || productGroupMap.get(itemRelId)?.name || productMap.get(itemRelId)?.name || '')
-        if (!productName) continue  // ignorer les lignes sans nom (frais internes, etc.)
+        // Fallbacks : productGroupMap (si itemRelType=product_groups), productMap (si itemRelType=products)
+        const productName = String(
+          attrs.description ||
+          (itemRelType === 'product_groups' ? productGroupMap.get(itemRelId)?.name : undefined) ||
+          productMap.get(itemRelId)?.name ||
+          productGroupMap.get(itemRelId)?.name ||
+          ''
+        )
+        if (!productName && !itemRelId) continue  // ignorer uniquement les lignes sans nom ET sans référence produit
 
         const planningId = String(attrs.planning_id || '')
         const stockItemId = planningStockMap.get(planningId) || undefined
