@@ -184,7 +184,7 @@ export function formatDiagnosticForCopy(debug: MatchDebug, operatorProductName?:
   lines.push('')
 
   lines.push('ÉTAPE 5 — DÉCISION FINALE')
-  lines.push('  Ordre de priorité : signal → pack/kit → reranking → déterministe')
+  lines.push('  Ordre de priorité : signal → reranking → pack/kit → déterministe')
   lines.push(`  Signal      : ${debug.decisionCandidates?.signal?.name || 'aucun'}`)
   lines.push(`  Pack/kit    : ${debug.decisionCandidates?.packRule?.name || 'aucun'}`)
   lines.push(`  Reranking   : ${debug.decisionCandidates?.rerank?.name || 'aucun'}`)
