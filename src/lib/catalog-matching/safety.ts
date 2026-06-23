@@ -63,7 +63,7 @@ export function queryHasAllTokens(product: Product, tokens: string[]): boolean {
 export function requestWantsPack(item: ExtractedItem): boolean {
   const raw = normalizeText(item.raw)
   const query = normalizeText(item.query)
-  const packPattern = /\b(pack|kit|serie|série|set|duo|reportage|standard|essentiel|multicam)\b/
+  const packPattern = /\b(pack|kit|serie|série|set|duo)\b/
   return packPattern.test(raw) || packPattern.test(query)
 }
 

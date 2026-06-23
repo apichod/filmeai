@@ -31,7 +31,7 @@ export async function rerankAll(candidateSets: CandidateSet[], rerankPrompt: str
     ],
     response_format: { type: 'json_object' },
     temperature: 0,
-    max_tokens: 2600,
+    max_tokens: 6000,
   })
 
   try {

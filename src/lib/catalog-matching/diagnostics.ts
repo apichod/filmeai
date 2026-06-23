@@ -42,22 +42,22 @@ const rawItems = candidateSets.map((set, index) => {
     ? null
     : aiSelected
   const signalSelected = set.candidates.find(candidate => candidate.signal_match && !candidateIsUnsafe(candidate, set.item)) || null
-  const selected = signalSelected || preferredPack?.product || safeAiSelected || deterministic?.product || null
+  const selected = signalSelected || safeAiSelected || preferredPack?.product || deterministic?.product || null
   const selectedBy = signalSelected
     ? 'signal'
-    : preferredPack?.product
-      ? 'pack_rule'
-      : safeAiSelected
-        ? 'rerank'
+    : safeAiSelected
+      ? 'rerank'
+      : preferredPack?.product
+        ? 'pack_rule'
         : deterministic?.product
           ? 'deterministic'
           : null
   const confidence = signalSelected
     ? 0.96
-    : preferredPack
-    ? Math.min(0.95, Math.max(0.84, preferredPack.score / 2.6))
     : safeAiSelected
     ? selection?.confidence || 0.85
+    : preferredPack
+    ? Math.min(0.95, Math.max(0.84, preferredPack.score / 2.6))
     : deterministic
       ? Math.min(0.95, Math.max(0.72, deterministic.score / 2.6))
       : selection?.confidence || 0
@@ -98,10 +98,10 @@ const rawItems = candidateSets.map((set, index) => {
     reason: selected
       ? (signalSelected
         ? 'Association validée depuis Signaux'
-        : preferredPack
-          ? 'Pack/kit privilégié car demandé par le client'
-          : safeAiSelected
-            ? selection?.reason || null
+        : safeAiSelected
+          ? selection?.reason || null
+          : preferredPack
+            ? 'Pack/kit privilégié car demandé par le client'
             : 'Correspondance catalogue forte par nom/référence')
       : selection?.reason || 'Aucune correspondance catalogue assez fiable',
     debug: {
@@ -119,7 +119,7 @@ const rawItems = candidateSets.map((set, index) => {
         influences: queryInfluences,
       },
       selectedBy,
-      decisionPriority: ['signal', 'pack_rule', 'rerank', 'deterministic'],
+      decisionPriority: ['signal', 'rerank', 'pack_rule', 'deterministic'],
       decisionCandidates: {
         signal: signalSelected ? { id: signalSelected.id, name: signalSelected.name } : null,
         packRule: preferredPack ? { id: preferredPack.product.id, name: preferredPack.product.name, score: Math.round(preferredPack.score * 100) / 100 } : null,

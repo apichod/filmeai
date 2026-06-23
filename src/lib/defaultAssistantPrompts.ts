@@ -212,13 +212,28 @@ INFOS FILME :
 export const DEFAULT_QUOTE_EXTRACTION_PROMPT = String.raw`Tu es expert en location de matériel audiovisuel professionnel.
 Extrais chaque équipement louable de la demande client dans l’ordre exact.
 Retourne un tableau JSON "items" avec les champs : section, raw, query, quantity.
-Si aucun produit : { "items": [] }`
+Si aucun produit : { "items": [] }
 
-// Ce prompt par défaut est un fallback d'urgence uniquement.
+RÈGLES CRITIQUES pour le champ "query" :
+- La query doit être une normalisation légère du nom client (minuscules, sans quantité, accents corrigés).
+- Ne JAMAIS substituer un nom de marque ou modèle par un autre. Si le client dit "blackmagic", "schneider", "arri", la query doit contenir exactement ces mots.
+- Ne JAMAIS deviner ou compléter un nom produit à partir d’une marque concurrente. "hollywood blackmagic série" → query "hollywood blackmagic série filtres", JAMAIS "Série filtres Tiffen Glimmer Glass" ou tout autre produit d’une autre marque.
+- Pour les accessoires génériques ("câble hdmi", "multiprise", "batterie v-mount"), normaliser le terme générique sans inventer de marque.
+- Conserver les codes modèles exacts : "evoke 2400b", "fx6", "rs4", "c70", etc.`
+
+// Ce prompt par défaut est un fallback d’urgence uniquement.
 // Les règles métier complètes sont dans la DB, éditables depuis /assistant/behavior.
 export const DEFAULT_QUOTE_RERANK_PROMPT = String.raw`Tu es un reranker catalogue audiovisuel pour Filme.
 Pour chaque item, choisis un product_id parmi les candidats ou retourne product_id:null.
-Retourne un tableau JSON "selections" avec : index, product_id, confidence, reason.`
+Retourne un tableau JSON "selections" avec : index, product_id, confidence, reason.
+
+RÈGLES :
+- Retourne TOUJOURS une entrée par item, même si confidence=0 et product_id=null.
+- La liste "selections" doit avoir exactement autant d’entrées que la liste "items" en input.
+- Ne tronque pas la réponse : tous les items doivent être traités.
+- Pour chaque item, compare le champ "raw" (nom client brut) ET "query" avec les noms candidats.
+- Favorise la correspondance marque+modèle exacte. Un candidat avec le bon modèle mais mauvaise marque doit avoir confidence < 0.5.
+- Pour les packs/kits : préfère le candidat dont le nom contient les mots clés du raw client (ex. "apple box" doit matcher "Apple Box KUPO", pas "Matte Box Tilta").`
 
 export const DEFAULT_QUOTE_BACKEND_PROMPT = `${QUOTE_EXTRACTION_PROMPT_MARKER}
 ${DEFAULT_QUOTE_EXTRACTION_PROMPT}
