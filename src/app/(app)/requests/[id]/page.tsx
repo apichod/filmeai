@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { type MatchDebug, formatDiagnosticForCopy, rootCauseSummary } from '@/lib/diagnostic-format'
+import { type MatchDebug } from '@/lib/diagnostic-format'
+import { MatchDiagnosticPanel } from '@/components/MatchDiagnosticPanel'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -200,21 +201,11 @@ function MatchGauge({ confidence, type, requestedName }: { confidence?: number; 
 
 function MatchDiagnosticSaved({ debug }: { debug: unknown }) {
   const [open, setOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   const parsed = (debug && typeof debug === 'object' && 'requestedName' in (debug as object))
     ? debug as MatchDebug
     : null
   if (!parsed) return null
-
-  const rootCause = rootCauseSummary(parsed)
-  const success = Boolean(parsed.finalChoice)
-
-  async function copy() {
-    await navigator.clipboard.writeText(formatDiagnosticForCopy(parsed!))
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1600)
-  }
 
   return (
     <div className="mt-1">
@@ -224,19 +215,7 @@ function MatchDiagnosticSaved({ debug }: { debug: unknown }) {
       >
         {open ? 'Masquer le diagnostic IA' : 'Afficher le diagnostic IA'}
       </button>
-      {open && (
-        <div className="mt-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-700">
-          <div className="flex items-start justify-between gap-2">
-            <p className={`text-[11px] font-medium ${success ? 'text-emerald-700' : 'text-red-600'}`}>{rootCause}</p>
-            <button
-              onClick={copy}
-              className="shrink-0 rounded bg-white px-2 py-0.5 text-[10px] border border-slate-200 text-slate-500 hover:text-slate-800 transition-colors"
-            >
-              {copied ? 'Copié ✓' : 'Copier log'}
-            </button>
-          </div>
-        </div>
-      )}
+      {open && <MatchDiagnosticPanel debug={parsed} allowDeleteSignal />}
     </div>
   )
 }
