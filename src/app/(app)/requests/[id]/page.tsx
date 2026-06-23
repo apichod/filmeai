@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { type MatchDebug } from '@/lib/diagnostic-format'
+import { type MatchDebug, formatDiagnosticForCopy } from '@/lib/diagnostic-format'
 import { MatchDiagnosticPanel } from '@/components/MatchDiagnosticPanel'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -561,6 +561,31 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
                 placeholder="Ajouter un produit du catalogue…"
                 onSelect={addProduct}
               />
+            </div>
+          )}
+
+          {/* Export logs */}
+          {items.some(i => i.debug != null) && (
+            <div className="mb-3 flex justify-end">
+              <button
+                onClick={() => {
+                  const SEP = '\n\n' + '═'.repeat(60) + '\n\n'
+                  const content = items
+                    .filter(i => i.debug != null && typeof i.debug === 'object' && 'requestedName' in (i.debug as object))
+                    .map(i => formatDiagnosticForCopy(i.debug as MatchDebug))
+                    .join(SEP)
+                  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `diagnostic-${request.id.slice(0, 8)}.txt`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-slate-300 hover:text-slate-900 transition-colors"
+              >
+                ↓ Exporter tous les logs
+              </button>
             </div>
           )}
 
