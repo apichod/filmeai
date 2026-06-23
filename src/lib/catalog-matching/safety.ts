@@ -87,10 +87,17 @@ export function importantModelTokens(item: ExtractedItem): string[] {
   const tokens = significantTokens(text)
   const hasFocalRange = tokens.some(token => /^\d{2,3}-\d{2,3}(mm)?$/.test(token))
 
+  // Le pattern \d\.\d (ex: 2.8, 1.4) est ambigu : il peut être une ouverture optique
+  // ou une version USB/protocole (ex: "2.1" dans "USB 2.1"). On l'active seulement
+  // quand le contexte est optique (présence de mm, plage focale, ou mots-clés optique).
+  const hasOpticalContext = hasFocalRange
+    || /\b\d{2,3}mm\b/.test(text)
+    || /\b(objectif|optique|lens|focale|cine|ciné)\b/.test(text)
+
   const important = tokens.filter(token =>
     /^\d{2,3}-\d{2,3}(mm)?$/.test(token) ||
     /^f\d(?:\.\d)?$/.test(token) ||
-    /^\d\.\d$/.test(token) ||
+    (hasOpticalContext && /^\d\.\d$/.test(token)) ||
     (!hasFocalRange && /^\d{2,3}$/.test(token)) ||
     (!hasFocalRange && /^\d{4}$/.test(token)) ||
     /^\d{2,3}mm$/.test(token) ||
@@ -102,13 +109,22 @@ export function importantModelTokens(item: ExtractedItem): string[] {
   // Codes modèle génériques : lettres + chiffres (ex: rs4, a7, z9, xt4, r5)
   // Traités token par token + paires adjacentes pour gérer "RS 4" → "rs4"
   // sans fusionner les mots voisins ("roninrs4" capturerait "rs4r" à tort).
+  // Filtre min-2-chars pour éviter "m" + "6g" → "m6g" (parenthèses, unités seules…).
   const words = text.split(/\s+/).filter(Boolean)
   const modelCodeRe = /^[a-z]{1,3}\d{1,3}[a-z]{0,2}$/
   const existingSet = new Set(important)
   const parts: string[] = []
   for (let i = 0; i < words.length; i++) {
-    parts.push(compactText(words[i]))
-    if (i + 1 < words.length) parts.push(compactText(words[i] + words[i + 1]))
+    const ci = compactText(words[i])
+    parts.push(ci)
+    if (i + 1 < words.length) {
+      const ci1 = compactText(words[i + 1])
+      // N'agglomère que si les deux parties font au moins 2 caractères
+      // pour éviter les composés parasites comme "m6g" ("m" + "(6g")
+      if (ci.length >= 2 && ci1.length >= 2) {
+        parts.push(ci + ci1)
+      }
+    }
   }
   for (const part of parts) {
     if (modelCodeRe.test(part) && !/^f\d/.test(part) && !existingSet.has(part)) {
@@ -165,6 +181,13 @@ export function requestHasFamilyMismatch(product: Product, item: ExtractedItem):
     if (!aperturePattern.test(name)) return true
   }
 
+  // Densité filtre : 1/4, 1/8, 1/2 sont structurellement non-interchangeables.
+  // Si la demande mentionne une densité, le produit doit la contenir.
+  const filterDensityReq = req.match(/\b(1\/(?:2|4|8))\b/)
+  if (filterDensityReq) {
+    const density = filterDensityReq[1]
+    if (!name.includes(density)) return true
+  }
 
   return false
 }
