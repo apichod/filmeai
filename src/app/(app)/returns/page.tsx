@@ -50,8 +50,20 @@ function formatPrice(cents: number | null) {
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(cents / 100)
 }
 
+// Parse une date saisie en format français DD-MM-YYYY ou DD/MM/YYYY,
+// ou en format ISO YYYY-MM-DD (champs Booqable automatiques)
+function parseFrDate(s: string): Date | null {
+  if (!s) return null
+  const fr = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+  if (fr) return new Date(parseInt(fr[3]), parseInt(fr[2]) - 1, parseInt(fr[1]))
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? null : d
+}
+
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+  const d = parseFrDate(iso)
+  if (!d) return '—'
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 function formatDateTime(iso: string) {
@@ -814,8 +826,9 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
   }
 
   function fmtDate(iso: string) {
-    if (!iso) return '—'
-    return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+    const d = parseFrDate(iso)
+    if (!d) return '—'
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   return (
@@ -980,8 +993,9 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
   }
 
   function fmtDate(iso: string) {
-    if (!iso) return '—'
-    return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+    const d = parseFrDate(iso)
+    if (!d) return '—'
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   return (
