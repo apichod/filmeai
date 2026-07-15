@@ -915,7 +915,7 @@ type TagConfig = {
 
 type TaggedOrderRow = BooqableOrderRow & { tagConfig: TagConfig }
 
-function MultiTagBooqableOrdersTable({ tags, title }: { tags: TagConfig[]; title: string }) {
+function MultiTagBooqableOrdersTable({ tags }: { tags: TagConfig[] }) {
   const [rows, setRows]         = useState<TaggedOrderRow[]>([])
   const [loading, setLoading]   = useState(false)
   const [synced, setSynced]     = useState(false)
@@ -1139,8 +1139,8 @@ export default function ReturnsPage() {
           </div>
         )}
         {tab === 'open'        && <BooqableOrdersTable tag="LATE" />}
-        {tab === 'closed'      && <MultiTagBooqableOrdersTable tags={CLOSED_TAGS} title="Cas fermés" />}
-        {tab === 'billed'      && <MultiTagBooqableOrdersTable tags={BILLED_TAGS} title="Cas facturés" />}
+        {tab === 'closed'      && <MultiTagBooqableOrdersTable tags={CLOSED_TAGS} />}
+        {tab === 'billed'      && <MultiTagBooqableOrdersTable tags={BILLED_TAGS} />}
         {tab === 'replacement' && <BooqableOrdersTable tag="TO_BE_REPLACED" />}
         {tab === 'repair'      && <BooqableOrdersTable tag="TO_BE_REPAIRED" />}
         {tab === 'log'         && <CasesTable />}
