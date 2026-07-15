@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
         created_at?: string | null
         sent_at?: string | null
         recipient?: string | null
+        recipients?: string | null
       }
     }>
   }
