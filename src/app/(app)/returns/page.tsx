@@ -1103,7 +1103,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
 type Tab = 'chat' | 'open' | 'closed' | 'billed' | 'replacement' | 'repair' | 'log'
 
 const LATE_TAGS: TagConfig[] = [
-  { tag: 'late', label: 'En cours', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'late', label: 'En retard', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
 ]
 
 const CLOSED_TAGS: TagConfig[] = [
@@ -1122,7 +1122,7 @@ export default function ReturnsPage() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
-    { id: 'open',        label: 'En cours' },
+    { id: 'open',        label: 'En retard' },
     { id: 'closed',      label: 'Fermés' },
     { id: 'billed',      label: 'Facturés' },
     { id: 'replacement', label: 'En cours de remplacement' },
