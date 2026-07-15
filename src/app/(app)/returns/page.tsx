@@ -34,6 +34,13 @@ type ReturnCase = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function sortBySavOrderDesc(a: BooqableOrderRow, b: BooqableOrderRow) {
+  const na = parseInt(a.order_sav || '0', 10)
+  const nb = parseInt(b.order_sav || '0', 10)
+  if (!isNaN(na) && !isNaN(nb) && (na !== 0 || nb !== 0)) return nb - na
+  return (b.order_sav || '').localeCompare(a.order_sav || '')
+}
+
 function formatPrice(cents: number | null) {
   if (cents === null || cents === undefined) return '—'
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(cents / 100)
@@ -788,7 +795,7 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
       const res  = await fetch(`/api/returns/booqable-orders?tag=${encodeURIComponent(tag)}`)
       const data = await res.json() as { orders?: BooqableOrderRow[]; error?: string }
       if (data.error) { setError(data.error); return }
-      const rows = data.orders || []
+      const rows = (data.orders || []).sort(sortBySavOrderDesc)
       const now  = new Date().toISOString()
       setOrders(rows)
       setSyncedAt(now)
@@ -955,11 +962,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
             .then(data => (data.orders || []).map(o => ({ ...o, tagConfig: tc })))
         )
       )
-      const merged = results.flat().sort((a, b) => {
-        const da = a.date_sav || a.stops_at || ''
-        const db = b.date_sav || b.stops_at || ''
-        return db.localeCompare(da)
-      })
+      const merged = results.flat().sort(sortBySavOrderDesc)
       const now = new Date().toISOString()
       setRows(merged)
       setSyncedAt(now)
