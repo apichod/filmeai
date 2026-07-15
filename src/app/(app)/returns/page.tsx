@@ -863,7 +863,7 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
               <tr className="border-b border-gray-100">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d'origine</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d&apos;origine</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
@@ -1026,7 +1026,7 @@ function MultiTagBooqableOrdersTable({ tags, title }: { tags: TagConfig[]; title
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Statut</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d'origine</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d&apos;origine</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
