@@ -1293,10 +1293,10 @@ export default function ReturnsPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
     { id: 'open',        label: 'En retard' },
-    { id: 'closed',      label: 'Fermés' },
+    { id: 'closed',      label: 'Retournés' },
     { id: 'billed',      label: 'Facturés' },
-    { id: 'replacement', label: 'En cours de remplacement' },
-    { id: 'repair',      label: 'En cours de réparation' },
+    { id: 'replacement', label: 'À remplacer' },
+    { id: 'repair',      label: 'À réparer' },
     { id: 'log',         label: 'Log' },
   ]
 
