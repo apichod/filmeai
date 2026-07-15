@@ -948,6 +948,14 @@ function paymentStatusDisplay(ps: string | null): { label: string; cls: string }
   return { label: ps || '—', cls: 'bg-gray-100 text-gray-500' }
 }
 
+type EmailData = {
+  subject:    string | null
+  body:       string | null
+  created_at: string | null
+  sent_at:    string | null
+  recipient:  string | null
+}
+
 function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags: TagConfig[]; showPaymentStatus?: boolean }) {
   const [rows, setRows]         = useState<TaggedOrderRow[]>([])
   const [loading, setLoading]   = useState(false)
@@ -955,6 +963,29 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
   const storageKey = `bq_multi_${tags.map(t => t.tag).join('_')}`
+
+  // Modal dernier email
+  const [emailModal, setEmailModal]     = useState<{ orderId: string; orderNum: string | number } | null>(null)
+  const [emailData, setEmailData]       = useState<EmailData | null>(null)
+  const [emailLoading, setEmailLoading] = useState(false)
+  const [emailError, setEmailError]     = useState<string | null>(null)
+
+  async function openEmail(orderId: string, orderNum: string | number) {
+    setEmailModal({ orderId, orderNum })
+    setEmailData(null)
+    setEmailError(null)
+    setEmailLoading(true)
+    try {
+      const res  = await fetch(`/api/returns/booqable-email?order_id=${encodeURIComponent(orderId)}`)
+      const data = await res.json() as { emails?: EmailData[]; error?: string }
+      if (data.error) { setEmailError(data.error); return }
+      setEmailData(data.emails?.[0] ?? null)
+    } catch (e) {
+      setEmailError(e instanceof Error ? e.message : 'Erreur réseau')
+    } finally {
+      setEmailLoading(false)
+    }
+  }
 
   useEffect(() => {
     try {
@@ -1070,6 +1101,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
                 {showPaymentStatus && <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Paiement</th>}
+                {showPaymentStatus && <th className="px-4 py-3" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -1108,11 +1140,103 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ps.cls}`}>{ps.label}</span>
                       </td>
                     )}
+                    {showPaymentStatus && (
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => openEmail(o.id, o.number)}
+                          title="Voir le dernier email Booqable"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                          </svg>
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Modal dernier email ── */}
+      {emailModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setEmailModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Dernier email Booqable</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">Commande #{emailModal.orderNum}</p>
+              </div>
+              <button
+                onClick={() => setEmailModal(null)}
+                className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 max-h-[70vh] overflow-y-auto">
+              {emailLoading && (
+                <div className="flex items-center justify-center py-10 text-sm text-gray-400">
+                  <span className="w-4 h-4 rounded-full border-2 border-gray-200 border-t-gray-500 animate-spin mr-2" />
+                  Chargement…
+                </div>
+              )}
+              {emailError && (
+                <p className="text-sm text-red-500 py-4">{emailError}</p>
+              )}
+              {!emailLoading && !emailError && !emailData && (
+                <p className="text-sm text-gray-400 py-4">Aucun email trouvé pour cette commande.</p>
+              )}
+              {emailData && (
+                <div className="space-y-4">
+                  {/* Méta */}
+                  <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                    <span>
+                      <span className="font-medium text-gray-700">Date : </span>
+                      {emailData.sent_at
+                        ? new Date(emailData.sent_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : emailData.created_at
+                          ? new Date(emailData.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                    </span>
+                    {emailData.recipient && (
+                      <span>
+                        <span className="font-medium text-gray-700">À : </span>
+                        {emailData.recipient}
+                      </span>
+                    )}
+                  </div>
+                  {/* Objet */}
+                  <div className="bg-gray-50 rounded-lg px-4 py-3">
+                    <p className="text-xs text-gray-400 mb-1">Objet</p>
+                    <p className="text-sm font-medium text-gray-900">{emailData.subject || '—'}</p>
+                  </div>
+                  {/* Corps */}
+                  <div>
+                    <p className="text-xs text-gray-400 mb-2">Contenu</p>
+                    <div
+                      className="text-sm text-gray-700 leading-relaxed border border-gray-100 rounded-lg p-4 prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: emailData.body || '<em>Corps vide</em>' }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
