@@ -755,6 +755,7 @@ type BooqableOrderRow = {
   starts_at: string
   stops_at: string
   status: string
+  payment_status: string | null
   url: string
   grand_total_in_cents: number | null
 }
@@ -915,7 +916,15 @@ type TagConfig = {
 
 type TaggedOrderRow = BooqableOrderRow & { tagConfig: TagConfig }
 
-function MultiTagBooqableOrdersTable({ tags }: { tags: TagConfig[] }) {
+function paymentStatusDisplay(ps: string | null): { label: string; cls: string } {
+  if (ps === 'paid')            return { label: 'Payé',     cls: 'bg-green-50 text-green-700' }
+  if (ps === 'payment_due')     return { label: 'À payer',  cls: 'bg-orange-50 text-orange-700' }
+  if (ps === 'partially_paid')  return { label: 'Partiel',  cls: 'bg-amber-50 text-amber-700' }
+  if (ps === 'overpaid')        return { label: 'Surpayé',  cls: 'bg-blue-50 text-blue-700' }
+  return { label: ps || '—', cls: 'bg-gray-100 text-gray-500' }
+}
+
+function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags: TagConfig[]; showPaymentStatus?: boolean }) {
   const [rows, setRows]         = useState<TaggedOrderRow[]>([])
   const [loading, setLoading]   = useState(false)
   const [synced, setSynced]     = useState(false)
@@ -1039,39 +1048,48 @@ function MultiTagBooqableOrdersTable({ tags }: { tags: TagConfig[] }) {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
+                {showPaymentStatus && <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Paiement</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {rows.map(o => (
-                <tr key={`${o.tagConfig.tag}-${o.id}`} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${o.tagConfig.bgClass} ${o.tagConfig.textClass}`}>
-                      {o.tagConfig.label}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <a
-                      href={o.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium text-black hover:underline flex items-center gap-1"
-                    >
-                      #{o.number}
-                      <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                      </svg>
-                    </a>
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
-                  <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
-                  <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
-                  <td className="px-4 py-3 text-gray-600 text-xs max-w-xs whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
-                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                    {fmtDate(o.starts_at)} → {fmtDate(o.stops_at)}
-                  </td>
-                </tr>
-              ))}
+              {rows.map(o => {
+                const ps = showPaymentStatus ? paymentStatusDisplay(o.payment_status) : null
+                return (
+                  <tr key={`${o.tagConfig.tag}-${o.id}`} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${o.tagConfig.bgClass} ${o.tagConfig.textClass}`}>
+                        {o.tagConfig.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <a
+                        href={o.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-black hover:underline flex items-center gap-1"
+                      >
+                        #{o.number}
+                        <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                        </svg>
+                      </a>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
+                    <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                    <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
+                    <td className="px-4 py-3 text-gray-600 text-xs max-w-xs whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                      {fmtDate(o.starts_at)} → {fmtDate(o.stops_at)}
+                    </td>
+                    {ps && (
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ps.cls}`}>{ps.label}</span>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -1091,8 +1109,8 @@ const CLOSED_TAGS: TagConfig[] = [
 
 const BILLED_TAGS: TagConfig[] = [
   { tag: 'late_caution',  label: 'Pris sur la caution', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'late_billed_d', label: 'Payé virement',       bgClass: 'bg-blue-50',   textClass: 'text-blue-700' },
-  { tag: 'late_billed_w', label: 'Payé CB',             bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
+  { tag: 'late_billed_d', label: 'Facturé virement',     bgClass: 'bg-blue-50',   textClass: 'text-blue-700' },
+  { tag: 'late_billed_w', label: 'Facturé CB',           bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
 ]
 
 export default function ReturnsPage() {
@@ -1140,7 +1158,7 @@ export default function ReturnsPage() {
         )}
         {tab === 'open'        && <BooqableOrdersTable tag="LATE" />}
         {tab === 'closed'      && <MultiTagBooqableOrdersTable tags={CLOSED_TAGS} />}
-        {tab === 'billed'      && <MultiTagBooqableOrdersTable tags={BILLED_TAGS} />}
+        {tab === 'billed'      && <MultiTagBooqableOrdersTable tags={BILLED_TAGS} showPaymentStatus />}
         {tab === 'replacement' && <BooqableOrdersTable tag="TO_BE_REPLACED" />}
         {tab === 'repair'      && <BooqableOrdersTable tag="TO_BE_REPAIRED" />}
         {tab === 'log'         && <CasesTable />}

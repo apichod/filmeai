@@ -14,6 +14,7 @@ export type BooqableOrderRow = {
   starts_at: string
   stops_at: string
   status: string
+  payment_status: string | null
   url: string
   grand_total_in_cents: number | null
 }
@@ -85,7 +86,8 @@ export async function GET(req: NextRequest) {
       date_sav:             props.date_sav   || '',
       starts_at:            attrs.starts_at  || '',
       stops_at:             attrs.stops_at   || '',
-      status:               attrs.status     || '',
+      status:               attrs.status          || '',
+      payment_status:       attrs.payment_status  ?? null,
       url:                  `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`,
       grand_total_in_cents: attrs.grand_total_with_tax_in_cents ?? null,
     }
@@ -115,5 +117,5 @@ type OrderProps = {
   date_sav?:  string | null
   [key: string]: string | null | undefined
 }
-type OrderAttrs    = { number?: string | number; status?: string; starts_at?: string; stops_at?: string; tag_list?: string | string[]; properties?: OrderProps; customer_id?: string; grand_total_with_tax_in_cents?: number | null }
+type OrderAttrs    = { number?: string | number; status?: string; payment_status?: string | null; starts_at?: string; stops_at?: string; tag_list?: string | string[]; properties?: OrderProps; customer_id?: string; grand_total_with_tax_in_cents?: number | null }
 type CustomerAttrs = { name?: string }
