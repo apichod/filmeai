@@ -17,7 +17,7 @@ export type BooqableEmail = {
   body: string | null
   created_at: string | null
   sent_at: string | null
-  recipient: string | null
+  recipients: string | null
 }
 
 /**
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
     body:       e.attributes.body       ?? null,
     created_at: e.attributes.created_at ?? null,
     sent_at:    e.attributes.sent_at    ?? null,
-    recipient:  e.attributes.recipient  ?? null,
+    recipients: (e.attributes.recipients ?? e.attributes.recipient) ?? null,
   }))
 
   // Log brut pour debug

@@ -953,7 +953,7 @@ type EmailData = {
   body:       string | null
   created_at: string | null
   sent_at:    string | null
-  recipient:  string | null
+  recipients: string | null
 }
 
 function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags: TagConfig[]; showPaymentStatus?: boolean }) {
@@ -1213,10 +1213,10 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                           ? new Date(emailData.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                           : '—'}
                     </span>
-                    {emailData.recipient && (
+                    {emailData.recipients && (
                       <span>
                         <span className="font-medium text-gray-700">À : </span>
-                        {emailData.recipient}
+                        {emailData.recipients}
                       </span>
                     )}
                   </div>
@@ -1230,15 +1230,17 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                     <p className="text-xs text-gray-400 mb-2">Contenu</p>
                     <pre className="text-sm text-gray-700 leading-relaxed border border-gray-100 rounded-lg p-4 whitespace-pre-wrap font-sans break-words">
                       {(emailData.body || '')
-                        // Paragraphes vides (<p><br></p> ou <p></p>) = ligne blanche
-                        .replace(/<p[^>]*>\s*(<br\s*\/?>)?\s*<\/p>/gi, '\n\n')
-                        // Transition </p><p> = simple retour à la ligne
-                        .replace(/<\/p>\s*<p[^>]*>/gi, '\n')
-                        // <br> restants
+                        // <br> trailing avant </p> → on l'ignore (pas de double saut)
+                        .replace(/<br\s*\/?>\s*\n?\s*<\/p>/gi, '</p>')
+                        // </p> suivi d'un \n puis <p> = vrai paragraphe → ligne blanche
+                        .replace(/<\/p>\s*\n\s*<p[^>]*>/gi, '\n\n')
+                        // </p> directement collé à <p> = simple retour à la ligne
+                        .replace(/<\/p><p[^>]*>/gi, '\n')
+                        // <br> inline → retour à la ligne
                         .replace(/<br\s*\/?>/gi, '\n')
                         // Blocs div, tr
                         .replace(/<\/(div|tr)>/gi, '\n')
-                        // Supprimer toutes les autres balises
+                        // Supprimer toutes les balises restantes
                         .replace(/<[^>]+>/g, '')
                         // Entités HTML
                         .replace(/&nbsp;/g, ' ')
