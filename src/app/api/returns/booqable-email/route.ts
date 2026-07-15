@@ -30,8 +30,7 @@ export async function GET(req: NextRequest) {
 
   const url =
     `${BASE}/emails` +
-    `?filter[owner_id]=${encodeURIComponent(orderId)}` +
-    `&filter[owner_type]=orders` +
+    `?filter[order_id]=${encodeURIComponent(orderId)}` +
     `&sort=-created_at` +
     `&page[number]=1&page[size]=5`
 
