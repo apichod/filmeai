@@ -34,11 +34,23 @@ type ReturnCase = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+// Extrait le dernier bloc de chiffres d'un numéro SAV (ex: "R-12345" → 12345)
+function savNum(s: string): number {
+  const m = s.match(/(\d+)(?=\D*$)/)
+  return m ? parseInt(m[1], 10) : 0
+}
+
 function sortBySavOrderDesc(a: BooqableOrderRow, b: BooqableOrderRow) {
-  const na = parseInt(a.order_sav || '0', 10)
-  const nb = parseInt(b.order_sav || '0', 10)
-  if (!isNaN(na) && !isNaN(nb) && (na !== 0 || nb !== 0)) return nb - na
-  return (b.order_sav || '').localeCompare(a.order_sav || '')
+  const sa = a.order_sav || ''
+  const sb = b.order_sav || ''
+  // Lignes sans numéro SAV → en bas
+  if (!sa && !sb) return 0
+  if (!sa) return 1
+  if (!sb) return -1
+  const na = savNum(sa)
+  const nb = savNum(sb)
+  if (na !== nb) return nb - na
+  return sb.localeCompare(sa)
 }
 
 function formatPrice(cents: number | null) {
