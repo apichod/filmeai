@@ -812,7 +812,7 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-gray-900">
-            Tag Booqable : <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono">{tag}</code>
+            Tag Booqable : <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono">{tag.toLowerCase()}</code>
           </h2>
           {synced && (
             <span className="text-xs text-gray-400">{orders.length} order{orders.length !== 1 ? 's' : ''}</span>
@@ -1102,6 +1102,10 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
 
 type Tab = 'chat' | 'open' | 'closed' | 'billed' | 'replacement' | 'repair' | 'log'
 
+const LATE_TAGS: TagConfig[] = [
+  { tag: 'late', label: 'En cours', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+]
+
 const CLOSED_TAGS: TagConfig[] = [
   { tag: 'late_returned', label: 'Retournés',  bgClass: 'bg-green-50',  textClass: 'text-green-700' },
   { tag: 'late_waived',   label: 'Offerts',    bgClass: 'bg-purple-50', textClass: 'text-purple-700' },
@@ -1118,7 +1122,7 @@ export default function ReturnsPage() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
-    { id: 'open',        label: 'Ouverts' },
+    { id: 'open',        label: 'En cours' },
     { id: 'closed',      label: 'Fermés' },
     { id: 'billed',      label: 'Facturés' },
     { id: 'replacement', label: 'En cours de remplacement' },
@@ -1156,7 +1160,7 @@ export default function ReturnsPage() {
             <ChatPanel />
           </div>
         )}
-        {tab === 'open'        && <BooqableOrdersTable tag="LATE" />}
+        {tab === 'open'        && <MultiTagBooqableOrdersTable tags={LATE_TAGS} />}
         {tab === 'closed'      && <MultiTagBooqableOrdersTable tags={CLOSED_TAGS} />}
         {tab === 'billed'      && <MultiTagBooqableOrdersTable tags={BILLED_TAGS} showPaymentStatus />}
         {tab === 'replacement' && <BooqableOrdersTable tag="TO_BE_REPLACED" />}
