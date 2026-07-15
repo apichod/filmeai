@@ -67,7 +67,10 @@ export async function GET(req: NextRequest) {
     recipient:  e.attributes.recipient  ?? null,
   }))
 
-  // On renvoie tous les emails (triés par -created_at côté Booqable)
-  // Le client affichera le premier (le plus récent)
+  // Log brut pour debug
+  if (data.data?.[0]) {
+    console.log('[booqable-email] raw attrs:', JSON.stringify(data.data[0].attributes, null, 2))
+  }
+
   return NextResponse.json({ emails })
 }
