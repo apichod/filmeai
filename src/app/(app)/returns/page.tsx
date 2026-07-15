@@ -1230,17 +1230,24 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                     <p className="text-xs text-gray-400 mb-2">Contenu</p>
                     <pre className="text-sm text-gray-700 leading-relaxed border border-gray-100 rounded-lg p-4 whitespace-pre-wrap font-sans break-words">
                       {(emailData.body || '')
+                        // Paragraphes vides (<p><br></p> ou <p></p>) = ligne blanche
+                        .replace(/<p[^>]*>\s*(<br\s*\/?>)?\s*<\/p>/gi, '\n\n')
+                        // Transition </p><p> = simple retour à la ligne
+                        .replace(/<\/p>\s*<p[^>]*>/gi, '\n')
+                        // <br> restants
                         .replace(/<br\s*\/?>/gi, '\n')
-                        .replace(/<\/p>/gi, '\n\n')
-                        .replace(/<\/div>/gi, '\n')
-                        .replace(/<\/tr>/gi, '\n')
+                        // Blocs div, tr
+                        .replace(/<\/(div|tr)>/gi, '\n')
+                        // Supprimer toutes les autres balises
                         .replace(/<[^>]+>/g, '')
+                        // Entités HTML
                         .replace(/&nbsp;/g, ' ')
                         .replace(/&amp;/g, '&')
                         .replace(/&lt;/g, '<')
                         .replace(/&gt;/g, '>')
                         .replace(/&quot;/g, '"')
                         .replace(/&#39;/g, "'")
+                        // Max 2 sauts consécutifs
                         .replace(/\n{3,}/g, '\n\n')
                         .trim() || '(corps vide)'}
                     </pre>
