@@ -678,7 +678,7 @@ function CasesTable() {
                     </th>
                   )}
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">#</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande SAV</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Type</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Problème</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date</th>
@@ -861,9 +861,9 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d'origine</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
@@ -1024,9 +1024,9 @@ function MultiTagBooqableOrdersTable({ tags, title }: { tags: TagConfig[]; title
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Statut</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d'origine</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
