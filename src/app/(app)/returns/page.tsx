@@ -1230,26 +1230,30 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                     <p className="text-xs text-gray-400 mb-2">Contenu</p>
                     <pre className="text-sm text-gray-700 leading-relaxed border border-gray-100 rounded-lg p-4 whitespace-pre-wrap font-sans break-words">
                       {(emailData.body || '')
-                        // <br> trailing avant </p> → on l'ignore (pas de double saut)
+                        // 1. <br> juste avant </p> = artefact de formatage, on supprime
                         .replace(/<br\s*\/?>\s*\n?\s*<\/p>/gi, '</p>')
-                        // </p> suivi d'un \n puis <p> = vrai paragraphe → ligne blanche
-                        .replace(/<\/p>\s*\n\s*<p[^>]*>/gi, '\n\n')
-                        // </p> directement collé à <p> = simple retour à la ligne
+                        // 2. <br><br> = vraie ligne vide (AVANT le traitement des <br> simples)
+                        .replace(/<br\s*\/?><br\s*\/?>/gi, '\n\n')
+                        // 3. <br>\n = la source HTML met un \n après <br> pour lisibilité → 1 seul saut
+                        .replace(/<br\s*\/?>\s*\n/gi, '\n')
+                        // 4. </p> + au moins un \n + <p> = nouveau paragraphe → ligne vide
+                        .replace(/<\/p>[ \t]*\n[ \t\n]*<p[^>]*>/gi, '\n\n')
+                        // 5. </p><p> adjacents (sans \n) = continuation du même bloc → saut simple
                         .replace(/<\/p><p[^>]*>/gi, '\n')
-                        // <br> inline → retour à la ligne
+                        // 6. <br> restants
                         .replace(/<br\s*\/?>/gi, '\n')
-                        // Blocs div, tr
+                        // 7. Fins de blocs
                         .replace(/<\/(div|tr)>/gi, '\n')
-                        // Supprimer toutes les balises restantes
+                        // 8. Supprimer toutes les balises
                         .replace(/<[^>]+>/g, '')
-                        // Entités HTML
+                        // 9. Entités HTML
                         .replace(/&nbsp;/g, ' ')
                         .replace(/&amp;/g, '&')
                         .replace(/&lt;/g, '<')
                         .replace(/&gt;/g, '>')
                         .replace(/&quot;/g, '"')
                         .replace(/&#39;/g, "'")
-                        // Max 2 sauts consécutifs
+                        // 10. Max 2 sauts consécutifs
                         .replace(/\n{3,}/g, '\n\n')
                         .trim() || '(corps vide)'}
                     </pre>
