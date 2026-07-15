@@ -1228,13 +1228,22 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                   {/* Corps */}
                   <div>
                     <p className="text-xs text-gray-400 mb-2">Contenu</p>
-                    {(() => {
-                      const body = emailData.body || ''
-                      const isHtml = /<[a-z][\s\S]*>/i.test(body)
-                      return isHtml
-                        ? <div className="text-sm text-gray-700 leading-relaxed border border-gray-100 rounded-lg p-4 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: body }} />
-                        : <pre className="text-sm text-gray-700 leading-relaxed border border-gray-100 rounded-lg p-4 whitespace-pre-wrap font-sans break-words">{body || '(corps vide)'}</pre>
-                    })()}
+                    <pre className="text-sm text-gray-700 leading-relaxed border border-gray-100 rounded-lg p-4 whitespace-pre-wrap font-sans break-words">
+                      {(emailData.body || '')
+                        .replace(/<br\s*\/?>/gi, '\n')
+                        .replace(/<\/p>/gi, '\n\n')
+                        .replace(/<\/div>/gi, '\n')
+                        .replace(/<\/tr>/gi, '\n')
+                        .replace(/<[^>]+>/g, '')
+                        .replace(/&nbsp;/g, ' ')
+                        .replace(/&amp;/g, '&')
+                        .replace(/&lt;/g, '<')
+                        .replace(/&gt;/g, '>')
+                        .replace(/&quot;/g, '"')
+                        .replace(/&#39;/g, "'")
+                        .replace(/\n{3,}/g, '\n\n')
+                        .trim() || '(corps vide)'}
+                    </pre>
                   </div>
                 </div>
               )}
