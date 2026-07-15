@@ -893,6 +893,8 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
             <tbody className="divide-y divide-gray-50">
               {orders.map(o => (
                 <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                  <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                   <td className="px-4 py-3">
                     <a
                       href={o.url}
@@ -906,8 +908,6 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
                       </svg>
                     </a>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
-                  <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
                   <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs max-w-xs whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
@@ -1076,6 +1076,8 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                         {o.tagConfig.label}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                    <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                     <td className="px-4 py-3">
                       <a
                         href={o.url}
@@ -1089,8 +1091,6 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                         </svg>
                       </a>
                     </td>
-                    <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
-                    <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs max-w-xs whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
