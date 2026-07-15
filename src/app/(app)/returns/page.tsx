@@ -972,7 +972,15 @@ function MultiTagBooqableOrdersTable({ tags, title }: { tags: TagConfig[]; title
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+          <h2 className="text-sm font-semibold text-gray-900">
+            Tag Booqable :{' '}
+            {tags.map((tc, i) => (
+              <span key={tc.tag}>
+                {i > 0 && <span className="font-normal text-gray-400"> et </span>}
+                <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono">{tc.tag}</code>
+              </span>
+            ))}
+          </h2>
           {synced && (
             <span className="text-xs text-gray-400">{rows.length} order{rows.length !== 1 ? 's' : ''}</span>
           )}
