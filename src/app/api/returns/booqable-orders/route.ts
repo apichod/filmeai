@@ -15,6 +15,7 @@ export type BooqableOrderRow = {
   stops_at: string
   status: string
   url: string
+  grand_total_in_cents: number | null
 }
 
 function headers() {
@@ -76,16 +77,17 @@ export async function GET(req: NextRequest) {
     const custId = attrs.customer_id
 
     return {
-      id:            order.id,
-      number:        attrs.number ?? '',
-      customer_name: custId ? (customerMap.get(custId) || '—') : '—',
-      order_sav:     props.order_sav  || '',
-      notes_sav:     props.notes_sav  || '',
-      date_sav:      props.date_sav   || '',
-      starts_at:     attrs.starts_at  || '',
-      stops_at:      attrs.stops_at   || '',
-      status:        attrs.status     || '',
-      url:           `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`,
+      id:                   order.id,
+      number:               attrs.number ?? '',
+      customer_name:        custId ? (customerMap.get(custId) || '—') : '—',
+      order_sav:            props.order_sav  || '',
+      notes_sav:            props.notes_sav  || '',
+      date_sav:             props.date_sav   || '',
+      starts_at:            attrs.starts_at  || '',
+      stops_at:             attrs.stops_at   || '',
+      status:               attrs.status     || '',
+      url:                  `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`,
+      grand_total_in_cents: attrs.grand_total_with_tax_in_cents ?? null,
     }
   })
 
@@ -113,5 +115,5 @@ type OrderProps = {
   date_sav?:  string | null
   [key: string]: string | null | undefined
 }
-type OrderAttrs    = { number?: string | number; status?: string; starts_at?: string; stops_at?: string; tag_list?: string | string[]; properties?: OrderProps; customer_id?: string }
+type OrderAttrs    = { number?: string | number; status?: string; starts_at?: string; stops_at?: string; tag_list?: string | string[]; properties?: OrderProps; customer_id?: string; grand_total_with_tax_in_cents?: number | null }
 type CustomerAttrs = { name?: string }

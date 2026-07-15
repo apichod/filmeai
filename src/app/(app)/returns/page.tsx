@@ -34,6 +34,11 @@ type ReturnCase = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function formatPrice(cents: number | null) {
+  if (cents === null || cents === undefined) return '—'
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(cents / 100)
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 }
@@ -751,6 +756,7 @@ type BooqableOrderRow = {
   stops_at: string
   status: string
   url: string
+  grand_total_in_cents: number | null
 }
 
 function BooqableOrdersTable({ tag }: { tag: string }) {
@@ -858,6 +864,7 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
@@ -881,6 +888,7 @@ function BooqableOrdersTable({ tag }: { tag: string }) {
                   </td>
                   <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                   <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                  <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs max-w-xs whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
@@ -1019,6 +1027,7 @@ function MultiTagBooqableOrdersTable({ tags, title }: { tags: TagConfig[]; title
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Order</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
@@ -1047,6 +1056,7 @@ function MultiTagBooqableOrdersTable({ tags, title }: { tags: TagConfig[]; title
                   </td>
                   <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                   <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                  <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs max-w-xs whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
