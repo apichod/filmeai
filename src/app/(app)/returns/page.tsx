@@ -988,10 +988,11 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                     <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                     <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
-                    <td className="px-4 py-3 text-gray-600 text-xs max-w-xs whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 text-xs w-56 max-w-56 whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      {fmtDate(o.starts_at)} → {fmtDate(o.stops_at)}
+                    <td className="px-4 py-3 text-gray-400 text-xs w-24">
+                      <div>{fmtDate(o.starts_at)}</div>
+                      <div>→ {fmtDate(o.stops_at)}</div>
                     </td>
                     {showPaymentMethod && (
                       <td className="px-4 py-3 text-xs text-gray-600">
@@ -1149,9 +1150,9 @@ const CLOSED_TAGS: TagConfig[] = [
 const PERTE_TAGS: TagConfig[] = [
   { tag: 'missing',          label: 'Perte',              bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
   { tag: 'missing_waived',   label: 'Perte graciée',      bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
-  { tag: 'missing_deposit',  label: 'Perte indemnisée',   bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
-  { tag: 'missing_billed_d', label: 'Perte indemnisée',   bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
-  { tag: 'missing_billed_w', label: 'Perte indemnisée',   bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
+  { tag: 'missing_deposit',  label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
+  { tag: 'missing_billed_d', label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
+  { tag: 'missing_billed_w', label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
 ]
 
 // ── Dommages (matériel endommagé) ─────────────────────────────────────────────
@@ -1211,7 +1212,7 @@ export default function ReturnsPage() {
         ))}
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {tab === 'chat' && (
           <div className="h-full" style={{ minHeight: '600px' }}>
             <ChatPanel />
