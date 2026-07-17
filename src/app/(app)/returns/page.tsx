@@ -1262,21 +1262,44 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
 
 // ── Page principale ────────────────────────────────────────────────────────────
 
-type Tab = 'chat' | 'open' | 'closed' | 'billed' | 'replacement' | 'repair' | 'log'
+type Tab = 'chat' | 'open' | 'closed' | 'pertes' | 'dommages' | 'replacement' | 'repair' | 'log'
 
+// ── En retard (retours tardifs) ───────────────────────────────────────────────
 const LATE_TAGS: TagConfig[] = [
   { tag: 'late', label: 'En retard', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
 ]
 
+// ── Retrouvés ─────────────────────────────────────────────────────────────────
 const CLOSED_TAGS: TagConfig[] = [
-  { tag: 'late_returned', label: 'Retournés', bgClass: 'bg-green-50', textClass: 'text-green-700' },
+  { tag: 'late_returned', label: 'Retrouvé', bgClass: 'bg-green-50', textClass: 'text-green-700' },
 ]
 
-const BILLED_TAGS: TagConfig[] = [
-  { tag: 'late_waived',   label: 'Offerts',             bgClass: 'bg-purple-50', textClass: 'text-purple-700' },
-  { tag: 'late_caution',  label: 'Pris sur la caution', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'late_billed_d', label: 'Facturé virement',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700' },
-  { tag: 'late_billed_w', label: 'Facturé CB',           bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
+// ── Pertes (matériel manquant) ────────────────────────────────────────────────
+const PERTE_TAGS: TagConfig[] = [
+  { tag: 'missing',          label: 'Manquant',                  bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'missing_waived',   label: 'Perte graciée',             bgClass: 'bg-purple-50', textClass: 'text-purple-700' },
+  { tag: 'missing_deposit',  label: 'Perte indemnisée (caution)', bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
+  { tag: 'missing_billed_d', label: 'Perte facturée (direct)',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700'   },
+  { tag: 'missing_billed_w', label: 'Perte facturée (webshop)',   bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
+]
+
+// ── Dommages (matériel endommagé) ─────────────────────────────────────────────
+const DAMAGE_TAGS: TagConfig[] = [
+  { tag: 'damage',           label: 'Dommage',                    bgClass: 'bg-red-50',    textClass: 'text-red-700'    },
+  { tag: 'damage_deposit',   label: 'Dommage indemnisé (caution)', bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
+  { tag: 'damage_billed_d',  label: 'Dommage facturé (direct)',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700'   },
+  { tag: 'damage_billed_w',  label: 'Dommage facturé (webshop)',   bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
+]
+
+// ── Gestion interne ───────────────────────────────────────────────────────────
+const REPLACE_TAGS: TagConfig[] = [
+  { tag: 'replacement_pending', label: 'À remplacer', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'replaced',            label: 'Remplacé',    bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
+]
+
+const REPAIR_TAGS: TagConfig[] = [
+  { tag: 'repair_pending', label: 'À réparer', bgClass: 'bg-amber-50', textClass: 'text-amber-700' },
+  { tag: 'repaired',       label: 'Réparé',    bgClass: 'bg-green-50', textClass: 'text-green-700' },
 ]
 
 export default function ReturnsPage() {
@@ -1285,8 +1308,9 @@ export default function ReturnsPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
     { id: 'open',        label: 'En retard' },
-    { id: 'closed',      label: 'Retournés en retard' },
-    { id: 'billed',      label: 'Non retournés' },
+    { id: 'closed',      label: 'Retrouvés' },
+    { id: 'pertes',      label: 'Pertes' },
+    { id: 'dommages',    label: 'Dommages' },
     { id: 'replacement', label: 'À remplacer' },
     { id: 'repair',      label: 'À réparer' },
     { id: 'log',         label: 'Log' },
@@ -1324,9 +1348,10 @@ export default function ReturnsPage() {
         )}
         {tab === 'open'        && <MultiTagBooqableOrdersTable tags={LATE_TAGS} />}
         {tab === 'closed'      && <MultiTagBooqableOrdersTable tags={CLOSED_TAGS} />}
-        {tab === 'billed'      && <MultiTagBooqableOrdersTable tags={BILLED_TAGS} showPaymentStatus />}
-        {tab === 'replacement' && <BooqableOrdersTable tag="TO_BE_REPLACED" />}
-        {tab === 'repair'      && <BooqableOrdersTable tag="TO_BE_REPAIRED" />}
+        {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS} showPaymentStatus />}
+        {tab === 'dommages'    && <MultiTagBooqableOrdersTable tags={DAMAGE_TAGS} showPaymentStatus />}
+        {tab === 'replacement' && <MultiTagBooqableOrdersTable tags={REPLACE_TAGS} />}
+        {tab === 'repair'      && <MultiTagBooqableOrdersTable tags={REPAIR_TAGS} />}
         {tab === 'log'         && <CasesTable />}
       </div>
     </div>
