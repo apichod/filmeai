@@ -20,22 +20,13 @@ const TEMPLATE_GROUP_ORDER = [
   'facturation_casse',
 ]
 
-// Ordre des cas par template (priorité assurance+caution → assurance → caution → aucun)
+// Ordre des cas par template
 const TEMPLATE_CASE_ORDER: Record<string, string[]> = {
   retour_casse: [
     'insurance_caution',
     'insurance_no_caution',
     'no_insurance_caution',
     'no_insurance_no_caution',
-  ],
-  facturation_casse: [
-    'insurance_caution_high',
-    'insurance_caution_low',
-    'insurance_no_caution_high',
-    'insurance_no_caution_low',
-    'no_insurance_caution',
-    'no_insurance_no_caution',
-    'late_payment',
   ],
   facturation_perdu: [
     'insurance_caution',
@@ -45,10 +36,19 @@ const TEMPLATE_CASE_ORDER: Record<string, string[]> = {
     'late_payment',
   ],
   facturation_vole: [
-    'insurance_caution_high',
     'insurance_caution_low',
-    'insurance_no_caution_high',
+    'insurance_caution_high',
     'insurance_no_caution_low',
+    'insurance_no_caution_high',
+    'no_insurance_caution',
+    'no_insurance_no_caution',
+    'late_payment',
+  ],
+  facturation_casse: [
+    'insurance_caution_low',
+    'insurance_caution_high',
+    'insurance_no_caution_low',
+    'insurance_no_caution_high',
     'no_insurance_caution',
     'no_insurance_no_caution',
     'late_payment',
@@ -62,6 +62,31 @@ const CASE_LABELS: Record<string, Record<string, string>> = {
     insurance_no_caution:       'Avec assurance, sans caution',
     no_insurance_caution:       'Sans assurance, avec caution',
     no_insurance_no_caution:    'Sans assurance, sans caution',
+  },
+  facturation_perdu: {
+    insurance_caution:          'Avec assurance, avec caution',
+    insurance_no_caution:       'Avec assurance, sans caution',
+    no_insurance_caution:       'Sans assurance, avec caution',
+    no_insurance_no_caution:    'Sans assurance, sans caution',
+    late_payment:               'Retard de paiement',
+  },
+  facturation_vole: {
+    insurance_caution_low:      'Avec assurance, avec caution, valeur < 500 €',
+    insurance_caution_high:     'Avec assurance, avec caution, valeur > 500 €',
+    insurance_no_caution_low:   'Avec assurance, sans caution, valeur < 500 €',
+    insurance_no_caution_high:  'Avec assurance, sans caution, valeur > 500 €',
+    no_insurance_caution:       'Sans assurance, avec caution',
+    no_insurance_no_caution:    'Sans assurance, sans caution',
+    late_payment:               'Retard de paiement',
+  },
+  facturation_casse: {
+    insurance_caution_low:      'Avec assurance, avec caution, valeur < 500 €',
+    insurance_caution_high:     'Avec assurance, avec caution, valeur > 500 €',
+    insurance_no_caution_low:   'Avec assurance, sans caution, valeur < 500 €',
+    insurance_no_caution_high:  'Avec assurance, sans caution, valeur > 500 €',
+    no_insurance_caution:       'Sans assurance, avec caution',
+    no_insurance_no_caution:    'Sans assurance, sans caution',
+    late_payment:               'Retard de paiement',
   },
 }
 
