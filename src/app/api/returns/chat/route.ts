@@ -522,12 +522,12 @@ export async function POST(req: NextRequest) {
 
   const { messages, caseId = null, scenario = null } = body
 
-  // Charge le prompt système depuis la DB (ou fallback)
+  // Charge le prompt du workflow correspondant au scénario (ou tous si pas de scénario)
   const supabase = getSupabaseAdmin()
-  const { data: workflows } = await supabase
-    .from('return_workflows')
-    .select('slug, prompt')
-    .eq('is_active', true)
+  let query = supabase.from('return_workflows').select('slug, prompt').eq('is_active', true)
+  if (scenario) query = query.eq('slug', scenario)
+
+  const { data: workflows } = await query
 
   const combinedPrompt = (workflows || [])
     .map(w => w.prompt)
