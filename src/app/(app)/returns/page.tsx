@@ -944,8 +944,8 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
               <tr className="border-b border-gray-100">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Statut</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande SAV</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d&apos;origine</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
@@ -985,8 +985,8 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                         </svg>
                       </a>
                     </td>
-                    <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                     <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                    <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs w-56 max-w-56 whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs w-24">
                       <div>{fmtDate(o.starts_at)}</div>
