@@ -1162,7 +1162,7 @@ export default function ReturnsPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
     { id: 'open',        label: 'En retard' },
-    { id: 'closed',      label: 'Retrouvés' },
+    { id: 'closed',      label: 'Rendu en retard' },
     { id: 'pertes',      label: 'Pertes' },
     { id: 'dommages',    label: 'Dommages' },
     { id: 'replacement', label: 'À remplacer' },
