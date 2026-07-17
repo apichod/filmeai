@@ -524,13 +524,30 @@ export async function POST(req: NextRequest) {
 
   // Charge le prompt du workflow correspondant au scénario (ou tous si pas de scénario)
   const supabase = getSupabaseAdmin()
-  let query = supabase.from('return_workflows').select('slug, prompt').eq('is_active', true)
+  let query = supabase.from('return_workflows').select('slug, prompt, steps').eq('is_active', true)
   if (scenario) query = query.eq('slug', scenario)
 
   const { data: workflows } = await query
 
+  // Convertit les étapes structurées en instructions lisibles par l'IA
+  function stepsToPrompt(steps: Array<{ type: string; title: string; description?: string; booqable_action?: string }>): string {
+    if (!steps || steps.length === 0) return ''
+    const lines = steps.map((s, i) => {
+      const tag = s.type === 'action' ? '[ACTION]' : s.type === 'question' ? '[QUESTION]' : '[INSTRUCTION]'
+      const tool = s.booqable_action ? ` → ${s.booqable_action}` : ''
+      const desc = s.description ? ` : ${s.description}` : ''
+      return `${i + 1}. ${tag} ${s.title}${tool}${desc}`
+    })
+    return 'ÉTAPES À SUIVRE (dans cet ordre) :\n' + lines.join('\n')
+  }
+
   const combinedPrompt = (workflows || [])
-    .map(w => w.prompt)
+    .map(w => {
+      const stepsPart = stepsToPrompt(w.steps || [])
+      const promptPart = (w.prompt || '').trim()
+      return [stepsPart, promptPart].filter(Boolean).join('\n\n')
+    })
+    .filter(Boolean)
     .join('\n\n---\n\n')
 
   const uuidReminder = `

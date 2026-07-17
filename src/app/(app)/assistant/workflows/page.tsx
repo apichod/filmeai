@@ -188,6 +188,7 @@ export default function WorkflowsPage() {
   const [creating, setCreating] = useState(false)
 
   // Champs en cours d'édition
+  const [editSlug, setEditSlug] = useState('')
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editPrompt, setEditPrompt] = useState('')
@@ -210,6 +211,7 @@ export default function WorkflowsPage() {
   function select(wf: Workflow) {
     setSelected(wf)
     setEditing(false)
+    setEditSlug(wf.slug)
     setEditName(wf.name)
     setEditDescription(wf.description)
     setEditPrompt(wf.prompt)
@@ -227,6 +229,7 @@ export default function WorkflowsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: selected.id,
+          slug: editSlug,
           name: editName,
           description: editDescription,
           prompt: editPrompt,
@@ -236,7 +239,7 @@ export default function WorkflowsPage() {
       })
       if (!res.ok) throw new Error('Erreur serveur')
 
-      const updated = { ...selected, name: editName, description: editDescription, prompt: editPrompt, steps: editSteps, is_active: editActive }
+      const updated = { ...selected, slug: editSlug, name: editName, description: editDescription, prompt: editPrompt, steps: editSteps, is_active: editActive }
       setWorkflows(prev => prev.map(w => w.id === selected.id ? updated : w))
       setSelected(updated)
       setEditing(false)
@@ -244,6 +247,21 @@ export default function WorkflowsPage() {
       setTimeout(() => setSaved(false), 2000)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function deleteWorkflow(wf: Workflow) {
+    if (!confirm(`Supprimer le workflow "${wf.name}" ?`)) return
+    await fetch('/api/returns/workflows', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: wf.id }),
+    })
+    const remaining = workflows.filter(w => w.id !== wf.id)
+    setWorkflows(remaining)
+    if (selected?.id === wf.id) {
+      if (remaining.length > 0) select(remaining[0])
+      else setSelected(null)
     }
   }
 
@@ -357,20 +375,30 @@ export default function WorkflowsPage() {
         {/* Liste des workflows */}
         <div className="w-52 shrink-0 space-y-1">
           {workflows.map(wf => (
-            <button
-              key={wf.id}
-              onClick={() => select(wf)}
-              className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors text-sm ${
-                selected?.id === wf.id
-                  ? 'bg-black text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <div className="font-medium">{wf.name}</div>
-              <div className={`text-xs mt-0.5 ${selected?.id === wf.id ? 'text-white/60' : 'text-gray-400'}`}>
-                {wf.steps?.length || 0} étapes
-              </div>
-            </button>
+            <div key={wf.id} className="group relative">
+              <button
+                onClick={() => select(wf)}
+                className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors text-sm ${
+                  selected?.id === wf.id
+                    ? 'bg-black text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <div className="font-medium pr-5">{wf.name}</div>
+                <div className={`text-xs mt-0.5 font-mono ${selected?.id === wf.id ? 'text-white/50' : 'text-gray-400'}`}>
+                  {wf.slug} · {wf.steps?.length || 0} étapes
+                </div>
+              </button>
+              <button
+                onClick={() => deleteWorkflow(wf)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-red-500 transition-all"
+                title="Supprimer"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           ))}
         </div>
 
@@ -410,6 +438,17 @@ export default function WorkflowsPage() {
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  Slug <span className="text-gray-400 font-normal">(doit correspondre au scénario chat : late · late_returned · late_partial · missing · damage)</span>
+                </label>
+                <input
+                  value={editSlug}
+                  onChange={e => { setEditSlug(e.target.value); setEditing(true) }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gray-300"
+                  placeholder="ex: late"
+                />
               </div>
             </div>
 

@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const body = await req.json() as {
     id: string
+    slug?: string
     name?: string
     description?: string
     prompt?: string
@@ -68,6 +69,7 @@ export async function PATCH(req: NextRequest) {
   const supabase = getSupabaseAdmin()
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
 
+  if (body.slug        !== undefined) patch.slug        = body.slug
   if (body.name        !== undefined) patch.name        = body.name
   if (body.description !== undefined) patch.description = body.description
   if (body.prompt      !== undefined) patch.prompt      = body.prompt
@@ -75,6 +77,17 @@ export async function PATCH(req: NextRequest) {
   if (body.is_active   !== undefined) patch.is_active   = body.is_active
 
   const { error } = await supabase.from('return_workflows').update(patch).eq('id', body.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
+}
+
+// ── DELETE — supprimer un workflow ────────────────────────────────────────────
+export async function DELETE(req: NextRequest) {
+  const { id } = await req.json() as { id: string }
+  if (!id) return NextResponse.json({ error: 'id manquant' }, { status: 400 })
+
+  const supabase = getSupabaseAdmin()
+  const { error } = await supabase.from('return_workflows').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }
