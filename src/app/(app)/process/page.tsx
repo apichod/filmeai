@@ -82,7 +82,6 @@ function ProcessFlow({ process: p, onEdit }: { process: Process; onEdit: (step: 
 
 // ── Step box (numéroté) ───────────────────────────────────────────────────────
 
-let stepCounter = 0
 function StepBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(step.text || '')
@@ -202,7 +201,7 @@ function CasesBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: s
     setEditingTitle(false)
     onEdit(step, 'title', v)
   }
-  function commitLine(idx: number) {
+  function commitLine() {
     setEditingIdx(null)
     onEdit(step, 'lines', JSON.stringify(vals))
   }
@@ -233,8 +232,8 @@ function CasesBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: s
               autoFocus
               value={line}
               onChange={e => { const n = [...vals]; n[i] = e.target.value; setVals(n) }}
-              onBlur={() => commitLine(i)}
-              onKeyDown={e => { if (e.key === 'Enter') commitLine(i); if (e.key === 'Escape') { setVals(step.lines || []); setEditingIdx(null) } }}
+              onBlur={() => commitLine()}
+              onKeyDown={e => { if (e.key === 'Enter') commitLine(); if (e.key === 'Escape') { setVals(step.lines || []); setEditingIdx(null) } }}
               className="flex-1 text-sm border border-[#4a86e8] rounded px-1 py-0.5 focus:outline-none"
             />
           ) : (
