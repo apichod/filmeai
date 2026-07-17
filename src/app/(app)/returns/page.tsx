@@ -1050,14 +1050,6 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
               · Sync {new Date(syncedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
-          {/* Légende */}
-          <div className="flex items-center gap-2 ml-2">
-            {tags.map(tc => (
-              <span key={tc.tag} className={`px-2 py-0.5 rounded-full text-xs font-medium ${tc.bgClass} ${tc.textClass}`}>
-                {tc.label}
-              </span>
-            ))}
-          </div>
         </div>
         <button
           onClick={sync}
@@ -1277,13 +1269,13 @@ const LATE_TAGS: TagConfig[] = [
 ]
 
 const CLOSED_TAGS: TagConfig[] = [
-  { tag: 'late_returned', label: 'Retournés',  bgClass: 'bg-green-50',  textClass: 'text-green-700' },
-  { tag: 'late_waived',   label: 'Offerts',    bgClass: 'bg-purple-50', textClass: 'text-purple-700' },
+  { tag: 'late_returned', label: 'Retournés', bgClass: 'bg-green-50', textClass: 'text-green-700' },
 ]
 
 const BILLED_TAGS: TagConfig[] = [
+  { tag: 'late_waived',   label: 'Offerts',             bgClass: 'bg-purple-50', textClass: 'text-purple-700' },
   { tag: 'late_caution',  label: 'Pris sur la caution', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'late_billed_d', label: 'Facturé virement',     bgClass: 'bg-blue-50',   textClass: 'text-blue-700' },
+  { tag: 'late_billed_d', label: 'Facturé virement',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700' },
   { tag: 'late_billed_w', label: 'Facturé CB',           bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
 ]
 
@@ -1293,8 +1285,8 @@ export default function ReturnsPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
     { id: 'open',        label: 'En retard' },
-    { id: 'closed',      label: 'Retournés' },
-    { id: 'billed',      label: 'Facturés' },
+    { id: 'closed',      label: 'Retournés en retard' },
+    { id: 'billed',      label: 'Non retournés' },
     { id: 'replacement', label: 'À remplacer' },
     { id: 'repair',      label: 'À réparer' },
     { id: 'log',         label: 'Log' },
