@@ -63,15 +63,15 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'add_tag',
-      description: 'Ajoute un ou plusieurs tags à une SAV order Booqable. Pour une casse : tags=["LATE","TO_BE_REPAIRED"]. Pour un retard seul : tags=["LATE"].',
+      description: 'Ajoute un ou plusieurs tags à une SAV order Booqable selon le scénario actif.',
       parameters: {
         type: 'object',
         properties: {
           order_id: { type: 'string', description: 'UUID Booqable de la SAV order — utiliser le champ "id" retourné par create_sav_order' },
           tags: {
             type: 'array',
-            items: { type: 'string', enum: ['LATE', 'TO_BE_REPAIRED'] },
-            description: 'Liste de tags à ajouter. Casse → ["TO_BE_REPAIRED","LATE"]. Retard → ["LATE"].',
+            items: { type: 'string', enum: ['late', 'late_returned', 'missing', 'damage', 'TO_BE_REPAIRED'] },
+            description: 'Tags à ajouter selon le scénario : En retard → ["late"] | Rendu en retard → ["late_returned"] | Perte → ["missing"] | Dommage → ["damage"] | Casse à réparer → ["damage","TO_BE_REPAIRED"].',
           },
         },
         required: ['order_id', 'tags'],
@@ -416,6 +416,100 @@ async function executeTool(
   }
 }
 
+// ── Prompts par scénario ──────────────────────────────────────────────────────
+
+function buildScenarioPrompt(scenario: string | null | undefined): string {
+  switch (scenario) {
+    case 'late':
+      return `
+═══════════════════════════════════════════════════
+SCÉNARIO ACTIF : EN RETARD
+═══════════════════════════════════════════════════
+Le matériel n'a pas été rendu. Il est toujours chez le client.
+Workflow :
+1. fetch_order → afficher les articles de la commande.
+2. Si pas déjà précisé : "Quels articles n'ont pas été rendus ?"
+3. B0 : demander à l'opérateur de retourner manuellement les articles dans Booqable, attendre confirmation.
+4. create_sav_order(customer_id, return_days=30)
+5. add_sav_line pour chaque article non rendu.
+6. add_tag : tags=["late"]
+7. add_sav_comment(origin_order_number, détail)
+8. log_case(problem_type="manquant", problem_description="Retard - matériel non rendu")
+9. Pas d'email automatique sauf si l'opérateur le demande.`
+
+    case 'late_returned':
+      return `
+═══════════════════════════════════════════════════
+SCÉNARIO ACTIF : RENDU EN RETARD
+═══════════════════════════════════════════════════
+Tout le matériel a été rendu, mais avec du retard. Pas de dommage.
+Workflow :
+1. fetch_order → confirmer les articles.
+2. B0 : si pas encore fait, demander à l'opérateur de retourner les articles dans Booqable, attendre confirmation.
+3. create_sav_order(customer_id)
+4. add_sav_line pour les articles rendus en retard.
+5. add_tag : tags=["late_returned"]
+6. add_sav_comment(origin_order_number, "Rendu en retard — tout OK")
+7. log_case(problem_type="manquant", problem_description="Rendu en retard - tout OK")
+8. draft_email template=retour_ok (customer_name, customer_email, order_number) → proposer l'envoi.`
+
+    case 'late_partial':
+      return `
+═══════════════════════════════════════════════════
+SCÉNARIO ACTIF : RENDU EN RETARD PARTIEL
+═══════════════════════════════════════════════════
+Une partie du matériel a été rendue (avec retard), le reste est encore manquant.
+Workflow :
+1. fetch_order → afficher tous les articles.
+2. "Quels articles ont été rendus ? Lesquels sont encore manquants ?"
+3. B0 : demander à l'opérateur de retourner manuellement dans Booqable les articles rendus, attendre confirmation.
+4. create_sav_order(customer_id)
+5. add_sav_line UNIQUEMENT pour les articles encore manquants.
+6. add_tag : tags=["late"] (pour les articles encore en attente)
+7. add_sav_comment avec la liste des articles rendus vs manquants.
+8. log_case(problem_type="manquant", problem_description="Rendu partiel en retard - articles manquants : ...")
+9. Pas d'email automatique sauf si demandé.`
+
+    case 'missing':
+      return `
+═══════════════════════════════════════════════════
+SCÉNARIO ACTIF : PERTE
+═══════════════════════════════════════════════════
+Le matériel est perdu ou volé. Non rendu, confirmé perdu.
+Workflow :
+1. fetch_order → identifier les articles perdus.
+2. Poser les questions : "Le client a-t-il souscrit une assurance ? Y a-t-il une caution active sur la commande ?"
+3. B0 : demander à l'opérateur de retourner les articles dans Booqable, attendre confirmation.
+4. create_sav_order(customer_id, full_discount=true)
+5. add_sav_line pour chaque article perdu.
+6. add_tag : tags=["missing"]
+7. add_sav_comment(origin_order_number, détail de la perte)
+8. log_case(problem_type="manquant", problem_description="Perte - ...", metadata={insurance, caution})
+9. draft_email template=retour_manquant (customer_name, customer_email, origin_order_number, sav_comment, insurance, caution) → proposer l'envoi.`
+
+    case 'damage':
+      return `
+═══════════════════════════════════════════════════
+SCÉNARIO ACTIF : DOMMAGE
+═══════════════════════════════════════════════════
+Du matériel a été endommagé à son retour.
+Workflow :
+1. fetch_order → identifier les articles endommagés.
+2. Poser : "Le client a-t-il souscrit une assurance ? Y a-t-il une caution active ?"
+3. Déterminer le cas (1: assurance+caution / 2: assurance seule / 3: caution seule / 4: aucun)
+4. B0 : demander à l'opérateur de retourner les articles dans Booqable, attendre confirmation.
+5. create_sav_order(customer_id)
+6. add_sav_line pour chaque article endommagé (avec stock_item_id si trackable et connu).
+7. add_tag : tags=["damage"]
+8. add_sav_comment(origin_order_number, détail + cas)
+9. log_case(problem_type="casse", problem_description="Dommage - ...", metadata={insurance, caution, cas})
+10. draft_email template=retour_casse (customer_name, customer_email, origin_order_number, sav_comment, insurance, caution) → proposer l'envoi.`
+
+    default:
+      return ''
+  }
+}
+
 // ── Route principale ──────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -423,9 +517,10 @@ export async function POST(req: NextRequest) {
     messages: OpenAI.Chat.ChatCompletionMessageParam[]
     workflowSlug?: string  // 'manquant' | 'casse' (facultatif, l'IA détecte)
     caseId?: string
+    scenario?: string | null
   }
 
-  const { messages, caseId = null } = body
+  const { messages, caseId = null, scenario = null } = body
 
   // Charge le prompt système depuis la DB (ou fallback)
   const supabase = getSupabaseAdmin()
@@ -546,9 +641,12 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
 - customer_id pour create_sav_order = champ "customer_id" de fetch_order.
 - Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.`
 
-  const systemPrompt = combinedPrompt
+  const scenarioSection = buildScenarioPrompt(scenario)
+
+  const systemPrompt = (combinedPrompt
     ? combinedPrompt + '\n\n' + uuidReminder
-    : `Tu es un assistant de gestion des retours. Guide le responsable de stock étape par étape.\n\n${uuidReminder}`
+    : `Tu es un assistant de gestion des retours. Guide le responsable de stock étape par étape.\n\n${uuidReminder}`)
+    + (scenarioSection ? '\n\n' + scenarioSection : '')
 
   const systemMessage: OpenAI.Chat.ChatCompletionSystemMessageParam = {
     role: 'system',

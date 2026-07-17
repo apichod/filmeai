@@ -191,6 +191,43 @@ function toolSummary(name: string, result: string | undefined): string | null {
   return null
 }
 
+// ── Scénarios ──────────────────────────────────────────────────────────────────
+
+type Scenario = 'late' | 'late_returned' | 'late_partial' | 'missing' | 'damage'
+
+const SCENARIOS: { id: Scenario; label: string; desc: string; welcome: string }[] = [
+  {
+    id: 'late',
+    label: 'En retard',
+    desc: 'Le matériel n\'a pas encore été rendu',
+    welcome: 'Scénario En retard sélectionné.\nDonnez-moi le numéro de la commande d\'origine.',
+  },
+  {
+    id: 'late_returned',
+    label: 'Rendu en retard',
+    desc: 'Tout a été rendu, avec du retard',
+    welcome: 'Scénario Rendu en retard sélectionné.\nDonnez-moi le numéro de la commande d\'origine.',
+  },
+  {
+    id: 'late_partial',
+    label: 'Rendu en retard partiel',
+    desc: 'Une partie du matériel a été rendue',
+    welcome: 'Scénario Rendu en retard partiel sélectionné.\nDonnez-moi le numéro de la commande d\'origine et précisez quels articles ont été rendus.',
+  },
+  {
+    id: 'missing',
+    label: 'Perte',
+    desc: 'Du matériel est perdu ou volé',
+    welcome: 'Scénario Perte sélectionné.\nDonnez-moi le numéro de la commande d\'origine.',
+  },
+  {
+    id: 'damage',
+    label: 'Dommage',
+    desc: 'Du matériel a été endommagé',
+    welcome: 'Scénario Dommage sélectionné.\nDonnez-moi le numéro de la commande d\'origine.',
+  },
+]
+
 // ── Composant Chat ─────────────────────────────────────────────────────────────
 
 function ChatPanel() {
@@ -204,6 +241,7 @@ function ChatPanel() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [caseId, setCaseId] = useState<string | null>(null)
+  const [scenario, setScenario] = useState<Scenario | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -233,7 +271,7 @@ function ChatPanel() {
       const res = await fetch('/api/returns/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, caseId }),
+        body: JSON.stringify({ messages: apiMessages, caseId, scenario }),
       })
 
       if (!res.body) throw new Error('No body')
@@ -350,7 +388,7 @@ function ChatPanel() {
       const res = await fetch('/api/returns/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, caseId }),
+        body: JSON.stringify({ messages: apiMessages, caseId, scenario }),
       })
       if (!res.body) throw new Error('No body')
 
@@ -437,6 +475,7 @@ function ChatPanel() {
   })() : []
 
   function reset() {
+    setScenario(null)
     setMessages([{
       id: 'welcome',
       role: 'assistant',
@@ -446,11 +485,42 @@ function ChatPanel() {
     setInput('')
   }
 
+  function selectScenario(s: Scenario) {
+    const cfg = SCENARIOS.find(x => x.id === s)!
+    setScenario(s)
+    setMessages([{ id: 'welcome', role: 'assistant', content: cfg.welcome }])
+    setCaseId(null)
+    setInput('')
+  }
+
+  // ── Sélecteur de scénario ──────────────────────────────────────────────────
+  if (!scenario) return (
+    <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="flex items-center px-5 py-3 border-b border-gray-100">
+        <h2 className="text-sm font-semibold text-gray-900">Quel type de problème ?</h2>
+      </div>
+      <div className="flex-1 p-5 flex flex-col gap-3 overflow-y-auto">
+        {SCENARIOS.map(s => (
+          <button
+            key={s.id}
+            onClick={() => selectScenario(s.id)}
+            className="text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-all group"
+          >
+            <div className="text-sm font-medium text-gray-900 group-hover:text-black">{s.label}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{s.desc}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
   return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900">Assistant retours</h2>
+          <h2 className="text-sm font-semibold text-gray-900">
+            {SCENARIOS.find(s => s.id === scenario)?.label ?? 'Assistant retours'}
+          </h2>
           {caseId && <p className="text-xs text-green-600 mt-0.5">Cas actif en cours de traitement</p>}
         </div>
         <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
