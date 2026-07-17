@@ -1157,10 +1157,11 @@ const PERTE_TAGS: TagConfig[] = [
 
 // ── Dommages (matériel endommagé) ─────────────────────────────────────────────
 const DAMAGE_TAGS: TagConfig[] = [
-  { tag: 'damage',           label: 'Dommage',                      bgClass: 'bg-red-50',    textClass: 'text-red-700'    },
-  { tag: 'damage_deposit',   label: 'Dommage indemnisé (caution)',  bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
-  { tag: 'damage_billed_d',  label: 'Dommage indemnisé (virement)', bgClass: 'bg-blue-50',   textClass: 'text-blue-700'   },
-  { tag: 'damage_billed_w',  label: 'Dommage indemnisé (CB)',       bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
+  { tag: 'damage',           label: 'Dommage',          bgClass: 'bg-red-50',   textClass: 'text-red-700'   },
+  { tag: 'damage_waived',    label: 'Dommage gracié',   bgClass: 'bg-green-50', textClass: 'text-green-700' },
+  { tag: 'damage_deposit',   label: 'Dommage facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700', paymentColored: true, paymentMethod: 'Caution'  },
+  { tag: 'damage_billed_d',  label: 'Dommage facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700', paymentColored: true, paymentMethod: 'Virement' },
+  { tag: 'damage_billed_w',  label: 'Dommage facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700', paymentColored: true, paymentMethod: 'CB'       },
 ]
 
 // ── Gestion interne ───────────────────────────────────────────────────────────
@@ -1221,7 +1222,7 @@ export default function ReturnsPage() {
         {tab === 'open'        && <MultiTagBooqableOrdersTable tags={LATE_TAGS} />}
         {tab === 'closed'      && <MultiTagBooqableOrdersTable tags={CLOSED_TAGS} />}
         {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS} showPaymentStatus showPaymentMethod />}
-        {tab === 'dommages'    && <MultiTagBooqableOrdersTable tags={DAMAGE_TAGS} showPaymentStatus />}
+        {tab === 'dommages'    && <MultiTagBooqableOrdersTable tags={DAMAGE_TAGS} showPaymentStatus showPaymentMethod />}
         {tab === 'replacement' && <MultiTagBooqableOrdersTable tags={REPLACE_TAGS} />}
         {tab === 'repair'      && <MultiTagBooqableOrdersTable tags={REPAIR_TAGS} />}
         {tab === 'log'         && <CasesTable />}
