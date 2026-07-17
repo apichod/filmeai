@@ -1125,24 +1125,24 @@ const LATE_TAGS: TagConfig[] = [
 
 // ── Retrouvés ─────────────────────────────────────────────────────────────────
 const CLOSED_TAGS: TagConfig[] = [
-  { tag: 'late_returned', label: 'Retrouvé', bgClass: 'bg-green-50', textClass: 'text-green-700' },
+  { tag: 'late_returned', label: 'Rendu en retard', bgClass: 'bg-green-50', textClass: 'text-green-700' },
 ]
 
 // ── Pertes (matériel manquant) ────────────────────────────────────────────────
 const PERTE_TAGS: TagConfig[] = [
-  { tag: 'missing',          label: 'Manquant',                  bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'missing_waived',   label: 'Perte graciée',             bgClass: 'bg-purple-50', textClass: 'text-purple-700' },
+  { tag: 'missing',          label: 'Perte',                      bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'missing_waived',   label: 'Perte graciée',              bgClass: 'bg-purple-50', textClass: 'text-purple-700' },
   { tag: 'missing_deposit',  label: 'Perte indemnisée (caution)', bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
-  { tag: 'missing_billed_d', label: 'Perte facturée (direct)',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700'   },
-  { tag: 'missing_billed_w', label: 'Perte facturée (webshop)',   bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
+  { tag: 'missing_billed_d', label: 'Perte indemnisée (virement)',bgClass: 'bg-blue-50',   textClass: 'text-blue-700'   },
+  { tag: 'missing_billed_w', label: 'Perte indemnisée (CB)',      bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
 ]
 
 // ── Dommages (matériel endommagé) ─────────────────────────────────────────────
 const DAMAGE_TAGS: TagConfig[] = [
-  { tag: 'damage',           label: 'Dommage',                    bgClass: 'bg-red-50',    textClass: 'text-red-700'    },
-  { tag: 'damage_deposit',   label: 'Dommage indemnisé (caution)', bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
-  { tag: 'damage_billed_d',  label: 'Dommage facturé (direct)',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700'   },
-  { tag: 'damage_billed_w',  label: 'Dommage facturé (webshop)',   bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
+  { tag: 'damage',           label: 'Dommage',                      bgClass: 'bg-red-50',    textClass: 'text-red-700'    },
+  { tag: 'damage_deposit',   label: 'Dommage indemnisé (caution)',  bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
+  { tag: 'damage_billed_d',  label: 'Dommage indemnisé (virement)', bgClass: 'bg-blue-50',   textClass: 'text-blue-700'   },
+  { tag: 'damage_billed_w',  label: 'Dommage indemnisé (CB)',       bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
 ]
 
 // ── Gestion interne ───────────────────────────────────────────────────────────
