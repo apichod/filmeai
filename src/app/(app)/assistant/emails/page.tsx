@@ -164,7 +164,10 @@ export default function EmailTemplatesPage() {
                           {c.slug}
                         </code>
                       )}
-                      {c.conditions && Object.entries(c.conditions).map(([k, v]) => (
+                      {c.conditions && (['insurance', 'caution', 'amountAbove500', 'latePayment'] as const)
+                        .filter(k => k in c.conditions)
+                        .map(k => [k, c.conditions[k]] as [string, boolean])
+                        .map(([k, v]) => (
                         <span key={k} className={`px-2 py-0.5 rounded-full text-xs font-medium ${v ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                           {k === 'insurance' ? (v ? '✓ assurance' : '✗ assurance') :
                            k === 'caution' ? (v ? '✓ caution' : '✗ caution') :
