@@ -946,10 +946,10 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d&apos;origine</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 {showPaymentMethod && <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Moyen de paiement</th>}
                 {showPaymentStatus && <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Paiement</th>}
                 {showPaymentStatus && <th className="px-4 py-3" />}
@@ -987,13 +987,13 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                     </td>
                     <td className="px-4 py-3 text-gray-700">{o.customer_name}</td>
                     <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
-                    <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs w-56 max-w-56 whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs w-24">
                       <div>{fmtDate(o.starts_at)}</div>
                       <div>→ {fmtDate(o.stops_at)}</div>
                     </td>
+                    <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                     {showPaymentMethod && (
                       <td className="px-4 py-3 text-xs text-gray-600">
                         {o.tagConfig.paymentMethod || '—'}
