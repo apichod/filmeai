@@ -333,12 +333,12 @@ ${footer()}`,
 // ── Export principal ───────────────────────────────────────────────────────────
 
 export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateId, string> = {
-  retour_ok:          '#10 – Contrôle retour tout OK',
-  retour_casse:       '#11 – Contrôle retour matériel cassé',
-  retour_manquant:    '#11 – Contrôle retour matériel manquant',
-  facturation_casse:  '#12 – Facturation matériel cassé',
-  facturation_perdu:  '#12 – Facturation matériel perdu',
-  facturation_vole:   '#12 – Facturation matériel volé',
+  retour_ok:          '10 – Contrôle retour tout OK',
+  retour_manquant:    '11 – Contrôle retour matériel manquant',
+  retour_casse:       '12 – Contrôle retour matériel cassé',
+  facturation_perdu:  '13 – Facturation matériel perdu',
+  facturation_vole:   '14 – Facturation matériel volé',
+  facturation_casse:  '15 – Facturation matériel cassé',
 }
 
 // ── DB seed rows ───────────────────────────────────────────────────────────────

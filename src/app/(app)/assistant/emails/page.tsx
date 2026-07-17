@@ -152,17 +152,19 @@ export default function EmailTemplatesPage() {
 
               return (
                 <div key={c.case_key} className="border border-gray-200 rounded-xl p-5 space-y-4">
-                  {c.case_label && (
+                  {(c.case_label || c.slug) && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                        {c.case_label}
-                      </span>
-                      {c.slug && c.slug !== c.template_id && (
+                      {c.case_label && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                          {c.case_label}
+                        </span>
+                      )}
+                      {c.slug && (
                         <code className="text-[10px] bg-gray-50 border border-gray-200 text-gray-500 px-1.5 py-0.5 rounded">
                           {c.slug}
                         </code>
                       )}
-                      {Object.entries(c.conditions).map(([k, v]) => (
+                      {c.conditions && Object.entries(c.conditions).map(([k, v]) => (
                         <span key={k} className={`px-2 py-0.5 rounded-full text-xs font-medium ${v ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                           {k === 'insurance' ? (v ? '✓ assurance' : '✗ assurance') :
                            k === 'caution' ? (v ? '✓ caution' : '✗ caution') :

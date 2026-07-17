@@ -10,14 +10,14 @@ function getSupabaseAdmin() {
   )
 }
 
-// Ordre d'affichage des groupes (#10 → #11 → #12)
+// Ordre d'affichage des groupes (#10 → #11a → #11b → #12a → #12b → #12c)
 const TEMPLATE_GROUP_ORDER = [
   'retour_ok',
-  'retour_casse',
   'retour_manquant',
-  'facturation_casse',
+  'retour_casse',
   'facturation_perdu',
   'facturation_vole',
+  'facturation_casse',
 ]
 
 // Ordre des cas par template (priorité assurance+caution → assurance → caution → aucun)
