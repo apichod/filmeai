@@ -14,6 +14,7 @@ const ALL_NAV = [
   { key: 'contacts',  label: 'Contacts',          href: '/contacts' },
   { key: 'requests',  label: 'Assistant planning', href: '/requests' },
   { key: 'returns',   label: 'Assistant retours',  href: '/returns' },
+  { key: 'process',   label: 'Process',             href: '/process' },
   { key: 'assistant', label: 'Paramètres',         href: '/assistant/appearance' },
   { key: 'statistics',label: 'Statistiques',       href: '/statistics' },
   { key: 'compte',    label: 'Compte',             href: '/settings/general', adminOnly: true },

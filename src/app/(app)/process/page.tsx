@@ -1,0 +1,414 @@
+'use client'
+
+import { useEffect, useState, useCallback, useRef } from 'react'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type StepItem = {
+  id: string
+  type: 'step' | 'info' | 'cases'
+  text?: string
+  badge?: { label: string; color: 'green' | 'blue' | 'amber' }
+  lines?: string[]
+  pills?: { label: string; color: 'blue' | 'amber' }[]
+  title?: string
+}
+
+type Process = {
+  id: string
+  slug: string
+  title: string
+  subtitle: string
+  steps: StepItem[]
+  sort_order: number
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function renderText(text: string) {
+  // **bold** → <strong>, et colorie les champs spéciaux en bleu
+  const BLUE_FIELDS = ['Notes internes', 'Order origine SAV', 'Commentaire problème']
+  let result = text
+  BLUE_FIELDS.forEach(f => {
+    result = result.replace(`**${f}**`, `<span class="text-[#1a73e8] font-medium">${f}</span>`)
+  })
+  result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  return <span dangerouslySetInnerHTML={{ __html: result }} />
+}
+
+const BADGE_CLASSES: Record<string, string> = {
+  green: 'bg-[#34a853] text-white',
+  blue:  'bg-[#1a73e8] text-white',
+  amber: 'bg-[#fbbc04] text-[#3c2a00]',
+}
+
+const PILL_ICONS: Record<string, string> = { blue: '🔒', amber: '↑' }
+
+// ── Composant infographie ─────────────────────────────────────────────────────
+
+function ProcessFlow({ process: p, onEdit }: { process: Process; onEdit: (step: StepItem, field: string, value: string) => void }) {
+  return (
+    <div className="max-w-[480px] mx-auto">
+      {/* Header */}
+      <div className="text-center mb-6">
+        {p.subtitle && <div className="text-xs text-gray-400 mb-2">{p.subtitle}</div>}
+        <div className="inline-block border-2 border-gray-900 rounded-xl px-6 py-3 text-sm font-bold text-gray-900 leading-snug text-center">
+          {p.title}
+        </div>
+      </div>
+
+      {/* Steps */}
+      <div className="flex flex-col">
+        {p.steps.map((step, idx) => (
+          <div key={step.id}>
+            {/* Connector */}
+            {idx > 0 && <div className="w-0.5 h-4 bg-gray-300 mx-auto" />}
+
+            {step.type === 'step' && (
+              <StepBox step={step} onEdit={onEdit} />
+            )}
+            {step.type === 'info' && (
+              <InfoBox step={step} onEdit={onEdit} />
+            )}
+            {step.type === 'cases' && (
+              <CasesBox step={step} onEdit={onEdit} />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Step box (numéroté) ───────────────────────────────────────────────────────
+
+let stepCounter = 0
+function StepBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(step.text || '')
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Reset counter par flow (géré via CSS counter au lieu)
+  useEffect(() => { setVal(step.text || '') }, [step.text])
+
+  function commit() {
+    setEditing(false)
+    if (val !== step.text) onEdit(step, 'text', val)
+  }
+
+  return (
+    <div className="bg-[#e8f0fe] border border-[#c5d3f5] rounded-xl px-4 py-3 flex items-start gap-3 group">
+      <div className="min-w-[26px] h-[26px] rounded-full bg-[#4a86e8] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+        {step.id}
+      </div>
+      <div className="flex-1 flex items-center gap-3">
+        {editing ? (
+          <textarea
+            ref={inputRef}
+            value={val}
+            autoFocus
+            rows={2}
+            onChange={e => setVal(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit() } if (e.key === 'Escape') { setVal(step.text || ''); setEditing(false) } }}
+            className="flex-1 text-sm bg-white border border-[#4a86e8] rounded-lg px-2 py-1 resize-none focus:outline-none focus:ring-2 focus:ring-[#4a86e8]/30"
+          />
+        ) : (
+          <div
+            className="flex-1 text-sm text-gray-900 leading-snug cursor-pointer hover:bg-[#d2e3fc] rounded-lg px-1 py-0.5 transition-colors"
+            title="Cliquer pour modifier"
+            onClick={() => setEditing(true)}
+          >
+            {renderText(val)}
+          </div>
+        )}
+        {step.badge && !editing && (
+          <span className={`flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-md ${BADGE_CLASSES[step.badge.color]}`}>
+            {step.badge.color === 'blue' && step.badge.label.toLowerCase().includes('email') ? '✉ ' : ''}{step.badge.label}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Info box (fond blanc, liste éditable) ─────────────────────────────────────
+
+function InfoBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void }) {
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const [vals, setVals] = useState<string[]>(step.lines || [])
+
+  useEffect(() => { setVals(step.lines || []) }, [step.lines])
+
+  function commit(idx: number, newVal: string) {
+    setEditingIdx(null)
+    const next = [...vals]
+    next[idx] = newVal
+    setVals(next)
+    onEdit(step, 'lines', JSON.stringify(next))
+  }
+
+  return (
+    <div className="bg-white border border-[#dadce0] rounded-xl px-4 py-3 text-sm text-gray-800 leading-relaxed">
+      {vals.map((line, i) => (
+        <div key={i} className="flex items-center gap-1 py-0.5">
+          <span className="text-gray-400 mr-1">–</span>
+          {editingIdx === i ? (
+            <input
+              autoFocus
+              value={line}
+              onChange={e => { const n = [...vals]; n[i] = e.target.value; setVals(n) }}
+              onBlur={() => commit(i, vals[i])}
+              onKeyDown={e => { if (e.key === 'Enter') commit(i, vals[i]); if (e.key === 'Escape') { setVals(step.lines || []); setEditingIdx(null) } }}
+              className="flex-1 text-sm border border-[#4a86e8] rounded px-1 py-0.5 focus:outline-none"
+            />
+          ) : (
+            <span
+              className="cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 transition-colors"
+              title="Cliquer pour modifier"
+              onClick={() => setEditingIdx(i)}
+            >
+              {line}
+            </span>
+          )}
+        </div>
+      ))}
+      {step.pills && step.pills.length > 0 && (
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <span className="text-gray-400">–</span>
+          {step.pills.map((pill, i) => (
+            <span key={i} className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2.5 py-1 rounded ${BADGE_CLASSES[pill.color]}`}>
+              {PILL_ICONS[pill.color]} {pill.label}
+            </span>
+          ))}
+          <span className="text-sm text-gray-700">des produits</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Cases box ─────────────────────────────────────────────────────────────────
+
+function CasesBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void }) {
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [title, setTitle] = useState(step.title || '')
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const [vals, setVals] = useState<string[]>(step.lines || [])
+
+  useEffect(() => { setTitle(step.title || ''); setVals(step.lines || []) }, [step.title, step.lines])
+
+  function commitTitle(v: string) {
+    setEditingTitle(false)
+    onEdit(step, 'title', v)
+  }
+  function commitLine(idx: number) {
+    setEditingIdx(null)
+    onEdit(step, 'lines', JSON.stringify(vals))
+  }
+
+  return (
+    <div className="bg-white border border-[#dadce0] rounded-xl px-4 py-3 text-sm text-gray-800 leading-relaxed">
+      {editingTitle ? (
+        <input
+          autoFocus
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          onBlur={() => commitTitle(title)}
+          onKeyDown={e => { if (e.key === 'Enter') commitTitle(title) }}
+          className="w-full font-medium text-sm border border-[#4a86e8] rounded px-1 py-0.5 focus:outline-none mb-1"
+        />
+      ) : (
+        <div
+          className="font-medium mb-1 cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 transition-colors"
+          onClick={() => setEditingTitle(true)}
+        >
+          {title}
+        </div>
+      )}
+      {vals.map((line, i) => (
+        <div key={i} className="flex items-center gap-1 py-0.5">
+          {editingIdx === i ? (
+            <input
+              autoFocus
+              value={line}
+              onChange={e => { const n = [...vals]; n[i] = e.target.value; setVals(n) }}
+              onBlur={() => commitLine(i)}
+              onKeyDown={e => { if (e.key === 'Enter') commitLine(i); if (e.key === 'Escape') { setVals(step.lines || []); setEditingIdx(null) } }}
+              className="flex-1 text-sm border border-[#4a86e8] rounded px-1 py-0.5 focus:outline-none"
+            />
+          ) : (
+            <span
+              className="cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 transition-colors"
+              onClick={() => setEditingIdx(i)}
+            >
+              {line}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Page principale ───────────────────────────────────────────────────────────
+
+export default function ProcessPage() {
+  const [processes, setProcesses]   = useState<Process[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [saving, setSaving]         = useState(false)
+  const [saved, setSaved]           = useState(false)
+  const [editingTitle, setEditingTitle]   = useState(false)
+  const [editingSubtitle, setEditingSubtitle] = useState(false)
+  const pendingRef = useRef<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch('/api/processes')
+      .then(r => r.json())
+      .then(d => {
+        setProcesses(d.processes || [])
+        if (d.processes?.length > 0) setSelectedId(d.processes[0].id)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const selected = processes.find(p => p.id === selectedId)
+
+  const updateLocal = useCallback((id: string, patch: Partial<Process>) => {
+    setProcesses(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
+  }, [])
+
+  // Sauvegarde debounced
+  const saveTimer = useRef<NodeJS.Timeout | null>(null)
+
+  const scheduleSave = useCallback((id: string, patch: Record<string, unknown>) => {
+    pendingRef.current = { ...pendingRef.current, ...patch }
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      setSaving(true)
+      await fetch('/api/processes', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...pendingRef.current }),
+      })
+      pendingRef.current = {}
+      setSaving(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }, 800)
+  }, [])
+
+  const handleStepEdit = useCallback((step: StepItem, field: string, value: string) => {
+    if (!selected) return
+    const newSteps = selected.steps.map(s => {
+      if (s.id !== step.id) return s
+      if (field === 'text')  return { ...s, text: value }
+      if (field === 'lines') return { ...s, lines: JSON.parse(value) }
+      if (field === 'title') return { ...s, title: value }
+      return s
+    })
+    updateLocal(selected.id, { steps: newSteps })
+    scheduleSave(selected.id, { steps: newSteps })
+  }, [selected, updateLocal, scheduleSave])
+
+  const handleTitleSave = useCallback((val: string) => {
+    if (!selected) return
+    setEditingTitle(false)
+    updateLocal(selected.id, { title: val })
+    scheduleSave(selected.id, { title: val })
+  }, [selected, updateLocal, scheduleSave])
+
+  const handleSubtitleSave = useCallback((val: string) => {
+    if (!selected) return
+    setEditingSubtitle(false)
+    updateLocal(selected.id, { subtitle: val })
+    scheduleSave(selected.id, { subtitle: val })
+  }, [selected, updateLocal, scheduleSave])
+
+  if (loading) return <div className="text-sm text-gray-400 py-8 text-center">Chargement…</div>
+
+  return (
+    <div className="flex gap-6 min-h-[600px]">
+
+      {/* ── Colonne gauche ── */}
+      <div className="w-52 flex-shrink-0 space-y-1">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-3">Process</p>
+        {processes.map(p => (
+          <button
+            key={p.id}
+            onClick={() => setSelectedId(p.id)}
+            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
+              selectedId === p.id
+                ? 'bg-black text-white font-medium'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <span className="block leading-snug">{p.title}</span>
+            <span className={`text-xs mt-0.5 block ${selectedId === p.id ? 'text-gray-300' : 'text-gray-400'}`}>
+              {p.steps.filter(s => s.type === 'step').length} étapes
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Colonne droite : infographie ── */}
+      <div className="flex-1 min-w-0">
+        {!selected ? (
+          <p className="text-sm text-gray-400">Sélectionnez un process.</p>
+        ) : (
+          <>
+            {/* Barre titre + statut */}
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                {editingSubtitle ? (
+                  <input
+                    autoFocus
+                    defaultValue={selected.subtitle}
+                    onBlur={e => handleSubtitleSave(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSubtitleSave((e.target as HTMLInputElement).value) }}
+                    className="text-xs text-gray-400 border-b border-gray-300 focus:outline-none bg-transparent w-64"
+                  />
+                ) : (
+                  <div
+                    className="text-xs text-gray-400 cursor-pointer hover:text-gray-600"
+                    onClick={() => setEditingSubtitle(true)}
+                    title="Cliquer pour modifier"
+                  >
+                    {selected.subtitle || '(sous-titre)'}
+                  </div>
+                )}
+                {editingTitle ? (
+                  <input
+                    autoFocus
+                    defaultValue={selected.title}
+                    onBlur={e => handleTitleSave(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleTitleSave((e.target as HTMLInputElement).value) }}
+                    className="text-base font-semibold text-gray-900 border-b border-gray-400 focus:outline-none bg-transparent w-96 mt-0.5"
+                  />
+                ) : (
+                  <h2
+                    className="text-base font-semibold text-gray-900 cursor-pointer hover:text-gray-600 mt-0.5"
+                    onClick={() => setEditingTitle(true)}
+                    title="Cliquer pour modifier"
+                  >
+                    {selected.title}
+                  </h2>
+                )}
+              </div>
+              <div className="text-xs text-gray-400 flex items-center gap-2">
+                {saving && <span className="text-gray-400">Sauvegarde…</span>}
+                {saved  && <span className="text-green-600 font-medium">✓ Sauvegardé</span>}
+                <span className="text-gray-300 italic">Cliquez sur un champ pour modifier</span>
+              </div>
+            </div>
+
+            {/* Infographie */}
+            <ProcessFlow process={selected} onEdit={handleStepEdit} />
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
