@@ -790,6 +790,10 @@ type TagConfig = {
   label: string
   bgClass: string
   textClass: string
+  // Si true, la couleur du badge Statut dépend du payment_status (vert=payé, rouge=à payer)
+  paymentColored?: boolean
+  // Libellé pour la colonne "Moyen de paiement" (vide = rien)
+  paymentMethod?: string
 }
 
 type TaggedOrderRow = BooqableOrderRow & { tagConfig: TagConfig }
@@ -810,7 +814,7 @@ type EmailData = {
   recipients: string | null
 }
 
-function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags: TagConfig[]; showPaymentStatus?: boolean }) {
+function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaymentMethod = false }: { tags: TagConfig[]; showPaymentStatus?: boolean; showPaymentMethod?: boolean }) {
   const [rows, setRows]         = useState<TaggedOrderRow[]>([])
   const [loading, setLoading]   = useState(false)
   const [synced, setSynced]     = useState(false)
@@ -946,6 +950,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
+                {showPaymentMethod && <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Moyen de paiement</th>}
                 {showPaymentStatus && <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Paiement</th>}
                 {showPaymentStatus && <th className="px-4 py-3" />}
               </tr>
@@ -953,10 +958,17 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
             <tbody className="divide-y divide-gray-50">
               {rows.map(o => {
                 const ps = showPaymentStatus ? paymentStatusDisplay(o.payment_status) : null
+                // Couleur du badge Statut : dépend du payment_status si paymentColored
+                const badgeBg   = o.tagConfig.paymentColored
+                  ? (o.payment_status === 'paid' ? 'bg-green-50'  : 'bg-red-50')
+                  : o.tagConfig.bgClass
+                const badgeText = o.tagConfig.paymentColored
+                  ? (o.payment_status === 'paid' ? 'text-green-700' : 'text-red-700')
+                  : o.tagConfig.textClass
                 return (
                   <tr key={`${o.tagConfig.tag}-${o.id}`} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${o.tagConfig.bgClass} ${o.tagConfig.textClass}`}>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badgeBg} ${badgeText}`}>
                         {o.tagConfig.label}
                       </span>
                     </td>
@@ -981,6 +993,11 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false }: { tags
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                       {fmtDate(o.starts_at)} → {fmtDate(o.stops_at)}
                     </td>
+                    {showPaymentMethod && (
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        {o.tagConfig.paymentMethod || '—'}
+                      </td>
+                    )}
                     {ps && (
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ps.cls}`}>{ps.label}</span>
@@ -1130,11 +1147,11 @@ const CLOSED_TAGS: TagConfig[] = [
 
 // ── Pertes (matériel manquant) ────────────────────────────────────────────────
 const PERTE_TAGS: TagConfig[] = [
-  { tag: 'missing',          label: 'Perte',                      bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'missing_waived',   label: 'Perte graciée',              bgClass: 'bg-purple-50', textClass: 'text-purple-700' },
-  { tag: 'missing_deposit',  label: 'Perte indemnisée (caution)', bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
-  { tag: 'missing_billed_d', label: 'Perte indemnisée (virement)',bgClass: 'bg-blue-50',   textClass: 'text-blue-700'   },
-  { tag: 'missing_billed_w', label: 'Perte indemnisée (CB)',      bgClass: 'bg-indigo-50', textClass: 'text-indigo-700' },
+  { tag: 'missing',          label: 'Perte',              bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'missing_waived',   label: 'Perte graciée',      bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
+  { tag: 'missing_deposit',  label: 'Perte indemnisée',   bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
+  { tag: 'missing_billed_d', label: 'Perte indemnisée',   bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
+  { tag: 'missing_billed_w', label: 'Perte indemnisée',   bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
 ]
 
 // ── Dommages (matériel endommagé) ─────────────────────────────────────────────
@@ -1202,7 +1219,7 @@ export default function ReturnsPage() {
         )}
         {tab === 'open'        && <MultiTagBooqableOrdersTable tags={LATE_TAGS} />}
         {tab === 'closed'      && <MultiTagBooqableOrdersTable tags={CLOSED_TAGS} />}
-        {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS} showPaymentStatus />}
+        {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS} showPaymentStatus showPaymentMethod />}
         {tab === 'dommages'    && <MultiTagBooqableOrdersTable tags={DAMAGE_TAGS} showPaymentStatus />}
         {tab === 'replacement' && <MultiTagBooqableOrdersTable tags={REPLACE_TAGS} />}
         {tab === 'repair'      && <MultiTagBooqableOrdersTable tags={REPAIR_TAGS} />}
