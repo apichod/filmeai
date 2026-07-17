@@ -10,6 +10,61 @@ function getSupabaseAdmin() {
   )
 }
 
+// Ordre d'affichage des groupes (#10 → #11 → #12)
+const TEMPLATE_GROUP_ORDER = [
+  'retour_ok',
+  'retour_casse',
+  'retour_manquant',
+  'facturation_casse',
+  'facturation_perdu',
+  'facturation_vole',
+]
+
+// Ordre des cas par template (priorité assurance+caution → assurance → caution → aucun)
+const TEMPLATE_CASE_ORDER: Record<string, string[]> = {
+  retour_casse: [
+    'insurance_caution',
+    'insurance_no_caution',
+    'no_insurance_caution',
+    'no_insurance_no_caution',
+  ],
+  facturation_casse: [
+    'insurance_caution_high',
+    'insurance_caution_low',
+    'insurance_no_caution_high',
+    'insurance_no_caution_low',
+    'no_insurance_caution',
+    'no_insurance_no_caution',
+    'late_payment',
+  ],
+  facturation_perdu: [
+    'insurance_caution',
+    'insurance_no_caution',
+    'no_insurance_caution',
+    'no_insurance_no_caution',
+    'late_payment',
+  ],
+  facturation_vole: [
+    'insurance_caution_high',
+    'insurance_caution_low',
+    'insurance_no_caution_high',
+    'insurance_no_caution_low',
+    'no_insurance_caution',
+    'no_insurance_no_caution',
+    'late_payment',
+  ],
+}
+
+// Labels des cas (source de vérité côté code)
+const CASE_LABELS: Record<string, Record<string, string>> = {
+  retour_casse: {
+    insurance_caution:          'Avec assurance, avec caution',
+    insurance_no_caution:       'Avec assurance, sans caution',
+    no_insurance_caution:       'Sans assurance, avec caution',
+    no_insurance_no_caution:    'Sans assurance, sans caution',
+  },
+}
+
 // GET — retourne toutes les lignes groupées par template_id, seed si vide
 export async function GET() {
   const supabase = getSupabaseAdmin()
@@ -28,8 +83,6 @@ export async function GET() {
   const { data, error } = await supabase
     .from('email_templates')
     .select('*')
-    .order('template_id')
-    .order('sort_order')
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -48,10 +101,37 @@ export async function GET() {
         cases: [],
       }
     }
-    grouped[row.template_id].cases.push(row)
+    // Surcharger case_label depuis la source de vérité côté code si disponible
+    const overrideLabel = CASE_LABELS[row.template_id]?.[row.case_key]
+    grouped[row.template_id].cases.push(overrideLabel ? { ...row, case_label: overrideLabel } : row)
   }
 
-  return NextResponse.json(Object.values(grouped))
+  // Trier les cas dans chaque groupe selon TEMPLATE_CASE_ORDER
+  for (const templateId of Object.keys(grouped)) {
+    const order = TEMPLATE_CASE_ORDER[templateId]
+    if (order) {
+      grouped[templateId].cases.sort((a, b) => {
+        const ia = order.indexOf(a!.case_key)
+        const ib = order.indexOf(b!.case_key)
+        return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
+      })
+    } else {
+      grouped[templateId].cases.sort((a, b) => (a!.sort_order ?? 0) - (b!.sort_order ?? 0))
+    }
+    // Ajouter le slug dérivé sur chaque cas
+    grouped[templateId].cases = grouped[templateId].cases.map((c, i) => ({
+      ...c!,
+      slug: grouped[templateId].cases.length > 1 ? `${templateId}_cas_${i + 1}` : templateId,
+    }))
+  }
+
+  // Trier les groupes selon TEMPLATE_GROUP_ORDER (#10 → #11 → #12)
+  const sorted = TEMPLATE_GROUP_ORDER
+    .map(id => grouped[id])
+    .filter(Boolean)
+    .concat(Object.values(grouped).filter(g => !TEMPLATE_GROUP_ORDER.includes(g.template_id)))
+
+  return NextResponse.json(sorted)
 }
 
 // PATCH — met à jour subject et/ou body d'une variante
