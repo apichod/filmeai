@@ -1258,7 +1258,7 @@ export default function ReturnsPage() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
-    { id: 'open',        label: 'En retard' },
+    { id: 'open',        label: 'Retards' },
     { id: 'pertes',      label: 'Pertes' },
     { id: 'vols',        label: 'Vols' },
     { id: 'dommages',    label: 'Dommages' },
