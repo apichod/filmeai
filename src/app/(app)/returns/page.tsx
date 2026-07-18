@@ -851,6 +851,211 @@ type BooqableOrderRow = {
   payment_status: string | null
   url: string
   grand_total_in_cents: number | null
+  tag_list: string[]
+}
+
+// ── Table Retards (tag late + filtre par tag secondaire) ─────────────────────
+
+const LATE_STATUS_TAGS = [
+  { tag: 'pending',  label: 'En attente', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'waived',   label: 'Gracié',     bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
+  { tag: 'deposit',  label: 'Facturé – Caution',   bgClass: 'bg-blue-50', textClass: 'text-blue-700', paymentColored: true, paymentMethod: 'Caution'  },
+  { tag: 'billed_d', label: 'Facturé – Virement',  bgClass: 'bg-blue-50', textClass: 'text-blue-700', paymentColored: true, paymentMethod: 'Virement' },
+  { tag: 'billed_w', label: 'Facturé – CB',        bgClass: 'bg-blue-50', textClass: 'text-blue-700', paymentColored: true, paymentMethod: 'CB'       },
+]
+
+function LateOrdersTable() {
+  const [allRows, setAllRows]   = useState<BooqableOrderRow[]>([])
+  const [loading, setLoading]   = useState(false)
+  const [synced, setSynced]     = useState(false)
+  const [syncedAt, setSyncedAt] = useState<string | null>(null)
+  const [error, setError]       = useState<string | null>(null)
+  // null = afficher tous (pas de filtre secondaire)
+  const [filterTag, setFilterTag] = useState<string | null>(null)
+  const storageKey = 'bq_late_v2'
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey)
+      if (stored) {
+        const parsed = JSON.parse(stored) as { rows: BooqableOrderRow[]; syncedAt: string }
+        setAllRows(parsed.rows)
+        setSyncedAt(parsed.syncedAt)
+        setSynced(true)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  async function sync() {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await fetch(`/api/returns/booqable-orders?tag=late`)
+        .then(r => r.json()) as { orders?: BooqableOrderRow[]; error?: string }
+      if (data.error) { setError(data.error); return }
+      const rows = (data.orders || []).sort(sortBySavOrderDesc)
+      const now = new Date().toISOString()
+      setAllRows(rows)
+      setSyncedAt(now)
+      setSynced(true)
+      localStorage.setItem(storageKey, JSON.stringify({ rows, syncedAt: now }))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur réseau')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Filtre côté client par tag secondaire
+  const rows = filterTag
+    ? allRows.filter(o => o.tag_list.includes(filterTag))
+    : allRows
+
+  function fmtDate(iso: string) {
+    const d = parseFrDate(iso)
+    if (!d) return '—'
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
+  // Détermine le tag secondaire d'une order pour l'affichage du statut
+  function getStatusTag(o: BooqableOrderRow) {
+    return LATE_STATUS_TAGS.find(s => o.tag_list.includes(s.tag)) ?? null
+  }
+
+  const hasPayment = rows.some(o => {
+    const st = getStatusTag(o)
+    return st?.paymentColored
+  })
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500 mr-1">Filtre :</span>
+          <button
+            onClick={() => setFilterTag(null)}
+            className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-colors ${
+              filterTag === null
+                ? 'bg-gray-900 text-white border-gray-900'
+                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+            }`}
+          >
+            Tous
+          </button>
+          {LATE_STATUS_TAGS.map(st => (
+            <button
+              key={st.tag}
+              onClick={() => setFilterTag(filterTag === st.tag ? null : st.tag)}
+              className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                filterTag === st.tag
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'
+              }`}
+            >
+              {st.tag}
+            </button>
+          ))}
+          {synced && (
+            <span className="text-xs text-gray-400 ml-1">{rows.length} order{rows.length !== 1 ? 's' : ''}{filterTag ? ` · filtre: ${filterTag}` : ` sur ${allRows.length}`}</span>
+          )}
+          {syncedAt && (
+            <span className="text-xs text-gray-400">
+              · {new Date(syncedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={sync}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+        >
+          {loading ? (
+            <span className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+          ) : (
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+          )}
+          Sync
+        </button>
+      </div>
+
+      {error   && <div className="px-5 py-3 bg-red-50 text-red-600 text-xs border-b border-red-100">{error}</div>}
+      {!synced && !loading && <div className="p-10 text-center text-sm text-gray-400">Cliquez sur Sync pour charger les orders Booqable</div>}
+      {loading && <div className="p-10 text-center text-sm text-gray-400">Chargement…</div>}
+      {synced && !loading && rows.length === 0 && <div className="p-10 text-center text-sm text-gray-400">Aucune order trouvée</div>}
+
+      {synced && !loading && rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/50">
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Statut</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Commande SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Client</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Période</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Commande d&apos;origine</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 w-56 max-w-56">Notes SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Date suivi SAV</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Prix</th>
+                {hasPayment && <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Moyen de paiement</th>}
+                {hasPayment && <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Paiement</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.map(o => {
+                const st = getStatusTag(o)
+                const bgClass   = st?.bgClass   ?? 'bg-orange-50'
+                const textClass = st?.textClass ?? 'text-orange-700'
+                const label     = st?.label     ?? 'En retard'
+                const isPaid    = o.payment_status === 'paid'
+                const badgeBg   = st?.paymentColored ? (isPaid ? 'bg-green-50' : 'bg-red-50') : bgClass
+                const badgeTxt  = st?.paymentColored ? (isPaid ? 'text-green-700' : 'text-red-700') : textClass
+
+                return (
+                  <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${badgeBg} ${badgeTxt}`}>
+                        {label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {o.order_sav ? (
+                        <a href={o.url} target="_blank" rel="noopener noreferrer"
+                          className="font-mono text-xs text-blue-600 hover:underline">{o.order_sav}</a>
+                      ) : <span className="font-mono text-xs text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-900">{o.customer_name}</td>
+                    <td className="px-4 py-3 w-24 whitespace-nowrap">
+                      <div className="text-xs text-gray-600">{fmtDate(o.starts_at)}</div>
+                      <div className="text-xs text-gray-400">→ {fmtDate(o.stops_at)}</div>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{o.number || '—'}</td>
+                    <td className="px-4 py-3 w-56 max-w-56 whitespace-pre-wrap break-words text-xs text-gray-600">{o.notes_sav || '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-gray-900">{formatPrice(o.grand_total_in_cents)}</td>
+                    {hasPayment && (
+                      <td className="px-4 py-3 text-xs text-gray-500">{st?.paymentMethod ?? '—'}</td>
+                    )}
+                    {hasPayment && (
+                      <td className="px-4 py-3">
+                        {st?.paymentColored ? (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${isPaid ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                            {isPaid ? 'Payé' : 'À payer'}
+                          </span>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Table multi-tags (Fermés / Facturés) ──────────────────────────────────────
@@ -1226,14 +1431,6 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
 
 type Tab = 'chat' | 'open' | 'closed' | 'pertes' | 'vols' | 'dommages' | 'replacement' | 'repair' | 'log'
 
-// ── En retard (retours tardifs) ───────────────────────────────────────────────
-const LATE_TAGS: TagConfig[] = [
-  { tag: 'late',          label: 'En retard',         bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'late_waived',   label: 'Retard gracié',     bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
-  { tag: 'late_deposit',  label: 'Retard facturé',    bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
-  { tag: 'late_billed_d', label: 'Retard facturé',    bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
-  { tag: 'late_billed_w', label: 'Retard facturé',    bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
-]
 
 // ── Pertes (matériel manquant) ────────────────────────────────────────────────
 const PERTE_TAGS: TagConfig[] = [
@@ -1317,7 +1514,7 @@ export default function ReturnsPage() {
             <ChatPanel />
           </div>
         )}
-        {tab === 'open'        && <MultiTagBooqableOrdersTable tags={LATE_TAGS} showPaymentStatus showPaymentMethod />}
+        {tab === 'open'        && <LateOrdersTable />}
         {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS}  showPaymentStatus showPaymentMethod />}
         {tab === 'vols'        && <MultiTagBooqableOrdersTable tags={THEFT_TAGS}  showPaymentStatus showPaymentMethod />}
         {tab === 'dommages'    && <MultiTagBooqableOrdersTable tags={DAMAGE_TAGS} showPaymentStatus showPaymentMethod />}

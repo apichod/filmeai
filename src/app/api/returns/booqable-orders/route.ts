@@ -77,6 +77,13 @@ export async function GET(req: NextRequest) {
     const props  = attrs.properties || {}
     const custId = attrs.customer_id
 
+    const rawTags = attrs.tag_list
+    const tag_list: string[] = Array.isArray(rawTags)
+      ? rawTags
+      : typeof rawTags === 'string' && rawTags.length > 0
+        ? rawTags.split(',').map(t => t.trim())
+        : []
+
     return {
       id:                   order.id,
       number:               attrs.number ?? '',
@@ -90,6 +97,7 @@ export async function GET(req: NextRequest) {
       payment_status:       attrs.payment_status  ?? null,
       url:                  `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`,
       grand_total_in_cents: attrs.grand_total_with_tax_in_cents ?? null,
+      tag_list,
     }
   })
 
