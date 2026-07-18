@@ -1208,12 +1208,11 @@ type Tab = 'chat' | 'open' | 'closed' | 'pertes' | 'dommages' | 'replacement' | 
 
 // ── En retard (retours tardifs) ───────────────────────────────────────────────
 const LATE_TAGS: TagConfig[] = [
-  { tag: 'late', label: 'En retard', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-]
-
-// ── Retrouvés ─────────────────────────────────────────────────────────────────
-const CLOSED_TAGS: TagConfig[] = [
-  { tag: 'late_returned', label: 'Rendu en retard', bgClass: 'bg-green-50', textClass: 'text-green-700' },
+  { tag: 'late',          label: 'En retard',         bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'late_waived',   label: 'Retard gracié',     bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
+  { tag: 'late_deposit',  label: 'Retard facturé',    bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
+  { tag: 'late_billed_d', label: 'Retard facturé',    bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
+  { tag: 'late_billed_w', label: 'Retard facturé',    bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
 ]
 
 // ── Pertes (matériel manquant) ────────────────────────────────────────────────
@@ -1251,7 +1250,6 @@ export default function ReturnsPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
     { id: 'open',        label: 'En retard' },
-    { id: 'closed',      label: 'Rendu en retard' },
     { id: 'pertes',      label: 'Pertes' },
     { id: 'dommages',    label: 'Dommages' },
     { id: 'replacement', label: 'À remplacer' },
@@ -1289,8 +1287,7 @@ export default function ReturnsPage() {
             <ChatPanel />
           </div>
         )}
-        {tab === 'open'        && <MultiTagBooqableOrdersTable tags={LATE_TAGS} />}
-        {tab === 'closed'      && <MultiTagBooqableOrdersTable tags={CLOSED_TAGS} />}
+        {tab === 'open'        && <MultiTagBooqableOrdersTable tags={LATE_TAGS} showPaymentStatus showPaymentMethod />}
         {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS} showPaymentStatus showPaymentMethod />}
         {tab === 'dommages'    && <MultiTagBooqableOrdersTable tags={DAMAGE_TAGS} showPaymentStatus showPaymentMethod />}
         {tab === 'replacement' && <MultiTagBooqableOrdersTable tags={REPLACE_TAGS} />}
