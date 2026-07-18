@@ -1204,7 +1204,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
 
 // ── Page principale ────────────────────────────────────────────────────────────
 
-type Tab = 'chat' | 'open' | 'closed' | 'pertes' | 'dommages' | 'replacement' | 'repair' | 'log'
+type Tab = 'chat' | 'open' | 'closed' | 'pertes' | 'vols' | 'dommages' | 'replacement' | 'repair' | 'log'
 
 // ── En retard (retours tardifs) ───────────────────────────────────────────────
 const LATE_TAGS: TagConfig[] = [
@@ -1222,6 +1222,15 @@ const PERTE_TAGS: TagConfig[] = [
   { tag: 'missing_deposit',  label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
   { tag: 'missing_billed_d', label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
   { tag: 'missing_billed_w', label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
+]
+
+// ── Vols ──────────────────────────────────────────────────────────────────────
+const THEFT_TAGS: TagConfig[] = [
+  { tag: 'theft',          label: 'Vol',          bgClass: 'bg-red-50',   textClass: 'text-red-700'    },
+  { tag: 'theft_waived',   label: 'Vol gracié',   bgClass: 'bg-green-50', textClass: 'text-green-700'  },
+  { tag: 'theft_deposit',  label: 'Vol facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
+  { tag: 'theft_billed_d', label: 'Vol facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
+  { tag: 'theft_billed_w', label: 'Vol facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
 ]
 
 // ── Dommages (matériel endommagé) ─────────────────────────────────────────────
@@ -1251,6 +1260,7 @@ export default function ReturnsPage() {
     { id: 'chat',        label: 'Nouveau cas' },
     { id: 'open',        label: 'En retard' },
     { id: 'pertes',      label: 'Pertes' },
+    { id: 'vols',        label: 'Vols' },
     { id: 'dommages',    label: 'Dommages' },
     { id: 'replacement', label: 'À remplacer' },
     { id: 'repair',      label: 'À réparer' },
@@ -1288,7 +1298,8 @@ export default function ReturnsPage() {
           </div>
         )}
         {tab === 'open'        && <MultiTagBooqableOrdersTable tags={LATE_TAGS} showPaymentStatus showPaymentMethod />}
-        {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS} showPaymentStatus showPaymentMethod />}
+        {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS}  showPaymentStatus showPaymentMethod />}
+        {tab === 'vols'        && <MultiTagBooqableOrdersTable tags={THEFT_TAGS}  showPaymentStatus showPaymentMethod />}
         {tab === 'dommages'    && <MultiTagBooqableOrdersTable tags={DAMAGE_TAGS} showPaymentStatus showPaymentMethod />}
         {tab === 'replacement' && <MultiTagBooqableOrdersTable tags={REPLACE_TAGS} />}
         {tab === 'repair'      && <MultiTagBooqableOrdersTable tags={REPAIR_TAGS} />}
