@@ -857,7 +857,7 @@ type BooqableOrderRow = {
 // ── Table Retards (tag late + filtre par tag secondaire) ─────────────────────
 
 const LATE_STATUS_TAGS = [
-  { tag: 'pending',  label: 'En attente', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'open',     label: 'En attente', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
   { tag: 'waived',   label: 'Gracié',     bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
   { tag: 'deposit',  label: 'Facturé – Caution',   bgClass: 'bg-blue-50', textClass: 'text-blue-700', paymentColored: true, paymentMethod: 'Caution'  },
   { tag: 'billed_d', label: 'Facturé – Virement',  bgClass: 'bg-blue-50', textClass: 'text-blue-700', paymentColored: true, paymentMethod: 'Virement' },
