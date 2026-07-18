@@ -890,7 +890,17 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   const [synced, setSynced]     = useState(false)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
+  const [activeTags, setActiveTags] = useState<Set<string>>(() => new Set(tags.map(t => t.tag)))
   const storageKey = `bq_multi_${tags.map(t => t.tag).join('_')}`
+
+  function toggleTag(tag: string) {
+    setActiveTags(prev => {
+      const next = new Set(prev)
+      if (next.has(tag)) { if (next.size > 1) next.delete(tag) } // garder au moins 1 actif
+      else next.add(tag)
+      return next
+    })
+  }
 
   // Modal dernier email
   const [emailModal, setEmailModal]     = useState<{ orderId: string; orderNum: string | number } | null>(null)
@@ -932,11 +942,13 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
     setError(null)
     try {
       const results = await Promise.all(
-        tags.map(tc =>
-          fetch(`/api/returns/booqable-orders?tag=${encodeURIComponent(tc.tag)}`)
-            .then(r => r.json() as Promise<{ orders?: BooqableOrderRow[]; error?: string }>)
-            .then(data => (data.orders || []).map(o => ({ ...o, tagConfig: tc })))
-        )
+        tags
+          .filter(tc => activeTags.has(tc.tag))
+          .map(tc =>
+            fetch(`/api/returns/booqable-orders?tag=${encodeURIComponent(tc.tag)}`)
+              .then(r => r.json() as Promise<{ orders?: BooqableOrderRow[]; error?: string }>)
+              .then(data => (data.orders || []).map(o => ({ ...o, tagConfig: tc })))
+          )
       )
       const merged = results.flat().sort(sortBySavOrderDesc)
       const now = new Date().toISOString()
@@ -960,22 +972,30 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-gray-900">
-            Tag Booqable :{' '}
-            {tags.map((tc, i) => (
-              <span key={tc.tag}>
-                {i > 0 && <span className="font-normal text-gray-400"> et </span>}
-                <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono">{tc.tag}</code>
-              </span>
-            ))}
-          </h2>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500 mr-1">Tags :</span>
+          {tags.map(tc => {
+            const active = activeTags.has(tc.tag)
+            return (
+              <button
+                key={tc.tag}
+                onClick={() => toggleTag(tc.tag)}
+                className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                  active
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'
+                }`}
+              >
+                {tc.tag}
+              </button>
+            )
+          })}
           {synced && (
-            <span className="text-xs text-gray-400">{rows.length} order{rows.length !== 1 ? 's' : ''}</span>
+            <span className="text-xs text-gray-400 ml-1">{rows.length} order{rows.length !== 1 ? 's' : ''}</span>
           )}
           {syncedAt && (
             <span className="text-xs text-gray-400">
-              · Sync {new Date(syncedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              · {new Date(syncedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
         </div>
