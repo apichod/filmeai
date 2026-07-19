@@ -459,13 +459,21 @@ function ChatPanel() {
     }
   }
 
-  // Quick replies : affichés quand le dernier message assistant contient une question
+  // Quick replies : uniquement pour les questions fermées (oui/non), pas pour les questions ouvertes
   const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.content)
   const lastContent = lastAssistant?.content || ''
-  const hasQuestion = !sending && lastContent.includes('?')
 
-  // Suggestions contextuelles
-  const quickReplies: string[] = hasQuestion ? (() => {
+  // Détecter les questions fermées : commence par est-ce, avez-vous, y a-t-il, voulez-vous, souhaitez-vous, confirmez-vous, etc.
+  const CLOSED_QUESTION_PATTERNS = [
+    /est[-\s]ce que/i, /avez[-\s]vous/i, /y a[-\s]t[-\s]il/i, /voulez[-\s]vous/i,
+    /souhaitez[-\s]vous/i, /confirmez[-\s]vous/i, /avez vous/i, /êtes[-\s]vous/i,
+    /faut[-\s]il/i, /dois[-\s]je/i, /le client a[-\s]t[-\s]il/i, /a[-\s]t[-\s]il/i,
+    /confirmer l'envoi/i, /envoyer l'email/i, /procéder/i,
+  ]
+  const isClosedQuestion = !sending && lastContent.includes('?') &&
+    CLOSED_QUESTION_PATTERNS.some(p => p.test(lastContent))
+
+  const quickReplies: string[] = isClosedQuestion ? (() => {
     const lower = lastContent.toLowerCase()
     const questionCount = (lastContent.match(/\?/g) || []).length
     if (questionCount >= 2 && (lower.includes('assurance') || lower.includes('caution'))) {
