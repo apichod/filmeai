@@ -227,9 +227,15 @@ Templates disponibles :
 
 // ── Exécution des outils ──────────────────────────────────────────────────────
 
+type ToolContext = {
+  customerName?: string | null
+  customerEmail?: string | null
+}
+
 async function executeTool(
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  ctx: ToolContext = {}
 ): Promise<{ result: string; caseId?: string }> {
   try {
     switch (name) {
@@ -380,15 +386,15 @@ async function executeTool(
 
       case 'draft_email': {
         const templateId = String(args.template_id || 'retour_casse') as EmailTemplateId
-        // Fallback : si l'IA passe un placeholder, utiliser les valeurs mémorisées côté client
+        // Fallback : si l'IA passe un placeholder, utiliser les valeurs mémorisées côté client (via ctx)
         const PLACEHOLDER_NAME_RE = /^(nom\s*(du\s*)?client|customer[_\s]?name|client|prénom|[a-z]+_[a-z]+)$/i
         const resolvedName = (args.customer_name && !PLACEHOLDER_NAME_RE.test(String(args.customer_name)))
           ? String(args.customer_name)
-          : (bodyCustomerName || String(args.customer_name || ''))
+          : (ctx.customerName || String(args.customer_name || ''))
         const PLACEHOLDER_EMAIL_RE = /^(email@example\.com|customer[_@]|example\.com|test@|placeholder)/i
         const resolvedEmail = (args.customer_email && !PLACEHOLDER_EMAIL_RE.test(String(args.customer_email)))
           ? String(args.customer_email)
-          : (bodyCustomerEmail || (args.customer_email ? String(args.customer_email) : undefined))
+          : (ctx.customerEmail || (args.customer_email ? String(args.customer_email) : undefined))
         const email = renderEmail(templateId, {
           customerName:       resolvedName,
           customerEmail:      resolvedEmail,
@@ -815,7 +821,10 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
               }
             }
 
-            const { result, caseId: newCaseId } = await executeTool(entry.name, args)
+            const { result, caseId: newCaseId } = await executeTool(entry.name, args, {
+              customerName: bodyCustomerName,
+              customerEmail: bodyCustomerEmail,
+            })
             if (newCaseId) currentCaseId = newCaseId
 
             send(JSON.stringify({ type: 'tool_result', name: entry.name, result }))
