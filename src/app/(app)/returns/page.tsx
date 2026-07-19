@@ -92,17 +92,20 @@ function typeLabel(t: string) {
 
 function toolLabel(name: string) {
   const labels: Record<string, string> = {
-    fetch_order:       'Récupération de l\'order',
-    search_products:   'Recherche produit',
-    get_stock_items:   'Identification des unités',
-    add_internal_note: 'Note interne ajoutée',
-    create_sav_order:  'Création de la SAV order',
-    add_tag:           'Tag ajouté',
-    add_sav_comment:   'Commentaire SAV',
-    add_sav_line:      'Ajout ligne SAV',
-    log_case:          'Cas enregistré',
-    draft_email:       'Rédaction email',
-    send_email:        'Envoi email',
+    fetch_order:            'Récupération de l\'order',
+    search_products:        'Recherche produit',
+    get_stock_items:        'Identification des unités',
+    add_internal_note:      'Note interne ajoutée',
+    create_sav_order:       'Création de la SAV order',
+    create_new_return_order:'Création commande de retour',
+    add_tag:                'Tags ajoutés',
+    add_sav_comment:        'Commentaire SAV',
+    add_sav_line:           'Ajout ligne SAV',
+    add_new_product_line:   'Ajout ligne produit',
+    set_original_order:     'Commande d\'origine liée',
+    log_case:               'Cas enregistré',
+    draft_email:            'Rédaction email',
+    send_email:             'Envoi email',
   }
   return labels[name] || name
 }
@@ -171,9 +174,15 @@ function toolSummary(name: string, result: string | undefined): string | null {
     return m ? m[1].trim().slice(0, 80) : null
   }
 
-  // add_sav_line retourne "✓ Ligne produit ajoutée..."
-  if (name === 'add_sav_line' && result.startsWith('✓')) {
+  // add_sav_line / add_new_product_line retourne "✓ Ligne produit ajoutée..."
+  if ((name === 'add_sav_line' || name === 'add_new_product_line') && result.startsWith('✓')) {
     return result.replace('✓ ', '').slice(0, 80)
+  }
+
+  // create_new_return_order retourne "✓ Commande de retour créée (numéro: XXXX) | id: ..."
+  if (name === 'create_new_return_order' && result.startsWith('✓')) {
+    const m = result.match(/numéro:\s*(\S+)\)/)
+    return m ? `Order #${m[1]}` : null
   }
 
   // log_case retourne "✓ Cas #N loggué..."
@@ -242,6 +251,8 @@ function ChatPanel() {
   const [sending, setSending] = useState(false)
   const [caseId, setCaseId] = useState<string | null>(null)
   const [scenario, setScenario] = useState<Scenario | null>(null)
+  // customer_id extrait du dernier fetch_order — passé à chaque requête pour éviter les placeholders IA
+  const [fetchedCustomerId, setFetchedCustomerId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -271,7 +282,7 @@ function ChatPanel() {
       const res = await fetch('/api/returns/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, caseId, scenario }),
+        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId }),
       })
 
       if (!res.body) throw new Error('No body')
@@ -309,6 +320,16 @@ function ChatPanel() {
               ))
             }
             if (event.type === 'tool_result') {
+              // Extraire le customer_id du résultat fetch_order pour le mémoriser côté client
+              if (event.name === 'fetch_order') {
+                try {
+                  const parsed = JSON.parse(event.result) as { customer_id?: string }
+                  const cid = parsed.customer_id || ''
+                  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)) {
+                    setFetchedCustomerId(cid)
+                  }
+                } catch { /* ignore */ }
+              }
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
                   ? {
@@ -388,7 +409,7 @@ function ChatPanel() {
       const res = await fetch('/api/returns/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, caseId, scenario }),
+        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId }),
       })
       if (!res.body) throw new Error('No body')
 
@@ -422,6 +443,15 @@ function ChatPanel() {
               ))
             }
             if (event.type === 'tool_result') {
+              if (event.name === 'fetch_order') {
+                try {
+                  const parsed = JSON.parse(event.result) as { customer_id?: string }
+                  const cid = parsed.customer_id || ''
+                  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)) {
+                    setFetchedCustomerId(cid)
+                  }
+                } catch { /* ignore */ }
+              }
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
                   ? { ...m, toolCalls: (m.toolCalls || []).map((tc, i) =>
@@ -491,6 +521,7 @@ function ChatPanel() {
     }])
     setCaseId(null)
     setInput('')
+    setFetchedCustomerId(null)
   }
 
   function selectScenario(s: Scenario) {
@@ -499,6 +530,7 @@ function ChatPanel() {
     setMessages([{ id: 'welcome', role: 'assistant', content: cfg.welcome }])
     setCaseId(null)
     setInput('')
+    setFetchedCustomerId(null)
   }
 
   // ── Sélecteur de scénario ──────────────────────────────────────────────────

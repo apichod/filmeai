@@ -290,10 +290,8 @@ async function executeTool(
         const tagList = Array.isArray(args.tags) ? args.tags.map(String) : [String(args.tags || args.tag || '')]
         await addTagToOrder(String(args.order_id), tagList)
         // Pickup automatique après ajout des tags (toutes les lignes sont déjà ajoutées à ce stade)
-        const { error: startErr } = await startSAVOrder(String(args.order_id))
-        let result = `✓ Tags ajoutés : ${tagList.join(', ')}`
-        if (startErr) result += ` | ⚠️ Pickup non bloquant : ${startErr}`
-        return { result }
+        await startSAVOrder(String(args.order_id))
+        return { result: `✓ Tags ajoutés : ${tagList.join(', ')}` }
       }
 
       case 'add_sav_comment': {
@@ -538,9 +536,10 @@ export async function POST(req: NextRequest) {
     workflowSlug?: string  // 'manquant' | 'casse' (facultatif, l'IA détecte)
     caseId?: string
     scenario?: string | null
+    customerId?: string | null  // customer_id mémorisé côté client après fetch_order
   }
 
-  const { messages, caseId = null, scenario = null } = body
+  const { messages, caseId = null, scenario = null, customerId: bodyCustomerId = null } = body
 
   // Charge le prompt du workflow correspondant au scénario (ou tous si pas de scénario)
   const supabase = getSupabaseAdmin()
@@ -598,7 +597,12 @@ fetch_order retourne les lignes enrichies :
   - stock_item_label : ex: "ID-2"
 
 A1. Récupère l'order avec fetch_order, puis affiche les articles :
-    "Voici les articles de l'order [numéro] : [liste]. Quel(s) article(s) est/sont [endommagé(s) / manquant(s)] ?"
+    "Voici les articles de l'order [numéro] :
+    1x Caméra Sony FX3
+    2x Carte CFexpress Type A
+    ..."
+    Format OBLIGATOIRE : une ligne par article, "{quantité}x {nom}" — pas de numérotation, pas de parenthèses.
+    Puis : "Quel(s) article(s) est/sont [endommagé(s) / manquant(s)] ?"
     → Si déjà mentionné par l'utilisateur, utilise directement cette info.
 
 A2. Pour chaque article concerné, identifie le product_group_id et stock_item_id :
@@ -772,24 +776,29 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
             let args: Record<string, unknown> = {}
             try { args = JSON.parse(entry.arguments) } catch { /* ignore */ }
 
-            // Fallback : si l'IA passe un placeholder pour customer_id, récupérer l'UUID réel depuis l'historique
+            // Fallback : si l'IA passe un placeholder pour customer_id, récupérer l'UUID réel
             if (entry.name === 'create_new_return_order') {
               const providedId = String(args.customer_id || '')
-              const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providedId)
+              const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+              const isValidUuid = UUID_RE.test(providedId)
               if (!isValidUuid) {
-                // Parcourir l'historique à rebours pour trouver le dernier résultat fetch_order
-                for (let i = currentMessages.length - 1; i >= 0; i--) {
-                  const msg = currentMessages[i]
-                  if (msg.role === 'tool') {
-                    try {
-                      const parsed = JSON.parse(String(msg.content)) as Record<string, unknown>
-                      const cid = String(parsed.customer_id || '')
-                      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)) {
-                        console.log('[create_new_return_order] fallback customer_id récupéré:', cid, '(était:', providedId, ')')
-                        args = { ...args, customer_id: cid }
-                        break
-                      }
-                    } catch { /* pas JSON, continuer */ }
+                // 1. Priorité : customer_id mémorisé côté client (envoyé dans le body)
+                if (bodyCustomerId && UUID_RE.test(bodyCustomerId)) {
+                  args = { ...args, customer_id: bodyCustomerId }
+                } else {
+                  // 2. Fallback : parcourir l'historique en mémoire (même session HTTP)
+                  for (let i = currentMessages.length - 1; i >= 0; i--) {
+                    const msg = currentMessages[i]
+                    if (msg.role === 'tool') {
+                      try {
+                        const parsed = JSON.parse(String(msg.content)) as Record<string, unknown>
+                        const cid = String(parsed.customer_id || '')
+                        if (UUID_RE.test(cid)) {
+                          args = { ...args, customer_id: cid }
+                          break
+                        }
+                      } catch { /* pas JSON, continuer */ }
+                    }
                   }
                 }
               }
