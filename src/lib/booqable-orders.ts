@@ -113,7 +113,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
 
     // ── Passe 1 : lignes top-level ───────────────────────────────────────────
     const res1 = await fetch(
-      `${BASE_BOOMERANG}/lines?filter[order_id]=${order.id}&include=item,stock_item&per=200`,
+      `${BASE_BOOMERANG}/lines?filter[order_id]=${order.id}&include=item,stock_item&page[size]=200`,
       { headers: headers(), signal: AbortSignal.timeout(12000) }
     )
     if (!res1.ok) throw new Error(`/lines pass1 error ${res1.status}`)
@@ -163,7 +163,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
       const childFetches = await Promise.all(
         bundleHeaderIds.map(lineId =>
           fetch(
-            `${BASE_BOOMERANG}/lines?filter[parent_line_id]=${lineId}&include=item,stock_item&per=200`,
+            `${BASE_BOOMERANG}/lines?filter[parent_line_id]=${lineId}&include=item,stock_item&page[size]=200`,
             { headers: headers(), signal: AbortSignal.timeout(12000) }
           ).then(r => r.ok ? r.json() as Promise<{ data?: BoomNode[]; included?: BoomNode[] }> : { data: [], included: [] })
         )
