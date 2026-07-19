@@ -144,10 +144,10 @@ export async function GET() {
     } else {
       grouped[templateId].cases.sort((a, b) => (a!.sort_order ?? 0) - (b!.sort_order ?? 0))
     }
-    // Ajouter le slug dérivé sur chaque cas
+    // Slug : utiliser la valeur DB si présente, sinon calculer le défaut
     grouped[templateId].cases = grouped[templateId].cases.map((c, i) => ({
       ...c!,
-      slug: grouped[templateId].cases.length > 1 ? `${templateId}_cas_${i + 1}` : templateId,
+      slug: c!.slug || (grouped[templateId].cases.length > 1 ? `${templateId}_cas_${i + 1}` : templateId),
     }))
   }
 
@@ -174,6 +174,7 @@ export async function PATCH(req: NextRequest) {
     subject?: string
     body?: string
     label?: string
+    slug?: string
   }
 
   if (!body.template_id) {
@@ -192,13 +193,14 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // Mise à jour subject/body d'une variante
+  // Mise à jour subject/body/slug d'une variante
   if (!body.case_key) {
-    return NextResponse.json({ error: 'case_key requis pour subject/body' }, { status: 400 })
+    return NextResponse.json({ error: 'case_key requis pour subject/body/slug' }, { status: 400 })
   }
   const updates: Record<string, string> = { updated_at: new Date().toISOString() }
   if (body.subject !== undefined) updates.subject = body.subject
   if (body.body    !== undefined) updates.body    = body.body
+  if (body.slug !== undefined) updates.slug = body.slug
 
   const { error } = await supabase
     .from('email_templates')

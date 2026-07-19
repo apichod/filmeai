@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -48,16 +48,15 @@ const PLACEHOLDERS = [
 export default function EmailTemplatesPage() {
   const [groups, setGroups]         = useState<TemplateGroup[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [editing, setEditing]       = useState<Record<string, { subject: string; body: string }>>({})
+  const [editing, setEditing]       = useState<Record<string, { subject: string; body: string; slug: string }>>({})
   const [saving, setSaving]         = useState<string | null>(null)
   const [saved, setSaved]           = useState<string | null>(null)
   const [loading, setLoading]       = useState(true)
 
-  // Label editing
-  const [editingLabelId, setEditingLabelId] = useState<string | null>(null)
-  const [labelDraft, setLabelDraft]         = useState('')
-  const [savingLabel, setSavingLabel]       = useState<string | null>(null)
-  const labelInputRef = useRef<HTMLInputElement>(null)
+  // Label editing (panneau droit uniquement)
+  const [labelDraft, setLabelDraft]   = useState('')
+  const [savingLabel, setSavingLabel] = useState(false)
+  const [savedLabel, setSavedLabel]   = useState(false)
 
   useEffect(() => {
     fetch('/api/email-templates')
@@ -65,11 +64,14 @@ export default function EmailTemplatesPage() {
       .then((data: TemplateGroup[]) => {
         const sorted = [...data].sort((a, b) => parseGroupNum(a.label) - parseGroupNum(b.label))
         setGroups(sorted)
-        if (sorted.length > 0) setSelectedId(sorted[0].template_id)
-        const init: Record<string, { subject: string; body: string }> = {}
+        if (sorted.length > 0) {
+          setSelectedId(sorted[0].template_id)
+          setLabelDraft(sorted[0].label)
+        }
+        const init: Record<string, { subject: string; body: string; slug: string }> = {}
         for (const g of sorted) {
           for (const c of g.cases) {
-            init[`${c.template_id}__${c.case_key}`] = { subject: c.subject, body: c.body }
+            init[`${c.template_id}__${c.case_key}`] = { subject: c.subject, body: c.body, slug: c.slug || '' }
           }
         }
         setEditing(init)
@@ -78,16 +80,14 @@ export default function EmailTemplatesPage() {
       .catch(() => setLoading(false))
   }, [])
 
-  // Focus input when label editing starts
-  useEffect(() => {
-    if (editingLabelId) {
-      setTimeout(() => labelInputRef.current?.focus(), 20)
-    }
-  }, [editingLabelId])
-
   const selectedGroup = groups.find(g => g.template_id === selectedId)
 
-  const handleChange = useCallback((templateId: string, caseKey: string, field: 'subject' | 'body', value: string) => {
+  // Sync labelDraft when selection changes
+  useEffect(() => {
+    if (selectedGroup) setLabelDraft(selectedGroup.label)
+  }, [selectedId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleChange = useCallback((templateId: string, caseKey: string, field: 'subject' | 'body' | 'slug', value: string) => {
     const k = `${templateId}__${caseKey}`
     setEditing(prev => ({ ...prev, [k]: { ...prev[k], [field]: value } }))
   }, [])
@@ -101,8 +101,15 @@ export default function EmailTemplatesPage() {
       await fetch('/api/email-templates', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template_id: templateId, case_key: caseKey, subject: vals.subject, body: vals.body }),
+        body: JSON.stringify({ template_id: templateId, case_key: caseKey, subject: vals.subject, body: vals.body, slug: vals.slug }),
       })
+      // Mettre à jour le slug dans la liste locale
+      setGroups(prev => prev.map(g =>
+        g.template_id !== templateId ? g : {
+          ...g,
+          cases: g.cases.map(c => c.case_key !== caseKey ? c : { ...c, slug: vals.slug })
+        }
+      ))
       setSaved(k)
       setTimeout(() => setSaved(null), 2000)
     } finally {
@@ -110,35 +117,28 @@ export default function EmailTemplatesPage() {
     }
   }, [editing])
 
-  const startEditingLabel = useCallback((g: TemplateGroup, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setEditingLabelId(g.template_id)
-    setLabelDraft(g.label)
-  }, [])
-
-  const saveLabelAndClose = useCallback(async (templateId: string) => {
+  const handleSaveLabel = useCallback(async () => {
+    if (!selectedGroup) return
     const newLabel = labelDraft.trim()
-    setEditingLabelId(null)
-    if (!newLabel) return
-    const prev = groups.find(g => g.template_id === templateId)?.label
-    if (newLabel === prev) return
-
-    setSavingLabel(templateId)
+    if (!newLabel || newLabel === selectedGroup.label) return
+    setSavingLabel(true)
     try {
       await fetch('/api/email-templates', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template_id: templateId, label: newLabel }),
+        body: JSON.stringify({ template_id: selectedGroup.template_id, label: newLabel }),
       })
-      setGroups(gs =>
-        gs
-          .map(g => g.template_id === templateId ? { ...g, label: newLabel } : g)
+      setGroups(prev =>
+        prev
+          .map(g => g.template_id === selectedGroup.template_id ? { ...g, label: newLabel } : g)
           .sort((a, b) => parseGroupNum(a.label) - parseGroupNum(b.label))
       )
+      setSavedLabel(true)
+      setTimeout(() => setSavedLabel(false), 2000)
     } finally {
-      setSavingLabel(null)
+      setSavingLabel(false)
     }
-  }, [labelDraft, groups])
+  }, [selectedGroup, labelDraft])
 
   if (loading) {
     return <div className="text-sm text-gray-400 py-8 text-center">Chargement des templates…</div>
@@ -147,61 +147,24 @@ export default function EmailTemplatesPage() {
   return (
     <div className="flex gap-6 min-h-[600px]">
 
-      {/* ── Colonne gauche : liste des templates ── */}
+      {/* ── Colonne gauche : navigation ── */}
       <div className="w-56 flex-shrink-0 space-y-1">
-        {groups.map(g => {
-          const isActive = selectedId === g.template_id
-          const isEditingLabel = editingLabelId === g.template_id
-          return (
-            <button
-              key={g.template_id}
-              onClick={() => { if (!isEditingLabel) setSelectedId(g.template_id) }}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors group ${
-                isActive
-                  ? 'bg-black text-white font-medium'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-1 min-w-0">
-                {isEditingLabel ? (
-                  <input
-                    ref={labelInputRef}
-                    className={`flex-1 min-w-0 bg-transparent text-sm font-medium outline-none border-b ${isActive ? 'border-white/60 text-white placeholder-white/50' : 'border-gray-400 text-gray-900'}`}
-                    value={labelDraft}
-                    onChange={e => setLabelDraft(e.target.value)}
-                    onBlur={() => saveLabelAndClose(g.template_id)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') e.currentTarget.blur()
-                      if (e.key === 'Escape') { setEditingLabelId(null) }
-                    }}
-                    onClick={e => e.stopPropagation()}
-                  />
-                ) : (
-                  <>
-                    <span className="block leading-snug truncate flex-1 min-w-0">{g.label}</span>
-                    {savingLabel === g.template_id ? (
-                      <span className={`w-3 h-3 flex-shrink-0 rounded-full border-2 border-t-transparent animate-spin ${isActive ? 'border-white/60' : 'border-gray-400'}`} />
-                    ) : (
-                      <span
-                        role="button"
-                        title="Renommer"
-                        onClick={e => startEditingLabel(g, e)}
-                        className={`flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded ${isActive ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
-                      >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
-                        </svg>
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
-              <span className={`text-xs mt-0.5 block ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>
-                {g.cases.length} variante{g.cases.length > 1 ? 's' : ''}
-              </span>
-            </button>
-          )
-        })}
+        {groups.map(g => (
+          <button
+            key={g.template_id}
+            onClick={() => setSelectedId(g.template_id)}
+            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
+              selectedId === g.template_id
+                ? 'bg-black text-white font-medium'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <span className="block leading-snug truncate">{g.label}</span>
+            <span className={`text-xs mt-0.5 block ${selectedId === g.template_id ? 'text-gray-300' : 'text-gray-400'}`}>
+              {g.cases.length} variante{g.cases.length > 1 ? 's' : ''}
+            </span>
+          </button>
+        ))}
 
         {/* Légende placeholders */}
         <div className="pt-4 border-t border-gray-100 mt-4">
@@ -221,75 +184,78 @@ export default function EmailTemplatesPage() {
           <p className="text-sm text-gray-400">Sélectionnez un template.</p>
         ) : (
           <>
-            <div className="flex items-start gap-2">
+            {/* Titre éditable */}
+            <div className="flex items-end gap-3">
               <div className="flex-1 min-w-0">
-                {editingLabelId === selectedGroup.template_id ? (
-                  <input
-                    className="text-base font-semibold text-gray-900 outline-none border-b border-gray-400 w-full bg-transparent"
-                    value={labelDraft}
-                    onChange={e => setLabelDraft(e.target.value)}
-                    onBlur={() => saveLabelAndClose(selectedGroup.template_id)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') e.currentTarget.blur()
-                      if (e.key === 'Escape') setEditingLabelId(null)
-                    }}
-                    autoFocus
-                  />
-                ) : (
-                  <h2 className="text-base font-semibold text-gray-900">{selectedGroup.label}</h2>
-                )}
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {selectedGroup.cases.length > 1
-                    ? `${selectedGroup.cases.length} variantes selon assurance / caution / montant`
-                    : 'Template unique'}
-                </p>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Titre du template</label>
+                <input
+                  type="text"
+                  value={labelDraft}
+                  onChange={e => setLabelDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSaveLabel() }}
+                  className="w-full text-base font-semibold text-gray-900 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  placeholder="ex: 10 – Contrôle retour OK"
+                />
               </div>
-              {editingLabelId !== selectedGroup.template_id && (
+              <div className="flex items-center gap-2 pb-0.5">
+                {savedLabel && <span className="text-xs text-green-600 font-medium">✓ Sauvegardé</span>}
                 <button
-                  onClick={e => startEditingLabel(selectedGroup, e)}
-                  title="Renommer ce template"
-                  className="mt-0.5 p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0"
+                  onClick={handleSaveLabel}
+                  disabled={savingLabel || labelDraft.trim() === selectedGroup.label}
+                  className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-30 transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
-                  </svg>
+                  {savingLabel ? 'Sauvegarde…' : 'Sauvegarder'}
                 </button>
-              )}
+              </div>
             </div>
+
+            <p className="text-xs text-gray-400 -mt-4">
+              {selectedGroup.cases.length > 1
+                ? `${selectedGroup.cases.length} variantes selon assurance / caution / montant`
+                : 'Template unique'}
+            </p>
 
             {selectedGroup.cases.map((c) => {
               const k = `${c.template_id}__${c.case_key}`
-              const vals = editing[k] ?? { subject: c.subject, body: c.body }
+              const vals = editing[k] ?? { subject: c.subject, body: c.body, slug: c.slug || '' }
               const isSaving = saving === k
               const isSaved  = saved === k
 
               return (
                 <div key={c.case_key} className="border border-gray-200 rounded-xl p-5 space-y-4">
-                  {(c.case_label || c.slug) && (
+                  {/* Badges conditions */}
+                  {(c.case_label || c.conditions) && (
                     <div className="flex flex-wrap items-center gap-2">
                       {c.case_label && (
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                           {c.case_label}
                         </span>
                       )}
-                      {c.slug && (
-                        <code className="text-[10px] bg-gray-50 border border-gray-200 text-gray-500 px-1.5 py-0.5 rounded">
-                          {c.slug}
-                        </code>
-                      )}
                       {c.conditions && (['insurance', 'caution', 'amountAbove500', 'latePayment'] as const)
                         .filter(k => k in c.conditions)
                         .map(k => [k, c.conditions[k]] as [string, boolean])
                         .map(([k, v]) => (
-                        <span key={k} className={`px-2 py-0.5 rounded-full text-xs font-medium ${v ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                          {k === 'insurance' ? (v ? '✓ assurance' : '✗ assurance') :
-                           k === 'caution' ? (v ? '✓ caution' : '✗ caution') :
-                           k === 'amountAbove500' ? (v ? '> 500 €' : '< 500 €') :
-                           k === 'latePayment' ? '⚠ retard' : `${k}: ${v}`}
-                        </span>
-                      ))}
+                          <span key={k} className={`px-2 py-0.5 rounded-full text-xs font-medium ${v ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                            {k === 'insurance' ? (v ? '✓ assurance' : '✗ assurance') :
+                             k === 'caution' ? (v ? '✓ caution' : '✗ caution') :
+                             k === 'amountAbove500' ? (v ? '> 500 €' : '< 500 €') :
+                             k === 'latePayment' ? '⚠ retard' : `${k}: ${v}`}
+                          </span>
+                        ))}
                     </div>
                   )}
+
+                  {/* Slug éditable */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Identifiant (slug)</label>
+                    <input
+                      type="text"
+                      value={vals.slug}
+                      onChange={e => handleChange(c.template_id, c.case_key, 'slug', e.target.value)}
+                      className="w-full text-xs font-mono border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-black/10 text-gray-600 bg-gray-50"
+                      placeholder={`${c.template_id}_cas_1`}
+                    />
+                  </div>
 
                   {/* Objet */}
                   <div>
@@ -315,9 +281,7 @@ export default function EmailTemplatesPage() {
 
                   {/* Bouton sauvegarder */}
                   <div className="flex items-center justify-end gap-3">
-                    {isSaved && (
-                      <span className="text-xs text-green-600 font-medium">✓ Sauvegardé</span>
-                    )}
+                    {isSaved && <span className="text-xs text-green-600 font-medium">✓ Sauvegardé</span>}
                     <button
                       onClick={() => handleSave(c.template_id, c.case_key)}
                       disabled={isSaving}
