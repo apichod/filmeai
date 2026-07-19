@@ -121,11 +121,11 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
       const linesData = boomData.data || []
       const included  = boomData.included || []
 
-      // Index universel : tous les objets included par id
-      // Supporte : products, product_groups, product_group (variantes de nommage Booqable)
-      const itemNameMap   = new Map<string, string>()
-      const itemGroupMap  = new Map<string, string>() // id → product_group_id
-      const stockItemMap  = new Map<string, string>() // id → identifier
+      // Index universel depuis included
+      const itemNameMap   = new Map<string, string>()   // id → nom
+      const itemGroupMap  = new Map<string, string>()   // product_id → product_group_id
+      const itemIsBundleMap = new Map<string, boolean>()// product_group_id → bundle?
+      const stockItemMap  = new Map<string, string>()   // id → identifier
 
       for (const r of included) {
         const name = String(r.attributes.name || r.attributes.display_name || '')
@@ -136,32 +136,46 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         }
         if (r.type === 'product_groups' || r.type === 'product_group') {
           itemNameMap.set(r.id, name)
+          // bundle = true → c'est un pack (header à exclure)
+          itemIsBundleMap.set(r.id, Boolean(r.attributes.bundle || r.attributes.has_variations === false && r.attributes.trackable === false))
         }
         if (r.type === 'stock_items' || r.type === 'stock_item') {
           stockItemMap.set(r.id, String(r.attributes.identifier || ''))
         }
       }
 
-      // Construire les lignes depuis data[] (chaque entrée est une line)
+      // Construire les lignes depuis data[]
       const lines: BooqableOrderLine[] = []
       for (const r of linesData) {
         const attrs = r.attributes
-        const qty = Number(attrs.quantity) || 0
-        if (qty <= 0) continue
 
-        type Rel = { data?: { type: string; id: string } }
+        type Rel = { data?: { type: string; id: string } | null }
         const rels = r.relationships as Record<string, Rel> | undefined
+
+        // Détecter les lignes constituantes d'un bundle via parent_line_id / owner
+        const parentLineId = String(attrs.parent_line_id || attrs.owner_id || '')
+        const isChild = parentLineId.length > 0 && parentLineId !== 'null'
+
+        const qty = Number(attrs.quantity) || 0
+
+        // Inclure si : ligne enfant (constituante de bundle) OU qty > 0
+        // Exclure si : qty = 0 ET pas une ligne enfant
+        if (qty <= 0 && !isChild) continue
+
         const itemRel     = rels?.item?.data
         const itemRelId   = itemRel?.id   || String(attrs.item_id || '')
-        const itemRelType = itemRel?.type || ''
+        const itemRelType = itemRel?.type  || ''
+
+        // Exclure les headers de bundle (item = product_group avec bundle:true)
+        const isGroup = itemRelType === 'product_groups' || itemRelType === 'product_group'
+        if (isGroup && itemIsBundleMap.get(itemRelId) === true) continue
 
         // product_group_id
-        const isGroup = itemRelType === 'product_groups' || itemRelType === 'product_group'
         const productGroupId: string | undefined = isGroup
           ? itemRelId
           : (itemGroupMap.get(itemRelId) || undefined)
 
-        // Nom : attrs.description / name / title en priorité, sinon lookup included
+        // Nom : description sur la ligne en priorité, puis lookup included
         const productName = String(
           attrs.description ||
           attrs.name ||
@@ -170,6 +184,9 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           ''
         )
         if (!productName && !itemRelId) continue
+
+        // Quantité affichée : pour les lignes enfants qty peut être 0 → utiliser quantity_each ou 1
+        const displayQty = qty > 0 ? qty : (Number(attrs.quantity_each) || 1)
 
         // stock_item
         const stockItemRel = rels?.stock_item?.data
@@ -180,7 +197,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           id: r.id,
           product_id: itemRelId,
           product_name: productName,
-          quantity: qty,
+          quantity: displayQty,
           product_group_id: productGroupId,
           stock_item_id: stockItemId,
           stock_item_identifier: stockItemIdentifier,
