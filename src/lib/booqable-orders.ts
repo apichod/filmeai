@@ -95,10 +95,11 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     status: String(orderData.attributes.status ?? ''),
     starts_at: String(orderData.attributes.starts_at ?? ''),
     stops_at: String(orderData.attributes.stops_at ?? ''),
-    // customer_id : attribut direct OU via relationships (JSON:API boomerang)
+    // customer_id : attribut direct → relationships → id du customer inclus
     customer_id: String(
       orderData.attributes.customer_id ||
       (orderData.relationships?.customer as { data?: { id?: string } })?.data?.id ||
+      customerIncluded?.id ||
       ''
     ),
     customer: customerIncluded ? {
@@ -502,7 +503,7 @@ export async function setOriginalOrder(
     body: JSON.stringify({
       order: {
         properties_attributes: [
-          { name: 'Commande d\'origine', identifier: 'original_order', value: originalOrderNumber },
+          { name: 'Order SAV', identifier: 'order_sav', value: originalOrderNumber },
         ],
       },
     }),
