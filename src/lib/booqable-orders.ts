@@ -120,6 +120,13 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
 
       const linesData = boomData.data || []
       const included  = boomData.included || []
+      // DEBUG TEMPORAIRE — à retirer après diagnostic
+      console.log('[fetchOrderByNumber] lines count:', linesData.length, 'included count:', included.length)
+      if (linesData.length > 0) {
+        const sample = linesData[0]
+        console.log('[fetchOrderByNumber] sample line attrs:', JSON.stringify(sample.attributes))
+        console.log('[fetchOrderByNumber] sample line rels:', JSON.stringify(sample.relationships))
+      }
 
       // Index universel depuis included
       const itemNameMap   = new Map<string, string>()   // id → nom
