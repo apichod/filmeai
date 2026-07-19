@@ -122,7 +122,8 @@ export async function GET() {
     if (!grouped[row.template_id]) {
       grouped[row.template_id] = {
         template_id: row.template_id,
-        label: EMAIL_TEMPLATE_LABELS[row.template_id as keyof typeof EMAIL_TEMPLATE_LABELS] || row.template_id,
+        // Priorité : valeur DB (row.label) si renseignée, sinon fallback code
+        label: row.label || EMAIL_TEMPLATE_LABELS[row.template_id as keyof typeof EMAIL_TEMPLATE_LABELS] || row.template_id,
         cases: [],
       }
     }
@@ -150,29 +151,51 @@ export async function GET() {
     }))
   }
 
-  // Trier les groupes selon TEMPLATE_GROUP_ORDER (#10 → #11 → #12)
-  const sorted = TEMPLATE_GROUP_ORDER
-    .map(id => grouped[id])
-    .filter(Boolean)
-    .concat(Object.values(grouped).filter(g => !TEMPLATE_GROUP_ORDER.includes(g.template_id)))
+  // Trier les groupes par préfixe numérique du label ("10 –" → 10), puis par ordre historique en fallback
+  function parseGroupNum(label: string): number {
+    const m = (label || '').match(/^(\d+)/)
+    return m ? parseInt(m[1], 10) : 999
+  }
+  const sorted = Object.values(grouped).sort((a, b) => {
+    const na = parseGroupNum(a.label)
+    const nb = parseGroupNum(b.label)
+    if (na !== nb) return na - nb
+    return TEMPLATE_GROUP_ORDER.indexOf(a.template_id) - TEMPLATE_GROUP_ORDER.indexOf(b.template_id)
+  })
 
   return NextResponse.json(sorted)
 }
 
-// PATCH — met à jour subject et/ou body d'une variante
+// PATCH — met à jour label (toutes les variantes) ou subject/body d'une variante
 export async function PATCH(req: NextRequest) {
   const body = await req.json() as {
     template_id: string
-    case_key: string
+    case_key?: string
     subject?: string
     body?: string
+    label?: string
   }
 
-  if (!body.template_id || !body.case_key) {
-    return NextResponse.json({ error: 'template_id et case_key requis' }, { status: 400 })
+  if (!body.template_id) {
+    return NextResponse.json({ error: 'template_id requis' }, { status: 400 })
   }
 
   const supabase = getSupabaseAdmin()
+
+  // Mise à jour du label du groupe (toutes les variantes)
+  if (body.label !== undefined) {
+    const { error } = await supabase
+      .from('email_templates')
+      .update({ label: body.label, updated_at: new Date().toISOString() })
+      .eq('template_id', body.template_id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  // Mise à jour subject/body d'une variante
+  if (!body.case_key) {
+    return NextResponse.json({ error: 'case_key requis pour subject/body' }, { status: 400 })
+  }
   const updates: Record<string, string> = { updated_at: new Date().toISOString() }
   if (body.subject !== undefined) updates.subject = body.subject
   if (body.body    !== undefined) updates.body    = body.body

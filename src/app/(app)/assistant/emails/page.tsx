@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -21,6 +21,13 @@ type TemplateGroup = {
   template_id: string
   label: string
   cases: TemplateCase[]
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function parseGroupNum(label: string): number {
+  const m = (label || '').match(/^(\d+)/)
+  return m ? parseInt(m[1], 10) : 999
 }
 
 // ── Placeholders helper ────────────────────────────────────────────────────────
@@ -46,15 +53,21 @@ export default function EmailTemplatesPage() {
   const [saved, setSaved]           = useState<string | null>(null)
   const [loading, setLoading]       = useState(true)
 
+  // Label editing
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null)
+  const [labelDraft, setLabelDraft]         = useState('')
+  const [savingLabel, setSavingLabel]       = useState<string | null>(null)
+  const labelInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => {
     fetch('/api/email-templates')
       .then(r => r.json())
       .then((data: TemplateGroup[]) => {
-        setGroups(data)
-        if (data.length > 0) setSelectedId(data[0].template_id)
-        // Init editing state from DB values
+        const sorted = [...data].sort((a, b) => parseGroupNum(a.label) - parseGroupNum(b.label))
+        setGroups(sorted)
+        if (sorted.length > 0) setSelectedId(sorted[0].template_id)
         const init: Record<string, { subject: string; body: string }> = {}
-        for (const g of data) {
+        for (const g of sorted) {
           for (const c of g.cases) {
             init[`${c.template_id}__${c.case_key}`] = { subject: c.subject, body: c.body }
           }
@@ -64,6 +77,13 @@ export default function EmailTemplatesPage() {
       })
       .catch(() => setLoading(false))
   }, [])
+
+  // Focus input when label editing starts
+  useEffect(() => {
+    if (editingLabelId) {
+      setTimeout(() => labelInputRef.current?.focus(), 20)
+    }
+  }, [editingLabelId])
 
   const selectedGroup = groups.find(g => g.template_id === selectedId)
 
@@ -76,7 +96,6 @@ export default function EmailTemplatesPage() {
     const k = `${templateId}__${caseKey}`
     const vals = editing[k]
     if (!vals) return
-
     setSaving(k)
     try {
       await fetch('/api/email-templates', {
@@ -91,6 +110,36 @@ export default function EmailTemplatesPage() {
     }
   }, [editing])
 
+  const startEditingLabel = useCallback((g: TemplateGroup, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingLabelId(g.template_id)
+    setLabelDraft(g.label)
+  }, [])
+
+  const saveLabelAndClose = useCallback(async (templateId: string) => {
+    const newLabel = labelDraft.trim()
+    setEditingLabelId(null)
+    if (!newLabel) return
+    const prev = groups.find(g => g.template_id === templateId)?.label
+    if (newLabel === prev) return
+
+    setSavingLabel(templateId)
+    try {
+      await fetch('/api/email-templates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_id: templateId, label: newLabel }),
+      })
+      setGroups(gs =>
+        gs
+          .map(g => g.template_id === templateId ? { ...g, label: newLabel } : g)
+          .sort((a, b) => parseGroupNum(a.label) - parseGroupNum(b.label))
+      )
+    } finally {
+      setSavingLabel(null)
+    }
+  }, [labelDraft, groups])
+
   if (loading) {
     return <div className="text-sm text-gray-400 py-8 text-center">Chargement des templates…</div>
   }
@@ -100,22 +149,59 @@ export default function EmailTemplatesPage() {
 
       {/* ── Colonne gauche : liste des templates ── */}
       <div className="w-56 flex-shrink-0 space-y-1">
-        {groups.map(g => (
-          <button
-            key={g.template_id}
-            onClick={() => setSelectedId(g.template_id)}
-            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
-              selectedId === g.template_id
-                ? 'bg-black text-white font-medium'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            <span className="block leading-snug">{g.label}</span>
-            <span className={`text-xs mt-0.5 block ${selectedId === g.template_id ? 'text-gray-300' : 'text-gray-400'}`}>
-              {g.cases.length} variante{g.cases.length > 1 ? 's' : ''}
-            </span>
-          </button>
-        ))}
+        {groups.map(g => {
+          const isActive = selectedId === g.template_id
+          const isEditingLabel = editingLabelId === g.template_id
+          return (
+            <button
+              key={g.template_id}
+              onClick={() => { if (!isEditingLabel) setSelectedId(g.template_id) }}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors group ${
+                isActive
+                  ? 'bg-black text-white font-medium'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-1 min-w-0">
+                {isEditingLabel ? (
+                  <input
+                    ref={labelInputRef}
+                    className={`flex-1 min-w-0 bg-transparent text-sm font-medium outline-none border-b ${isActive ? 'border-white/60 text-white placeholder-white/50' : 'border-gray-400 text-gray-900'}`}
+                    value={labelDraft}
+                    onChange={e => setLabelDraft(e.target.value)}
+                    onBlur={() => saveLabelAndClose(g.template_id)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                      if (e.key === 'Escape') { setEditingLabelId(null) }
+                    }}
+                    onClick={e => e.stopPropagation()}
+                  />
+                ) : (
+                  <>
+                    <span className="block leading-snug truncate flex-1 min-w-0">{g.label}</span>
+                    {savingLabel === g.template_id ? (
+                      <span className={`w-3 h-3 flex-shrink-0 rounded-full border-2 border-t-transparent animate-spin ${isActive ? 'border-white/60' : 'border-gray-400'}`} />
+                    ) : (
+                      <span
+                        role="button"
+                        title="Renommer"
+                        onClick={e => startEditingLabel(g, e)}
+                        className={`flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded ${isActive ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
+                      >
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                        </svg>
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+              <span className={`text-xs mt-0.5 block ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>
+                {g.cases.length} variante{g.cases.length > 1 ? 's' : ''}
+              </span>
+            </button>
+          )
+        })}
 
         {/* Légende placeholders */}
         <div className="pt-4 border-t border-gray-100 mt-4">
@@ -135,13 +221,40 @@ export default function EmailTemplatesPage() {
           <p className="text-sm text-gray-400">Sélectionnez un template.</p>
         ) : (
           <>
-            <div>
-              <h2 className="text-base font-semibold text-gray-900">{selectedGroup.label}</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {selectedGroup.cases.length > 1
-                  ? `${selectedGroup.cases.length} variantes selon assurance / caution / montant`
-                  : 'Template unique'}
-              </p>
+            <div className="flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                {editingLabelId === selectedGroup.template_id ? (
+                  <input
+                    className="text-base font-semibold text-gray-900 outline-none border-b border-gray-400 w-full bg-transparent"
+                    value={labelDraft}
+                    onChange={e => setLabelDraft(e.target.value)}
+                    onBlur={() => saveLabelAndClose(selectedGroup.template_id)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                      if (e.key === 'Escape') setEditingLabelId(null)
+                    }}
+                    autoFocus
+                  />
+                ) : (
+                  <h2 className="text-base font-semibold text-gray-900">{selectedGroup.label}</h2>
+                )}
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {selectedGroup.cases.length > 1
+                    ? `${selectedGroup.cases.length} variantes selon assurance / caution / montant`
+                    : 'Template unique'}
+                </p>
+              </div>
+              {editingLabelId !== selectedGroup.template_id && (
+                <button
+                  onClick={e => startEditingLabel(selectedGroup, e)}
+                  title="Renommer ce template"
+                  className="mt-0.5 p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                  </svg>
+                </button>
+              )}
             </div>
 
             {selectedGroup.cases.map((c) => {
