@@ -1175,22 +1175,16 @@ type EmailData = {
 }
 
 function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaymentMethod = false }: { tags: TagConfig[]; showPaymentStatus?: boolean; showPaymentMethod?: boolean }) {
-  const [rows, setRows]         = useState<TaggedOrderRow[]>([])
+  const [allRows, setAllRows]   = useState<TaggedOrderRow[]>([])
   const [loading, setLoading]   = useState(false)
   const [synced, setSynced]     = useState(false)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
-  const [activeTags, setActiveTags] = useState<Set<string>>(() => new Set([tags[0].tag]))
+  const [activeTag, setActiveTag] = useState<string>(tags[0].tag)
   const storageKey = `bq_multi_${tags.map(t => t.tag).join('_')}`
 
-  function toggleTag(tag: string) {
-    setActiveTags(prev => {
-      const next = new Set(prev)
-      if (next.has(tag)) { if (next.size > 1) next.delete(tag) } // garder au moins 1 actif
-      else next.add(tag)
-      return next
-    })
-  }
+  // Filtre côté client — même pattern que CategoryTable
+  const rows = allRows.filter(o => o.tagConfig.tag === activeTag)
 
   // Modal dernier email
   const [emailModal, setEmailModal]     = useState<{ orderId: string; orderNum: string | number } | null>(null)
@@ -1220,7 +1214,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
       const stored = localStorage.getItem(storageKey)
       if (stored) {
         const parsed = JSON.parse(stored) as { rows: TaggedOrderRow[]; syncedAt: string }
-        setRows(parsed.rows)
+        setAllRows(parsed.rows)
         setSyncedAt(parsed.syncedAt)
         setSynced(true)
       }
@@ -1231,18 +1225,17 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
     setLoading(true)
     setError(null)
     try {
+      // Fetche TOUS les tags d'un coup, filtre côté client ensuite
       const results = await Promise.all(
-        tags
-          .filter(tc => activeTags.has(tc.tag))
-          .map(tc =>
-            fetch(`/api/returns/booqable-orders?tag=${encodeURIComponent(tc.tag)}`)
-              .then(r => r.json() as Promise<{ orders?: BooqableOrderRow[]; error?: string }>)
-              .then(data => (data.orders || []).map(o => ({ ...o, tagConfig: tc })))
-          )
+        tags.map(tc =>
+          fetch(`/api/returns/booqable-orders?tag=${encodeURIComponent(tc.tag)}`)
+            .then(r => r.json() as Promise<{ orders?: BooqableOrderRow[]; error?: string }>)
+            .then(data => (data.orders || []).map(o => ({ ...o, tagConfig: tc })))
+        )
       )
       const merged = results.flat().sort(sortBySavOrderDesc)
       const now = new Date().toISOString()
-      setRows(merged)
+      setAllRows(merged)
       setSyncedAt(now)
       setSynced(true)
       localStorage.setItem(storageKey, JSON.stringify({ rows: merged, syncedAt: now }))
@@ -1264,23 +1257,20 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-gray-500 mr-1">Tags :</span>
-          {tags.map(tc => {
-            const active = activeTags.has(tc.tag)
-            return (
-              <button
-                key={tc.tag}
-                onClick={() => toggleTag(tc.tag)}
-                title={tc.tag}
-                className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-colors ${
-                  active
-                    ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                }`}
-              >
-                {TAG_LABELS[tc.tag] ?? tc.label}
-              </button>
-            )
-          })}
+          {tags.map(tc => (
+            <button
+              key={tc.tag}
+              onClick={() => setActiveTag(tc.tag)}
+              title={tc.tag}
+              className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-colors ${
+                activeTag === tc.tag
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+              }`}
+            >
+              {TAG_LABELS[tc.tag] ?? tc.label}
+            </button>
+          ))}
           {synced && (
             <span className="text-xs text-gray-400 ml-1">{rows.length} order{rows.length !== 1 ? 's' : ''}</span>
           )}
