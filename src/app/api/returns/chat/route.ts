@@ -279,7 +279,6 @@ async function executeTool(
 
       case 'create_new_return_order': {
         const customerId = String(args.customer_id || '')
-        console.log('[create_new_return_order] args.customer_id:', args.customer_id, '| resolved:', customerId)
         if (!customerId) return { result: 'Erreur : customer_id manquant — utiliser le champ "customer_id" retourné par fetch_order' }
         const sav = await createSAVOrder({ customerId })
         if (!sav) return { result: 'Erreur : commande de retour non créée' }
@@ -772,6 +771,29 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
 
             let args: Record<string, unknown> = {}
             try { args = JSON.parse(entry.arguments) } catch { /* ignore */ }
+
+            // Fallback : si l'IA passe un placeholder pour customer_id, récupérer l'UUID réel depuis l'historique
+            if (entry.name === 'create_new_return_order') {
+              const providedId = String(args.customer_id || '')
+              const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providedId)
+              if (!isValidUuid) {
+                // Parcourir l'historique à rebours pour trouver le dernier résultat fetch_order
+                for (let i = currentMessages.length - 1; i >= 0; i--) {
+                  const msg = currentMessages[i]
+                  if (msg.role === 'tool') {
+                    try {
+                      const parsed = JSON.parse(String(msg.content)) as Record<string, unknown>
+                      const cid = String(parsed.customer_id || '')
+                      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)) {
+                        console.log('[create_new_return_order] fallback customer_id récupéré:', cid, '(était:', providedId, ')')
+                        args = { ...args, customer_id: cid }
+                        break
+                      }
+                    } catch { /* pas JSON, continuer */ }
+                  }
+                }
+              }
+            }
 
             const { result, caseId: newCaseId } = await executeTool(entry.name, args)
             if (newCaseId) currentCaseId = newCaseId
