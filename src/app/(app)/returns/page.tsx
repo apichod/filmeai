@@ -854,17 +854,16 @@ type BooqableOrderRow = {
   tag_list: string[]
 }
 
-// ── Table Retards (tag late + filtre par tag secondaire) ─────────────────────
+// ── Tags secondaires communs (Retards / Pertes / Vols / Dommages) ─────────────
 
-const LATE_STATUS_TAGS = [
-  { tag: 'open',     label: 'En attente', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'waived',   label: 'Gracié',     bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
-  { tag: 'deposit',  label: 'Facturé – Caution',   bgClass: 'bg-blue-50', textClass: 'text-blue-700', paymentColored: true, paymentMethod: 'Caution'  },
-  { tag: 'billed_d', label: 'Facturé – Virement',  bgClass: 'bg-blue-50', textClass: 'text-blue-700', paymentColored: true, paymentMethod: 'Virement' },
-  { tag: 'billed_w', label: 'Facturé – CB',        bgClass: 'bg-blue-50', textClass: 'text-blue-700', paymentColored: true, paymentMethod: 'CB'       },
+const SECONDARY_STATUS_TAGS = [
+  { tag: 'r21_open',    label: 'En attente', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'r22_waived',  label: 'Gracié',     bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
+  { tag: 'r23_deposit', label: 'Caution',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700',   paymentColored: true, paymentMethod: 'Caution' },
+  { tag: 'r24_billed',  label: 'Facturé',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700',   paymentColored: true },
 ]
 
-function LateOrdersTable() {
+function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [allRows, setAllRows]   = useState<BooqableOrderRow[]>([])
   const [loading, setLoading]   = useState(false)
   const [synced, setSynced]     = useState(false)
@@ -872,7 +871,7 @@ function LateOrdersTable() {
   const [error, setError]       = useState<string | null>(null)
   // null = afficher tous (pas de filtre secondaire)
   const [filterTag, setFilterTag] = useState<string | null>(null)
-  const storageKey = 'bq_late_v2'
+  const storageKey = `bq_cat_${primaryTag}`
 
   useEffect(() => {
     try {
@@ -890,7 +889,7 @@ function LateOrdersTable() {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetch(`/api/returns/booqable-orders?tag=late`)
+      const data = await fetch(`/api/returns/booqable-orders?tag=${encodeURIComponent(primaryTag)}`)
         .then(r => r.json()) as { orders?: BooqableOrderRow[]; error?: string }
       if (data.error) { setError(data.error); return }
       const rows = (data.orders || []).sort(sortBySavOrderDesc)
@@ -919,7 +918,7 @@ function LateOrdersTable() {
 
   // Détermine le tag secondaire d'une order pour l'affichage du statut
   function getStatusTag(o: BooqableOrderRow) {
-    return LATE_STATUS_TAGS.find(s => o.tag_list.includes(s.tag)) ?? null
+    return SECONDARY_STATUS_TAGS.find(s => o.tag_list.includes(s.tag)) ?? null
   }
 
   const hasPayment = rows.some(o => {
@@ -943,7 +942,7 @@ function LateOrdersTable() {
           >
             Tous
           </button>
-          {LATE_STATUS_TAGS.map(st => (
+          {SECONDARY_STATUS_TAGS.map(st => (
             <button
               key={st.tag}
               onClick={() => setFilterTag(filterTag === st.tag ? null : st.tag)}
@@ -1432,42 +1431,15 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
 type Tab = 'chat' | 'open' | 'closed' | 'pertes' | 'vols' | 'dommages' | 'replacement' | 'repair' | 'log'
 
 
-// ── Pertes (matériel manquant) ────────────────────────────────────────────────
-const PERTE_TAGS: TagConfig[] = [
-  { tag: 'missing',          label: 'Perte',              bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'missing_waived',   label: 'Perte graciée',      bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
-  { tag: 'missing_deposit',  label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
-  { tag: 'missing_billed_d', label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
-  { tag: 'missing_billed_w', label: 'Perte facturée',     bgClass: 'bg-green-50',  textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
-]
-
-// ── Vols ──────────────────────────────────────────────────────────────────────
-const THEFT_TAGS: TagConfig[] = [
-  { tag: 'theft',          label: 'Vol',          bgClass: 'bg-red-50',   textClass: 'text-red-700'    },
-  { tag: 'theft_waived',   label: 'Vol gracié',   bgClass: 'bg-green-50', textClass: 'text-green-700'  },
-  { tag: 'theft_deposit',  label: 'Vol facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Caution'  },
-  { tag: 'theft_billed_d', label: 'Vol facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'Virement' },
-  { tag: 'theft_billed_w', label: 'Vol facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700',  paymentColored: true, paymentMethod: 'CB'       },
-]
-
-// ── Dommages (matériel endommagé) ─────────────────────────────────────────────
-const DAMAGE_TAGS: TagConfig[] = [
-  { tag: 'damage',           label: 'Dommage',          bgClass: 'bg-red-50',   textClass: 'text-red-700'   },
-  { tag: 'damage_waived',    label: 'Dommage gracié',   bgClass: 'bg-green-50', textClass: 'text-green-700' },
-  { tag: 'damage_deposit',   label: 'Dommage facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700', paymentColored: true, paymentMethod: 'Caution'  },
-  { tag: 'damage_billed_d',  label: 'Dommage facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700', paymentColored: true, paymentMethod: 'Virement' },
-  { tag: 'damage_billed_w',  label: 'Dommage facturé',  bgClass: 'bg-green-50', textClass: 'text-green-700', paymentColored: true, paymentMethod: 'CB'       },
-]
-
 // ── Gestion interne ───────────────────────────────────────────────────────────
-const REPLACE_TAGS: TagConfig[] = [
-  { tag: 'replacement_pending', label: 'À remplacer', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
-  { tag: 'replaced',            label: 'Remplacé',    bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
+const REPAIR_TAGS: TagConfig[] = [
+  { tag: 'r31_repair_needed', label: 'À réparer', bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
+  { tag: 'r32_repaired',      label: 'Réparé',    bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
 ]
 
-const REPAIR_TAGS: TagConfig[] = [
-  { tag: 'repair_pending', label: 'À réparer', bgClass: 'bg-amber-50', textClass: 'text-amber-700' },
-  { tag: 'repaired',       label: 'Réparé',    bgClass: 'bg-green-50', textClass: 'text-green-700' },
+const REPLACE_TAGS: TagConfig[] = [
+  { tag: 'r33_replace_needed', label: 'À remplacer', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'r34_replaced',       label: 'Remplacé',    bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
 ]
 
 export default function ReturnsPage() {
@@ -1514,10 +1486,10 @@ export default function ReturnsPage() {
             <ChatPanel />
           </div>
         )}
-        {tab === 'open'        && <LateOrdersTable />}
-        {tab === 'pertes'      && <MultiTagBooqableOrdersTable tags={PERTE_TAGS}  showPaymentStatus showPaymentMethod />}
-        {tab === 'vols'        && <MultiTagBooqableOrdersTable tags={THEFT_TAGS}  showPaymentStatus showPaymentMethod />}
-        {tab === 'dommages'    && <MultiTagBooqableOrdersTable tags={DAMAGE_TAGS} showPaymentStatus showPaymentMethod />}
+        {tab === 'open'        && <CategoryTable primaryTag="r11_late"    />}
+        {tab === 'pertes'      && <CategoryTable primaryTag="r12_missing" />}
+        {tab === 'vols'        && <CategoryTable primaryTag="r13_theft"   />}
+        {tab === 'dommages'    && <CategoryTable primaryTag="r14_damage"  />}
         {tab === 'replacement' && <MultiTagBooqableOrdersTable tags={REPLACE_TAGS} />}
         {tab === 'repair'      && <MultiTagBooqableOrdersTable tags={REPAIR_TAGS} />}
         {tab === 'log'         && <CasesTable />}
