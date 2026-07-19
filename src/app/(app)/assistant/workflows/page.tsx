@@ -222,7 +222,7 @@ export default function WorkflowsPage() {
     fetch('/api/returns/workflows')
       .then(r => r.json())
       .then(d => {
-        const wfs = d.workflows || []
+        const wfs = (d.workflows || []).sort((a: Workflow, b: Workflow) => a.name.localeCompare(b.name, 'fr'))
         setWorkflows(wfs)
         if (wfs.length > 0) select(wfs[0])
         setLoading(false)
@@ -299,7 +299,7 @@ export default function WorkflowsPage() {
         // Recharger la liste
         const r2 = await fetch('/api/returns/workflows')
         const d2 = await r2.json() as { workflows: Workflow[] }
-        const wfs = d2.workflows || []
+        const wfs = (d2.workflows || []).sort((a: Workflow, b: Workflow) => a.name.localeCompare(b.name, 'fr'))
         setWorkflows(wfs)
         if (wfs.length > 0 && !selected) select(wfs[0])
       }
@@ -319,7 +319,7 @@ export default function WorkflowsPage() {
       })
       const d = await res.json() as { workflow?: Workflow; error?: string }
       if (d.workflow) {
-        setWorkflows(prev => [...prev, d.workflow!])
+        setWorkflows(prev => [...prev, d.workflow!].sort((a, b) => a.name.localeCompare(b.name, 'fr')))
         select(d.workflow!)
         setEditing(true)
       }
