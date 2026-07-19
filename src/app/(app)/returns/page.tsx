@@ -1180,7 +1180,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   const [synced, setSynced]     = useState(false)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
-  const [activeTags, setActiveTags] = useState<Set<string>>(() => new Set(tags.map(t => t.tag)))
+  const [activeTags, setActiveTags] = useState<Set<string>>(() => new Set([tags[0].tag]))
   const storageKey = `bq_multi_${tags.map(t => t.tag).join('_')}`
 
   function toggleTag(tag: string) {
@@ -1270,13 +1270,14 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
               <button
                 key={tc.tag}
                 onClick={() => toggleTag(tc.tag)}
-                className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                title={tc.tag}
+                className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-colors ${
                   active
                     ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
                 }`}
               >
-                {tc.tag}
+                {TAG_LABELS[tc.tag] ?? tc.label}
               </button>
             )
           })}
