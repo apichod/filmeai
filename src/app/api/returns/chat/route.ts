@@ -52,9 +52,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
-          customer_id:   { type: 'string', description: 'UUID Booqable du client — utiliser le champ "customer_id" retourné par fetch_order' },
-          full_discount: { type: 'boolean', description: 'Si true → remise 100%, caution = aucune (matériel manquant)' },
-          return_days:   { type: 'number',  description: 'Durée en jours avant retour (défaut 30)' },
+          customer_id: { type: 'string', description: 'UUID Booqable du client — utiliser EXACTEMENT le champ "customer_id" retourné par fetch_order. Ce champ est OBLIGATOIRE.' },
         },
         required: ['customer_id'],
       },
@@ -68,11 +66,11 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       parameters: {
         type: 'object',
         properties: {
-          order_id: { type: 'string', description: 'UUID Booqable de la SAV order — utiliser le champ "id" retourné par create_sav_order' },
+          order_id: { type: 'string', description: 'UUID Booqable de la commande de retour — utiliser le champ "id" retourné par create_new_return_order' },
           tags: {
             type: 'array',
-            items: { type: 'string', enum: ['late', 'late_returned', 'missing', 'damage', 'TO_BE_REPAIRED'] },
-            description: 'Tags à ajouter selon le scénario : En retard → ["late"] | Rendu en retard → ["late_returned"] | Perte → ["missing"] | Dommage → ["damage"] | Casse à réparer → ["damage","TO_BE_REPAIRED"].',
+            items: { type: 'string' },
+            description: 'Tags à ajouter. Utiliser EXACTEMENT ces valeurs — En retard : ["r11_late", "r21_open"] | Perte : ["r12_missing", "r21_open"] | Vol : ["r13_theft", "r21_open"] | Dommage : ["r14_damage", "r21_open"] | Gracié : ["r22_waived"] | Caution débitée : ["r23_deposit"] | Facturé : ["r24_billed"] | À réparer : ["r31_repair_needed"] | À remplacer : ["r33_replace_needed"]',
           },
         },
         required: ['order_id', 'tags'],
@@ -280,14 +278,12 @@ async function executeTool(
       }
 
       case 'create_new_return_order': {
-        const sav = await createSAVOrder({
-          customerId:   String(args.customer_id),
-          fullDiscount: Boolean(args.full_discount),
-          returnDays:   typeof args.return_days === 'number' ? args.return_days : 30,
-        })
-        if (!sav) return { result: 'Erreur : SAV order non créée' }
+        const customerId = String(args.customer_id || '')
+        if (!customerId) return { result: 'Erreur : customer_id manquant — utiliser le champ "customer_id" retourné par fetch_order' }
+        const sav = await createSAVOrder({ customerId })
+        if (!sav) return { result: 'Erreur : commande de retour non créée' }
         const numDisplay = sav.number ? ` (numéro: ${sav.number})` : ''
-        return { result: `✓ SAV order créée${numDisplay} | id: ${sav.id} | status: ${sav.status}\nUtilise cet "id" pour add_sav_line, add_tag, add_sav_comment.` }
+        return { result: `✓ Commande de retour créée${numDisplay} | id: ${sav.id} | customer_id: ${customerId} | date de fin: 31 déc 23h45\nUtilise cet "id" pour add_new_product_line, add_tag, add_sav_comment, set_original_order.` }
       }
 
       case 'add_tag': {

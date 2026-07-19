@@ -64,6 +64,11 @@ function inDays(n: number): Date {
   d.setDate(d.getDate() + n)
   return d
 }
+/** Dernier jour de l'année en cours à 23h45 (date de fin des commandes de retour) */
+function endOfYear(): Date {
+  const d = new Date()
+  return new Date(d.getFullYear(), 11, 31, 23, 45, 0) // 31 déc à 23:45 heure locale
+}
 
 // ── Fetch order ────────────────────────────────────────────────────────────────
 
@@ -95,7 +100,12 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     status: String(orderData.attributes.status ?? ''),
     starts_at: String(orderData.attributes.starts_at ?? ''),
     stops_at: String(orderData.attributes.stops_at ?? ''),
-    customer_id: String(orderData.attributes.customer_id ?? ''),
+    // customer_id : attribut direct OU via relationships (JSON:API boomerang)
+    customer_id: String(
+      orderData.attributes.customer_id ||
+      (orderData.relationships?.customer as { data?: { id?: string } })?.data?.id ||
+      ''
+    ),
     customer: customerIncluded ? {
       id: customerIncluded.id,
       name: String(customerIncluded.attributes.name ?? ''),
@@ -237,12 +247,12 @@ export type CreateSAVOrderParams = {
 }
 
 export async function createSAVOrder(params: CreateSAVOrderParams): Promise<BooqableOrder | null> {
-  const { customerId, returnDays = 30 } = params
+  const { customerId } = params
 
   const subdomain = process.env.BOOQABLE_SUBDOMAIN
   const key = process.env.BOOQABLE_API_KEY
   const startsAt = bqDate(today())
-  const stopsAt  = bqDate(inDays(returnDays))
+  const stopsAt  = bqDate(endOfYear()) // toujours 31 déc à 23h45
 
   // ── v1 en premier (gère customer_id nativement) ───────────────────────────────
   try {
