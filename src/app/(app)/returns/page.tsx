@@ -854,6 +854,22 @@ type BooqableOrderRow = {
   tag_list: string[]
 }
 
+// ── Traductions françaises de tous les tags ────────────────────────────────────
+const TAG_LABELS: Record<string, string> = {
+  r11_late:         'En retard',
+  r12_missing:      'Perte',
+  r13_theft:        'Vol',
+  r14_damage:       'Dommage',
+  r21_open:         'Ouvert',
+  r22_waived:       'Gracié',
+  r23_deposit:      'Caution débitée',
+  r24_billed:       'Facturé',
+  r31_repair_needed:'À réparer',
+  r32_repaired:     'Réparé',
+  r33_replace_needed:'À remplacer',
+  r34_replaced:     'Remplacé',
+}
+
 // ── Tags secondaires communs (Retards / Pertes / Vols / Dommages) ─────────────
 
 const SECONDARY_STATUS_TAGS = [
@@ -869,7 +885,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [synced, setSynced]     = useState(false)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
-  const [filterTag, setFilterTag] = useState<string | null>(null)
+  const [filterTag, setFilterTag] = useState<string | null>('r21_open')
   const storageKey = `bq_cat_${primaryTag}`
 
   // Modal dernier email
@@ -954,20 +970,11 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-gray-500 mr-1">Filtre :</span>
-          <button
-            onClick={() => setFilterTag(null)}
-            className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-colors ${
-              filterTag === null
-                ? 'bg-gray-900 text-white border-gray-900'
-                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-            }`}
-          >
-            Tous
-          </button>
           {SECONDARY_STATUS_TAGS.map(st => (
             <button
               key={st.tag}
               onClick={() => setFilterTag(filterTag === st.tag ? null : st.tag)}
+              title={TAG_LABELS[st.tag]}
               className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
                 filterTag === st.tag
                   ? 'bg-gray-900 text-white border-gray-900'
@@ -978,7 +985,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
             </button>
           ))}
           {synced && (
-            <span className="text-xs text-gray-400 ml-1">{rows.length} order{rows.length !== 1 ? 's' : ''}{filterTag ? ` · filtre: ${filterTag}` : ` sur ${allRows.length}`}</span>
+            <span className="text-xs text-gray-400 ml-1">{rows.length} order{rows.length !== 1 ? 's' : ''}{filterTag ? ` · ${TAG_LABELS[filterTag] ?? filterTag}` : ` sur ${allRows.length}`}</span>
           )}
           {syncedAt && (
             <span className="text-xs text-gray-400">
