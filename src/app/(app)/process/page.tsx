@@ -21,6 +21,15 @@ type Process = {
   subtitle: string
   steps: StepItem[]
   sort_order: number
+  workflow_slug?: string | null
+}
+
+type WorkflowStep = {
+  id: string
+  type: 'question' | 'action' | 'instruction'
+  title: string
+  description?: string
+  booqable_action?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -43,6 +52,125 @@ const BADGE_CLASSES: Record<string, string> = {
 }
 
 const PILL_ICONS: Record<string, string> = { blue: '🔒', amber: '↑' }
+
+// ── Conversion workflow → process steps ───────────────────────────────────────
+
+const HIDDEN_ACTIONS = new Set(['fetch_order', 'search_products'])
+
+function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
+  const result: StepItem[] = []
+  let stepNum = 0
+  let i = 0
+
+  while (i < wfSteps.length) {
+    const s = wfSteps[i]
+
+    // Skip IA-only actions (pas visible dans le process humain)
+    if (s.type === 'action' && HIDDEN_ACTIONS.has(s.booqable_action || '')) { i++; continue }
+
+    // Groupe les questions consécutives en une seule étape
+    if (s.type === 'question') {
+      const titles: string[] = []
+      while (i < wfSteps.length && wfSteps[i].type === 'question') {
+        titles.push(wfSteps[i].title); i++
+      }
+      stepNum++
+      result.push({
+        id: String(stepNum), type: 'step',
+        text: titles.length === 1
+          ? `Identifier la **${titles[0]}**`
+          : `Identifier ${titles.map(t => `**${t}**`).join(' et ')}`,
+      })
+      continue
+    }
+
+    // instruction → étape manuelle (badge Return)
+    if (s.type === 'instruction') {
+      stepNum++
+      result.push({ id: String(stepNum), type: 'step', text: s.title, badge: { color: 'green', label: 'Return' } })
+      i++; continue
+    }
+
+    // create_new_return_order → Add order + info + fold add_new_product_line suivant
+    if (s.booqable_action === 'create_new_return_order') {
+      stepNum++
+      result.push({ id: String(stepNum), type: 'step', text: `Créer la **commande de retour** (return_order)`, badge: { color: 'blue', label: 'Add order' } })
+      const infoLines = ['Même client que la commande d\'origine', 'Remise 100%, caution = aucune', 'Date de fin = 31/12 à 23h45']
+      i++
+      if (wfSteps[i]?.booqable_action === 'add_new_product_line') {
+        infoLines.push('Ajouter les articles manquants avec leurs IDs'); i++
+      }
+      result.push({ id: `${stepNum}b`, type: 'info', lines: infoLines, pills: [{ color: 'blue', label: 'Reserve' }, { color: 'amber', label: 'Pickup' }] })
+      continue
+    }
+
+    // add_new_product_line seul (si non consommé)
+    if (s.booqable_action === 'add_new_product_line') {
+      stepNum++
+      result.push({ id: String(stepNum), type: 'step', text: `Ajouter les **articles** à la commande de retour` })
+      i++; continue
+    }
+
+    // add_internal_note → step + info description
+    if (s.booqable_action === 'add_internal_note') {
+      stepNum++
+      result.push({ id: String(stepNum), type: 'step', text: `Ajouter une **note interne** à la commande d'origine` })
+      if (s.description) result.push({ id: `${stepNum}b`, type: 'info', lines: [s.description] })
+      i++; continue
+    }
+
+    // set_original_order → step + info
+    if (s.booqable_action === 'set_original_order') {
+      stepNum++
+      result.push({ id: String(stepNum), type: 'step', text: `Renseigner la **commande d'origine** (original_order)` })
+      result.push({ id: `${stepNum}b`, type: 'info', lines: ['= numéro de la commande d\'origine'] })
+      i++; continue
+    }
+
+    // add_sav_comment → step + info
+    if (s.booqable_action === 'add_sav_comment') {
+      stepNum++
+      result.push({ id: String(stepNum), type: 'step', text: `Renseigner le **commentaire SAV**` })
+      if (s.description) result.push({ id: `${stepNum}b`, type: 'info', lines: [s.description] })
+      i++; continue
+    }
+
+    // add_tag → step avec nom du tag extrait du titre
+    if (s.booqable_action === 'add_tag') {
+      stepNum++
+      const tagMatch = (s.title + ' ' + (s.description || '')).match(/r\d+_\w+/)
+      result.push({ id: String(stepNum), type: 'step', text: `Ajouter le tag **${tagMatch?.[0] ?? s.title}**` })
+      i++; continue
+    }
+
+    // draft_email → Send email + fold send_email suivant
+    if (s.booqable_action === 'draft_email') {
+      stepNum++
+      result.push({ id: String(stepNum), type: 'step', text: `Envoyer l'email client`, badge: { color: 'blue', label: 'Send email' } })
+      i++
+      if (wfSteps[i]?.booqable_action === 'send_email') i++ // fold
+      if (s.description) result.push({ id: `${stepNum}b`, type: 'info', lines: [s.description] })
+      continue
+    }
+
+    // send_email seul (si non consommé)
+    if (s.booqable_action === 'send_email') { i++; continue }
+
+    // log_case → dernière étape
+    if (s.booqable_action === 'log_case') {
+      stepNum++
+      result.push({ id: String(stepNum), type: 'step', text: `Logger le cas dans le tableau de suivi` })
+      i++; continue
+    }
+
+    // fallback : étape générique
+    stepNum++
+    result.push({ id: String(stepNum), type: 'step', text: s.title })
+    i++
+  }
+
+  return result
+}
 
 // ── Composant infographie ─────────────────────────────────────────────────────
 
@@ -258,6 +386,8 @@ export default function ProcessPage() {
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
   const [saved, setSaved]           = useState(false)
+  const [syncing, setSyncing]       = useState(false)
+  const [syncError, setSyncError]   = useState<string | null>(null)
   const [editingTitle, setEditingTitle]   = useState(false)
   const [editingSubtitle, setEditingSubtitle] = useState(false)
   const pendingRef = useRef<Record<string, unknown>>({})
@@ -324,6 +454,25 @@ export default function ProcessPage() {
     setEditingSubtitle(false)
     updateLocal(selected.id, { subtitle: val })
     scheduleSave(selected.id, { subtitle: val })
+  }, [selected, updateLocal, scheduleSave])
+
+  const syncFromWorkflow = useCallback(async () => {
+    if (!selected?.workflow_slug) return
+    setSyncing(true)
+    setSyncError(null)
+    try {
+      const res = await fetch('/api/returns/workflows')
+      const data = await res.json() as { workflows?: Array<{ slug: string; name: string; steps: WorkflowStep[] }> }
+      const wf = (data.workflows || []).find(w => w.slug === selected.workflow_slug)
+      if (!wf) throw new Error(`Workflow "${selected.workflow_slug}" introuvable`)
+      const newSteps = workflowToProcessSteps(wf.steps || [])
+      updateLocal(selected.id, { steps: newSteps })
+      scheduleSave(selected.id, { steps: newSteps })
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Erreur de sync')
+    } finally {
+      setSyncing(false)
+    }
   }, [selected, updateLocal, scheduleSave])
 
   if (loading) return <div className="text-sm text-gray-400 py-8 text-center">Chargement…</div>
@@ -397,6 +546,21 @@ export default function ProcessPage() {
                 )}
               </div>
               <div className="text-xs text-gray-400 flex items-center gap-2">
+                {selected.workflow_slug && (
+                  <>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 text-[11px] font-medium">
+                      ⇄ {selected.workflow_slug}
+                    </span>
+                    <button
+                      onClick={syncFromWorkflow}
+                      disabled={syncing}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-[11px] font-medium hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                    >
+                      {syncing ? '↻ Sync…' : '↻ Synchroniser'}
+                    </button>
+                    {syncError && <span className="text-red-500 text-[11px]">{syncError}</span>}
+                  </>
+                )}
                 {saving && <span className="text-gray-400">Sauvegarde…</span>}
                 {saved  && <span className="text-green-600 font-medium">✓ Sauvegardé</span>}
                 <span className="text-gray-300 italic">Cliquez sur un champ pour modifier</span>

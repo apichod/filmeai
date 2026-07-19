@@ -58,15 +58,17 @@ export async function PATCH(req: NextRequest) {
     subtitle?: string
     steps?: unknown[]
     sort_order?: number
+    workflow_slug?: string | null
   }
   if (!body.id) return NextResponse.json({ error: 'id manquant' }, { status: 400 })
 
   const supabase = getSupabaseAdmin()
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  if (body.title      !== undefined) patch.title      = body.title
-  if (body.subtitle   !== undefined) patch.subtitle   = body.subtitle
-  if (body.steps      !== undefined) patch.steps      = body.steps
-  if (body.sort_order !== undefined) patch.sort_order = body.sort_order
+  if (body.title         !== undefined) patch.title         = body.title
+  if (body.subtitle      !== undefined) patch.subtitle      = body.subtitle
+  if (body.steps         !== undefined) patch.steps         = body.steps
+  if (body.sort_order    !== undefined) patch.sort_order    = body.sort_order
+  if (body.workflow_slug !== undefined) patch.workflow_slug = body.workflow_slug
 
   const { error } = await supabase.from('processes').update(patch).eq('id', body.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
