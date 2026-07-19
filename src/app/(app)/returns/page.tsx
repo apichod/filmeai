@@ -869,9 +869,31 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [synced, setSynced]     = useState(false)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
-  // null = afficher tous (pas de filtre secondaire)
   const [filterTag, setFilterTag] = useState<string | null>(null)
   const storageKey = `bq_cat_${primaryTag}`
+
+  // Modal dernier email
+  const [emailModal, setEmailModal]     = useState<{ orderId: string; orderNum: string | number } | null>(null)
+  const [emailData, setEmailData]       = useState<EmailData | null>(null)
+  const [emailLoading, setEmailLoading] = useState(false)
+  const [emailError, setEmailError]     = useState<string | null>(null)
+
+  async function openEmail(orderId: string, orderNum: string | number) {
+    setEmailModal({ orderId, orderNum })
+    setEmailData(null)
+    setEmailError(null)
+    setEmailLoading(true)
+    try {
+      const res  = await fetch(`/api/returns/booqable-email?order_id=${encodeURIComponent(orderId)}`)
+      const data = await res.json() as { emails?: EmailData[]; error?: string }
+      if (data.error) { setEmailError(data.error); return }
+      setEmailData(data.emails?.[0] ?? null)
+    } catch (e) {
+      setEmailError(e instanceof Error ? e.message : 'Erreur réseau')
+    } finally {
+      setEmailLoading(false)
+    }
+  }
 
   useEffect(() => {
     try {
@@ -1000,6 +1022,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Prix</th>
                 {hasPayment && <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Moyen de paiement</th>}
                 {hasPayment && <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Paiement</th>}
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -1046,11 +1069,62 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     )}
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => openEmail(o.id, o.number)}
+                        title="Voir le dernier email Booqable"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                        </svg>
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Modal dernier email ── */}
+      {emailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEmailModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Dernier email Booqable</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">Commande #{emailModal.orderNum}</p>
+              </div>
+              <button onClick={() => setEmailModal(null)} className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="px-6 py-5 max-h-[70vh] overflow-y-auto">
+              {emailLoading && <div className="flex items-center justify-center py-10 text-sm text-gray-400"><span className="w-4 h-4 rounded-full border-2 border-gray-200 border-t-gray-500 animate-spin mr-2" />Chargement…</div>}
+              {emailError  && <p className="text-sm text-red-500 py-4">{emailError}</p>}
+              {!emailLoading && !emailError && !emailData && <p className="text-sm text-gray-400 py-4">Aucun email trouvé pour cette commande.</p>}
+              {emailData && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                    <span><span className="font-medium text-gray-700">Date : </span>{emailData.sent_at ? new Date(emailData.sent_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : emailData.created_at ? new Date(emailData.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                    {emailData.recipients && <span><span className="font-medium text-gray-700">À : </span>{emailData.recipients}</span>}
+                  </div>
+                  <div className="bg-gray-50 rounded-lg px-4 py-3">
+                    <p className="text-xs text-gray-400 mb-1">Objet</p>
+                    <p className="text-sm font-medium text-gray-900">{emailData.subject || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400 mb-2">Contenu</p>
+                    <pre className="text-sm text-gray-700 leading-relaxed border border-gray-100 rounded-lg p-4 whitespace-pre-wrap font-sans break-words">
+                      {(emailData.body || '').replace(/<br\s*\/?>\s*\n?\s*<\/p>/gi,'</p>').replace(/<br\s*\/?><br\s*\/?>/gi,'\n\n').replace(/<br\s*\/?>\s*\n/gi,'\n').replace(/<\/p>[ \t]*\n[ \t\n]*<p[^>]*>/gi,'\n\n').replace(/<\/p><p[^>]*>/gi,'\n').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(div|tr)>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\n{3,}/g,'\n\n').trim() || '(corps vide)'}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
