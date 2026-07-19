@@ -105,36 +105,30 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     lines: [],
     properties_attributes: (orderData.attributes.properties ?? {}) as Record<string, string>,
   }
-  // Étape 2 : récupérer les lignes via /lines?filter[order_id] (évite la pagination de included sur les grandes commandes)
+  // Étape 2 : récupérer toutes les lignes (top-level + sous-lignes de bundles)
+  // filter[order_id] ne retourne que les lignes parent → 2ème passe pour les sous-lignes
   try {
     const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
-    const boomRes = await fetch(
-      `${BASE_BOOMERANG}/lines?filter[order_id]=${order.id}&include=item,planning,stock_item&per=200`,
+    type BoomNode = { type: string; id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown> }
+
+    // ── Passe 1 : lignes top-level ───────────────────────────────────────────
+    const res1 = await fetch(
+      `${BASE_BOOMERANG}/lines?filter[order_id]=${order.id}&include=item,stock_item&per=200`,
       { headers: headers(), signal: AbortSignal.timeout(12000) }
     )
+    if (!res1.ok) throw new Error(`/lines pass1 error ${res1.status}`)
+    const data1 = await res1.json() as { data?: BoomNode[]; included?: BoomNode[] }
 
-    if (boomRes.ok) {
-      // L'endpoint /lines retourne les lignes dans data[] et les produits dans included[]
-      type BoomNode = { type: string; id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown> }
-      const boomData = await boomRes.json() as { data?: BoomNode[]; included?: BoomNode[] }
+    const topLines = data1.data || []
+    const included1 = data1.included || []
 
-      const linesData = boomData.data || []
-      const included  = boomData.included || []
-      // DEBUG TEMPORAIRE — à retirer après diagnostic
-      console.log('[fetchOrderByNumber] lines count:', linesData.length, 'included count:', included.length)
-      if (linesData.length > 0) {
-        const sample = linesData[0]
-        console.log('[fetchOrderByNumber] sample line attrs:', JSON.stringify(sample.attributes))
-        console.log('[fetchOrderByNumber] sample line rels:', JSON.stringify(sample.relationships))
-      }
+    // Index depuis included passe 1
+    const itemNameMap  = new Map<string, string>()
+    const itemGroupMap = new Map<string, string>()
+    const stockItemMap = new Map<string, string>()
 
-      // Index universel depuis included
-      const itemNameMap   = new Map<string, string>()   // id → nom
-      const itemGroupMap  = new Map<string, string>()   // product_id → product_group_id
-      const itemIsBundleMap = new Map<string, boolean>()// product_group_id → bundle?
-      const stockItemMap  = new Map<string, string>()   // id → identifier
-
-      for (const r of included) {
+    const indexIncluded = (inc: BoomNode[]) => {
+      for (const r of inc) {
         const name = String(r.attributes.name || r.attributes.display_name || '')
         if (r.type === 'products' || r.type === 'product') {
           itemNameMap.set(r.id, name)
@@ -143,76 +137,89 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         }
         if (r.type === 'product_groups' || r.type === 'product_group') {
           itemNameMap.set(r.id, name)
-          // bundle = true → c'est un pack (header à exclure)
-          itemIsBundleMap.set(r.id, Boolean(r.attributes.bundle || r.attributes.has_variations === false && r.attributes.trackable === false))
         }
         if (r.type === 'stock_items' || r.type === 'stock_item') {
           stockItemMap.set(r.id, String(r.attributes.identifier || ''))
         }
       }
-
-      // Construire les lignes depuis data[]
-      const lines: BooqableOrderLine[] = []
-      for (const r of linesData) {
-        const attrs = r.attributes
-
-        type Rel = { data?: { type: string; id: string } | null }
-        const rels = r.relationships as Record<string, Rel> | undefined
-
-        // Détecter les lignes constituantes d'un bundle via parent_line_id / owner
-        const parentLineId = String(attrs.parent_line_id || attrs.owner_id || '')
-        const isChild = parentLineId.length > 0 && parentLineId !== 'null'
-
-        const qty = Number(attrs.quantity) || 0
-
-        // Inclure si : ligne enfant (constituante de bundle) OU qty > 0
-        // Exclure si : qty = 0 ET pas une ligne enfant
-        if (qty <= 0 && !isChild) continue
-
-        const itemRel     = rels?.item?.data
-        const itemRelId   = itemRel?.id   || String(attrs.item_id || '')
-        const itemRelType = itemRel?.type  || ''
-
-        // Exclure les headers de bundle (item = product_group avec bundle:true)
-        const isGroup = itemRelType === 'product_groups' || itemRelType === 'product_group'
-        if (isGroup && itemIsBundleMap.get(itemRelId) === true) continue
-
-        // product_group_id
-        const productGroupId: string | undefined = isGroup
-          ? itemRelId
-          : (itemGroupMap.get(itemRelId) || undefined)
-
-        // Nom : description sur la ligne en priorité, puis lookup included
-        const productName = String(
-          attrs.description ||
-          attrs.name ||
-          attrs.title ||
-          itemNameMap.get(itemRelId) ||
-          ''
-        )
-        if (!productName && !itemRelId) continue
-
-        // Quantité affichée : pour les lignes enfants qty peut être 0 → utiliser quantity_each ou 1
-        const displayQty = qty > 0 ? qty : (Number(attrs.quantity_each) || 1)
-
-        // stock_item
-        const stockItemRel = rels?.stock_item?.data
-        const stockItemId  = stockItemRel?.id || undefined
-        const stockItemIdentifier = stockItemId ? stockItemMap.get(stockItemId) : undefined
-
-        lines.push({
-          id: r.id,
-          product_id: itemRelId,
-          product_name: productName,
-          quantity: displayQty,
-          product_group_id: productGroupId,
-          stock_item_id: stockItemId,
-          stock_item_identifier: stockItemIdentifier,
-        })
-      }
-
-      if (lines.length > 0) order.lines = lines
     }
+    indexIncluded(included1)
+
+
+    // Identifier les lignes bundle (extra_information contenant un pack-includes HTML, ou bundle_item_id absent mais sub-lignes existent)
+    // On détecte les bundles : parent_line_id = null ET extra_information non vide → header de bundle
+    const bundleHeaderIds: string[] = []
+    for (const line of topLines) {
+      const extraInfo = String(line.attributes.extra_information || '')
+      const parentLineId = line.attributes.parent_line_id
+      if (parentLineId === null && extraInfo.includes('pack-includes')) {
+        bundleHeaderIds.push(line.id)
+      }
+    }
+
+    // ── Passe 2 : sous-lignes de chaque bundle ───────────────────────────────
+    let childLines: BoomNode[] = []
+    if (bundleHeaderIds.length > 0) {
+      const childFetches = await Promise.all(
+        bundleHeaderIds.map(lineId =>
+          fetch(
+            `${BASE_BOOMERANG}/lines?filter[parent_line_id]=${lineId}&include=item,stock_item&per=200`,
+            { headers: headers(), signal: AbortSignal.timeout(12000) }
+          ).then(r => r.ok ? r.json() as Promise<{ data?: BoomNode[]; included?: BoomNode[] }> : { data: [], included: [] })
+        )
+      )
+      for (const res of childFetches) {
+        childLines = childLines.concat(res.data || [])
+        indexIncluded(res.included || [])
+      }
+    }
+
+    // ── Construction des lignes finales ──────────────────────────────────────
+    // top-level : garder uniquement les non-bundles avec qty > 0
+    // sous-lignes : toutes incluses (qty peut être 0 pour les items gratuits dans un pack)
+    const bundleHeaderIdSet = new Set(bundleHeaderIds)
+
+    const buildLine = (r: BoomNode, isChild: boolean): BooqableOrderLine | null => {
+      const attrs = r.attributes
+      const qty = Number(attrs.quantity) || 0
+      if (!isChild && qty <= 0) return null   // top-level à 0 → ignorer
+      if (bundleHeaderIdSet.has(r.id)) return null  // header de bundle → ignorer
+
+      type Rel = { data?: { type: string; id: string } | null }
+      const rels = r.relationships as Record<string, Rel> | undefined
+      const itemRel   = rels?.item?.data
+      const itemRelId = itemRel?.id || String(attrs.item_id || '')
+      const itemRelType = itemRel?.type || ''
+
+      const isGroup = itemRelType === 'product_groups' || itemRelType === 'product_group'
+      const productGroupId: string | undefined = isGroup ? itemRelId : (itemGroupMap.get(itemRelId) || undefined)
+
+      const productName = String(
+        attrs.title || attrs.description || attrs.name ||
+        itemNameMap.get(itemRelId) || ''
+      )
+      if (!productName && !itemRelId) return null
+
+      const displayQty = qty > 0 ? qty : (Number(attrs.quantity_each) || 1)
+
+      const stockItemRel = rels?.stock_item?.data
+      const stockItemId  = stockItemRel?.id || undefined
+      const stockItemIdentifier = stockItemId ? stockItemMap.get(stockItemId) : undefined
+
+      return { id: r.id, product_id: itemRelId, product_name: productName, quantity: displayQty, product_group_id: productGroupId, stock_item_id: stockItemId, stock_item_identifier: stockItemIdentifier }
+    }
+
+    const lines: BooqableOrderLine[] = []
+    for (const r of topLines) {
+      const l = buildLine(r, false)
+      if (l) lines.push(l)
+    }
+    for (const r of childLines) {
+      const l = buildLine(r, true)
+      if (l) lines.push(l)
+    }
+
+    if (lines.length > 0) order.lines = lines
   } catch (e) {
     console.warn('fetchOrderByNumber: boomerang enrichment failed, lines may be empty:', e)
   }
