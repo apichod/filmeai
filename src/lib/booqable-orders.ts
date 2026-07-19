@@ -455,6 +455,34 @@ export async function addInternalNote(orderId: string, note: string): Promise<vo
   }
 }
 
+// ── Set order original ────────────────────────────────────────────────────────
+
+/**
+ * Renseigne la propriété "Commande d'origine" (order_original) sur la commande de retour.
+ * Identifiant Booqable : order_original
+ */
+export async function setOrderOriginal(
+  orderReturnId: string,
+  orderOriginalNumber: string
+): Promise<void> {
+  const res = await fetch(`${BASE}/orders/${orderReturnId}`, {
+    method: 'PATCH',
+    headers: headers(),
+    body: JSON.stringify({
+      order: {
+        properties_attributes: [
+          { name: 'Commande d\'origine', identifier: 'order_original', value: orderOriginalNumber },
+        ],
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable setOrderOriginal error ${res.status}: ${text}`)
+  }
+}
+
 // ── Add SAV comment ────────────────────────────────────────────────────────────
 
 /**

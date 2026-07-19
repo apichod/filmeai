@@ -9,6 +9,7 @@ import {
   addTagToOrder,
   addInternalNote,
   addSAVComment,
+  setOrderOriginal,
   searchProducts,
   getStockItems,
   addSAVLine,
@@ -91,6 +92,21 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           comment:              { type: 'string', description: 'Détail du problème (et cas si cassé)' },
         },
         required: ['order_id', 'origin_order_number', 'comment'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_order_original',
+      description: 'Renseigne la propriété "Commande d\'origine" (order_original) sur la commande de retour. À appeler après create_sav_order pour lier la commande de retour à la commande d\'origine.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_return_id:       { type: 'string', description: 'UUID Booqable de la commande de retour (id retourné par create_sav_order)' },
+          order_original_number: { type: 'string', description: 'Numéro de la commande d\'origine (ex: 1234)' },
+        },
+        required: ['order_return_id', 'order_original_number'],
       },
     },
   },
@@ -291,6 +307,14 @@ async function executeTool(
           String(args.comment)
         )
         return { result: `✓ Commentaire SAV (order #${args.origin_order_number}) : ${String(args.comment)}` }
+      }
+
+      case 'set_order_original': {
+        await setOrderOriginal(
+          String(args.order_return_id),
+          String(args.order_original_number)
+        )
+        return { result: `✓ Commande d'origine renseignée : order_original = ${args.order_original_number}` }
       }
 
       case 'search_products': {
