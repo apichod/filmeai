@@ -34,7 +34,7 @@ type ReturnCase = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-// Trie par numéro de commande d'origine (o.number) décroissant
+// Trie par numéro de commande de retour (o.number) décroissant
 function orderNum(n: string | number): number {
   const s = String(n || '')
   const m = s.match(/(\d+)(?=\D*$)/)
@@ -857,7 +857,7 @@ type BooqableOrderRow = {
 // ── Tags secondaires communs (Retards / Pertes / Vols / Dommages) ─────────────
 
 const SECONDARY_STATUS_TAGS = [
-  { tag: 'r21_open',    label: 'En attente', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'r21_open',    label: 'En cours',   bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
   { tag: 'r22_waived',  label: 'Gracié',     bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
   { tag: 'r23_deposit', label: 'Caution',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700',   paymentColored: true, paymentMethod: 'Caution' },
   { tag: 'r24_billed',  label: 'Facturé',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700',   paymentColored: true },
@@ -1013,10 +1013,10 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Statut</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Commande d&apos;origine</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Commande<br />de retour</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Période</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Commande de retour</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Commande<br />d&apos;origine</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 w-56 max-w-56">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Date suivi SAV</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Prix</th>
@@ -1316,10 +1316,10 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Statut</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d&apos;origine</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande<br />de retour</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande de retour</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande<br />d&apos;origine</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
