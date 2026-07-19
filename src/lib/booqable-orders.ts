@@ -68,16 +68,43 @@ function inDays(n: number): Date {
 // ── Fetch order ────────────────────────────────────────────────────────────────
 
 export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableOrder | null> {
-  // Étape 1 : recherche par numéro via v1 (customer + properties_attributes)
-  const url = `${BASE}/orders?q=${encodeURIComponent(orderNumber)}&include=customer&per=5`
-  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(10000) })
-  if (!res.ok) throw new Error(`Booqable fetchOrder error: ${res.status}`)
+  // Étape 1 : recherche par numéro EXACT via boomerang filter[number] (évite les faux positifs du ?q= général)
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const boomSearchRes = await fetch(
+    `${BASE_BOOMERANG}/orders?filter[number]=${encodeURIComponent(orderNumber)}&include=customer&per=1`,
+    { headers: headers(), signal: AbortSignal.timeout(10000) }
+  )
+  if (!boomSearchRes.ok) throw new Error(`Booqable fetchOrder error: ${boomSearchRes.status}`)
 
-  const data = await res.json() as { orders?: BooqableOrder[] }
-  const orders = data.orders || []
-  const order = orders.find(o => String(o.number) === String(orderNumber)) || orders[0] || null
-  if (!order) return null
+  const boomSearchData = await boomSearchRes.json() as {
+    data?: Array<{ id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown> }>
+    included?: Array<{ type: string; id: string; attributes: Record<string, unknown> }>
+  }
 
+  const orderData = boomSearchData.data?.[0]
+  if (!orderData) return null
+
+  // Reconstruire un objet BooqableOrder partiel depuis la réponse boomerang
+  const customerIncluded = (boomSearchData.included || []).find(
+    r => r.type === 'customers' &&
+      r.id === (orderData.relationships?.customer as { data?: { id?: string } })?.data?.id
+  )
+  const order: BooqableOrder = {
+    id: orderData.id,
+    number: String(orderData.attributes.number ?? orderNumber),
+    status: String(orderData.attributes.status ?? ''),
+    starts_at: String(orderData.attributes.starts_at ?? ''),
+    stops_at: String(orderData.attributes.stops_at ?? ''),
+    customer_id: String(orderData.attributes.customer_id ?? ''),
+    customer: customerIncluded ? {
+      id: customerIncluded.id,
+      name: String(customerIncluded.attributes.name ?? ''),
+      email: String(customerIncluded.attributes.email ?? ''),
+    } : null,
+    tags: Array.isArray(orderData.attributes.tag_list) ? orderData.attributes.tag_list as string[] : [],
+    lines: [],
+    properties_attributes: (orderData.attributes.properties ?? {}) as Record<string, string>,
+  }
   // Étape 2 : récupérer les lignes + produits + stock_item_plannings via boomerang
   // L'API v1 ne retourne pas product_name dans les lignes — boomerang le fait via included.
   try {
