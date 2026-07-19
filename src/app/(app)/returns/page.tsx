@@ -251,8 +251,10 @@ function ChatPanel() {
   const [sending, setSending] = useState(false)
   const [caseId, setCaseId] = useState<string | null>(null)
   const [scenario, setScenario] = useState<Scenario | null>(null)
-  // customer_id extrait du dernier fetch_order — passé à chaque requête pour éviter les placeholders IA
+  // Données client extraites du dernier fetch_order — passées à chaque requête pour éviter les placeholders IA
   const [fetchedCustomerId, setFetchedCustomerId] = useState<string | null>(null)
+  const [fetchedCustomerName, setFetchedCustomerName] = useState<string | null>(null)
+  const [fetchedCustomerEmail, setFetchedCustomerEmail] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -282,7 +284,7 @@ function ChatPanel() {
       const res = await fetch('/api/returns/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId }),
+        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId, customerName: fetchedCustomerName, customerEmail: fetchedCustomerEmail }),
       })
 
       if (!res.body) throw new Error('No body')
@@ -320,28 +322,31 @@ function ChatPanel() {
               ))
             }
             if (event.type === 'tool_result') {
-              // Extraire le customer_id du résultat fetch_order pour le mémoriser côté client
+              // Extraire les données client du résultat fetch_order pour les mémoriser côté client
               if (event.name === 'fetch_order') {
                 try {
-                  const parsed = JSON.parse(event.result) as { customer_id?: string }
+                  const parsed = JSON.parse(event.result) as { customer_id?: string; customer_name?: string; customer_email?: string }
                   const cid = parsed.customer_id || ''
-                  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)) {
-                    setFetchedCustomerId(cid)
-                  }
+                  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)) setFetchedCustomerId(cid)
+                  if (parsed.customer_name) setFetchedCustomerName(parsed.customer_name)
+                  if (parsed.customer_email) setFetchedCustomerEmail(parsed.customer_email)
                 } catch { /* ignore */ }
               }
-              setMessages(prev => prev.map(m =>
-                m.id === assistantId
-                  ? {
-                      ...m,
-                      toolCalls: (m.toolCalls || []).map((tc, i) =>
-                        i === (m.toolCalls?.length ?? 1) - 1 && tc.name === event.name
-                          ? { ...tc, result: event.result }
-                          : tc
-                      ),
+              // Mise à jour FIFO : première entrée non-résolue avec ce nom
+              setMessages(prev => prev.map(m => {
+                if (m.id !== assistantId) return m
+                let matched = false
+                return {
+                  ...m,
+                  toolCalls: (m.toolCalls || []).map(tc => {
+                    if (!matched && tc.name === event.name && tc.result === undefined) {
+                      matched = true
+                      return { ...tc, result: event.result }
                     }
-                  : m
-              ))
+                    return tc
+                  }),
+                }
+              }))
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -409,7 +414,7 @@ function ChatPanel() {
       const res = await fetch('/api/returns/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId }),
+        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId, customerName: fetchedCustomerName, customerEmail: fetchedCustomerEmail }),
       })
       if (!res.body) throw new Error('No body')
 
@@ -445,20 +450,27 @@ function ChatPanel() {
             if (event.type === 'tool_result') {
               if (event.name === 'fetch_order') {
                 try {
-                  const parsed = JSON.parse(event.result) as { customer_id?: string }
+                  const parsed = JSON.parse(event.result) as { customer_id?: string; customer_name?: string; customer_email?: string }
                   const cid = parsed.customer_id || ''
-                  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)) {
-                    setFetchedCustomerId(cid)
-                  }
+                  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)) setFetchedCustomerId(cid)
+                  if (parsed.customer_name) setFetchedCustomerName(parsed.customer_name)
+                  if (parsed.customer_email) setFetchedCustomerEmail(parsed.customer_email)
                 } catch { /* ignore */ }
               }
-              setMessages(prev => prev.map(m =>
-                m.id === assistantId
-                  ? { ...m, toolCalls: (m.toolCalls || []).map((tc, i) =>
-                      i === (m.toolCalls?.length ?? 1) - 1 && tc.name === event.name
-                        ? { ...tc, result: event.result } : tc) }
-                  : m
-              ))
+              setMessages(prev => prev.map(m => {
+                if (m.id !== assistantId) return m
+                let matched = false
+                return {
+                  ...m,
+                  toolCalls: (m.toolCalls || []).map(tc => {
+                    if (!matched && tc.name === event.name && tc.result === undefined) {
+                      matched = true
+                      return { ...tc, result: event.result }
+                    }
+                    return tc
+                  }),
+                }
+              }))
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -522,6 +534,8 @@ function ChatPanel() {
     setCaseId(null)
     setInput('')
     setFetchedCustomerId(null)
+    setFetchedCustomerName(null)
+    setFetchedCustomerEmail(null)
   }
 
   function selectScenario(s: Scenario) {
@@ -531,6 +545,8 @@ function ChatPanel() {
     setCaseId(null)
     setInput('')
     setFetchedCustomerId(null)
+    setFetchedCustomerName(null)
+    setFetchedCustomerEmail(null)
   }
 
   // ── Sélecteur de scénario ──────────────────────────────────────────────────

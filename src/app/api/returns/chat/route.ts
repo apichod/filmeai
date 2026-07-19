@@ -380,9 +380,18 @@ async function executeTool(
 
       case 'draft_email': {
         const templateId = String(args.template_id || 'retour_casse') as EmailTemplateId
+        // Fallback : si l'IA passe un placeholder, utiliser les valeurs mémorisées côté client
+        const PLACEHOLDER_NAME_RE = /^(nom\s*(du\s*)?client|customer[_\s]?name|client|prénom|[a-z]+_[a-z]+)$/i
+        const resolvedName = (args.customer_name && !PLACEHOLDER_NAME_RE.test(String(args.customer_name)))
+          ? String(args.customer_name)
+          : (bodyCustomerName || String(args.customer_name || ''))
+        const PLACEHOLDER_EMAIL_RE = /^(email@example\.com|customer[_@]|example\.com|test@|placeholder)/i
+        const resolvedEmail = (args.customer_email && !PLACEHOLDER_EMAIL_RE.test(String(args.customer_email)))
+          ? String(args.customer_email)
+          : (bodyCustomerEmail || (args.customer_email ? String(args.customer_email) : undefined))
         const email = renderEmail(templateId, {
-          customerName:       String(args.customer_name || ''),
-          customerEmail:      args.customer_email ? String(args.customer_email) : undefined,
+          customerName:       resolvedName,
+          customerEmail:      resolvedEmail,
           orderNumber:        args.order_number ? String(args.order_number) : undefined,
           originOrderNumber:  args.origin_order_number ? String(args.origin_order_number) : undefined,
           notesSav:           args.sav_comment ? String(args.sav_comment) : undefined,
@@ -395,7 +404,7 @@ async function executeTool(
           orderStartsAt:      args.order_starts_at ? String(args.order_starts_at) : undefined,
           orderStopsAt:       args.order_stops_at ? String(args.order_stops_at) : undefined,
         })
-        return { result: JSON.stringify({ subject: email.subject, body: email.body, to: email.to || args.customer_email || '' }) }
+        return { result: JSON.stringify({ subject: email.subject, body: email.body, to: email.to || resolvedEmail || '' }) }
       }
 
       case 'send_email': {
@@ -536,10 +545,12 @@ export async function POST(req: NextRequest) {
     workflowSlug?: string  // 'manquant' | 'casse' (facultatif, l'IA détecte)
     caseId?: string
     scenario?: string | null
-    customerId?: string | null  // customer_id mémorisé côté client après fetch_order
+    customerId?: string | null      // customer_id mémorisé côté client après fetch_order
+    customerName?: string | null    // nom client mémorisé côté client après fetch_order
+    customerEmail?: string | null   // email client mémorisé côté client après fetch_order
   }
 
-  const { messages, caseId = null, scenario = null, customerId: bodyCustomerId = null } = body
+  const { messages, caseId = null, scenario = null, customerId: bodyCustomerId = null, customerName: bodyCustomerName = null, customerEmail: bodyCustomerEmail = null } = body
 
   // Charge le prompt du workflow correspondant au scénario (ou tous si pas de scénario)
   const supabase = getSupabaseAdmin()
