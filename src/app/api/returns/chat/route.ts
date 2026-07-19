@@ -47,8 +47,8 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'create_sav_order',
-      description: 'Crée une nouvelle order SAV vide dans Booqable pour le même client. NE PAS passer de produits ici — les ajouter ensuite avec add_sav_line.',
+      name: 'create_new_order',
+      description: 'Crée une nouvelle commande vide dans Booqable pour le même client. NE PAS passer de produits ici — les ajouter ensuite avec add_new_product_line.',
       parameters: {
         type: 'object',
         properties: {
@@ -141,8 +141,8 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'add_sav_line',
-      description: 'Ajoute une ligne à la SAV order. Pour un produit trackable avec unité identifiée : utiliser type=product avec product_group_id ET stock_item_id. Pour un produit bulk : utiliser type=product avec product_group_id seul. Pour un article non référencé : utiliser type=custom avec un titre descriptif.',
+      name: 'add_new_product_line',
+      description: 'Ajoute une ligne produit à la nouvelle commande. Pour un produit trackable avec unité identifiée : utiliser type=product avec product_group_id ET stock_item_id. Pour un produit bulk : utiliser type=product avec product_group_id seul. Pour un article non référencé : utiliser type=custom avec un titre descriptif.',
       parameters: {
         type: 'object',
         properties: {
@@ -279,7 +279,7 @@ async function executeTool(
         return { result: `✓ Note interne : ${String(args.note)}` }
       }
 
-      case 'create_sav_order': {
+      case 'create_new_order': {
         const sav = await createSAVOrder({
           customerId:   String(args.customer_id),
           fullDiscount: Boolean(args.full_discount),
@@ -343,7 +343,7 @@ async function executeTool(
         return { result: `Stock items :\n${summary}` }
       }
 
-      case 'add_sav_line': {
+      case 'add_new_product_line': {
         const orderId = String(args.order_id)
         const qty = typeof args.quantity === 'number' ? args.quantity : 1
 
