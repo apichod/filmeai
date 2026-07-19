@@ -9,7 +9,7 @@ import {
   addTagToOrder,
   addInternalNote,
   addSAVComment,
-  setOrderOriginal,
+  setOriginalOrder,
   searchProducts,
   getStockItems,
   addSAVLine,
@@ -47,8 +47,8 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'create_new_order',
-      description: 'Crée une nouvelle commande vide dans Booqable pour le même client. NE PAS passer de produits ici — les ajouter ensuite avec add_new_product_line.',
+      name: 'create_new_return_order',
+      description: 'Crée une nouvelle commande de retour (return_order) dans Booqable : même client que la commande d\'origine, date de fin au dernier jour de l\'année à 23h45, remise 100%, caution = aucune. NE PAS passer de produits ici — les ajouter ensuite avec add_new_product_line.',
       parameters: {
         type: 'object',
         properties: {
@@ -98,15 +98,15 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'set_order_original',
-      description: 'Renseigne la propriété "Commande d\'origine" (order_original) sur la commande de retour. À appeler après create_sav_order pour lier la commande de retour à la commande d\'origine.',
+      name: 'set_original_order',
+      description: 'Renseigne la propriété "Commande d\'origine" (original_order) sur la commande de retour. À appeler après create_new_return_order pour lier la commande de retour à la commande d\'origine.',
       parameters: {
         type: 'object',
         properties: {
-          order_return_id:       { type: 'string', description: 'UUID Booqable de la commande de retour (id retourné par create_sav_order)' },
-          order_original_number: { type: 'string', description: 'Numéro de la commande d\'origine (ex: 1234)' },
+          return_order_id:        { type: 'string', description: 'UUID Booqable de la commande de retour (id retourné par create_new_return_order)' },
+          original_order_number:  { type: 'string', description: 'Numéro de la commande d\'origine (ex: 1234)' },
         },
-        required: ['order_return_id', 'order_original_number'],
+        required: ['return_order_id', 'original_order_number'],
       },
     },
   },
@@ -279,7 +279,7 @@ async function executeTool(
         return { result: `✓ Note interne : ${String(args.note)}` }
       }
 
-      case 'create_new_order': {
+      case 'create_new_return_order': {
         const sav = await createSAVOrder({
           customerId:   String(args.customer_id),
           fullDiscount: Boolean(args.full_discount),
@@ -309,12 +309,12 @@ async function executeTool(
         return { result: `✓ Commentaire SAV (order #${args.origin_order_number}) : ${String(args.comment)}` }
       }
 
-      case 'set_order_original': {
-        await setOrderOriginal(
-          String(args.order_return_id),
-          String(args.order_original_number)
+      case 'set_original_order': {
+        await setOriginalOrder(
+          String(args.return_order_id),
+          String(args.original_order_number)
         )
-        return { result: `✓ Commande d'origine renseignée : order_original = ${args.order_original_number}` }
+        return { result: `✓ Commande d'origine renseignée : original_order = ${args.original_order_number}` }
       }
 
       case 'search_products': {
