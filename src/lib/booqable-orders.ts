@@ -111,6 +111,13 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     lines: [],
     properties_attributes: (orderData.attributes.properties ?? {}) as Record<string, string>,
   }
+  // DEBUG customer_id
+  console.log('[fetchOrder] customer_id:', order.customer_id,
+    '| attrs.customer_id:', orderData.attributes.customer_id,
+    '| rel.customer.id:', (orderData.relationships?.customer as { data?: { id?: string } })?.data?.id,
+    '| customerIncluded.id:', customerIncluded?.id,
+    '| included types:', (boomSearchData.included || []).map(r => r.type).join(',')
+  )
   // Étape 2 : récupérer toutes les lignes (top-level + sous-lignes de bundles)
   // filter[order_id] ne retourne que les lignes parent → 2ème passe pour les sous-lignes
   try {

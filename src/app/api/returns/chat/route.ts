@@ -279,6 +279,7 @@ async function executeTool(
 
       case 'create_new_return_order': {
         const customerId = String(args.customer_id || '')
+        console.log('[create_new_return_order] args.customer_id:', args.customer_id, '| resolved:', customerId)
         if (!customerId) return { result: 'Erreur : customer_id manquant — utiliser le champ "customer_id" retourné par fetch_order' }
         const sav = await createSAVOrder({ customerId })
         if (!sav) return { result: 'Erreur : commande de retour non créée' }
