@@ -105,28 +105,23 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     lines: [],
     properties_attributes: (orderData.attributes.properties ?? {}) as Record<string, string>,
   }
-  // Étape 2 : récupérer les lignes + produits + stock_item_plannings via boomerang
-  // L'API v1 ne retourne pas product_name dans les lignes — boomerang le fait via included.
+  // Étape 2 : récupérer les lignes via /lines?filter[order_id] (évite la pagination de included sur les grandes commandes)
   try {
     const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
     const boomRes = await fetch(
-      `${BASE_BOOMERANG}/orders/${order.id}?include=lines,products,product_groups,stock_item_plannings,stock_items`,
+      `${BASE_BOOMERANG}/lines?filter[order_id]=${order.id}&include=item&per=200`,
       { headers: headers(), signal: AbortSignal.timeout(12000) }
     )
 
     if (boomRes.ok) {
-      const boomData = await boomRes.json() as {
-        included?: Array<{
-          type: string
-          id: string
-          attributes: Record<string, unknown>
-          relationships?: Record<string, unknown>
-        }>
-      }
+      // L'endpoint /lines retourne les lignes dans data[] et les produits dans included[]
+      type BoomNode = { type: string; id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown> }
+      const boomData = await boomRes.json() as { data?: BoomNode[]; included?: BoomNode[] }
 
-      const included = boomData.included || []
+      const linesData = boomData.data || []
+      const included  = boomData.included || []
 
-      // Index des produits (type="products") : product_id → { name, product_group_id }
+      // Index des produits dans included : id → { name, product_group_id }
       const productMap = new Map<string, { name: string; product_group_id: string }>()
       for (const r of included) {
         if (r.type === 'products') {
@@ -137,8 +132,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         }
       }
 
-      // Index des product_groups (type="product_groups") : product_group_id → { name }
-      // Dans boomerang, la relationship item d'une line peut pointer directement sur product_groups
+      // Index des product_groups dans included : id → { name }
       const productGroupMap = new Map<string, { name: string }>()
       for (const r of included) {
         if (r.type === 'product_groups') {
@@ -146,20 +140,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         }
       }
 
-      // Index des stock_item_plannings : planning_id → stock_item_id (premier assigné)
-      // Structure : stock_item_planning.attributes.planning_id + stock_item_id
-      const planningStockMap = new Map<string, string>()
-      for (const r of included) {
-        if (r.type === 'stock_item_plannings') {
-          const planningId = String(r.attributes.planning_id || '')
-          const stockItemId = String(r.attributes.stock_item_id || '')
-          if (planningId && stockItemId && !planningStockMap.has(planningId)) {
-            planningStockMap.set(planningId, stockItemId)
-          }
-        }
-      }
-
-      // Index des stock_items : id → identifier
+      // Index des stock_items dans included : id → identifier
       const stockItemMap = new Map<string, string>()
       for (const r of included) {
         if (r.type === 'stock_items') {
@@ -167,34 +148,28 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         }
       }
 
-      // Construire les lignes depuis les included de type "lines"
+      // Construire les lignes depuis data[] (chaque entrée est une line)
       const lines: BooqableOrderLine[] = []
-      for (const r of included) {
-        if (r.type !== 'lines') continue
+      for (const r of linesData) {
         const attrs = r.attributes
         const qty = Number(attrs.quantity) || 0
         if (qty <= 0) continue
 
-        // Résolution de l'item via relationships (JSON:API boomerang)
-        // La relationship "item" peut pointer sur "product_groups" ou "products" selon le cas.
         type Rel = { data?: { type: string; id: string } }
         const rels = r.relationships as Record<string, Rel> | undefined
-        const itemRel = rels?.item?.data
+        const itemRel     = rels?.item?.data
         const itemRelId   = itemRel?.id   || String(attrs.item_id || '')
         const itemRelType = itemRel?.type || ''
 
+        // product_group_id : direct si item=product_groups, sinon via productMap
         let productGroupId: string | undefined
-        // Si la relationship pointe directement sur un product_group → l'id est déjà le product_group_id
         if (itemRelType === 'product_groups') {
           productGroupId = itemRelId || undefined
         } else {
-          // Sinon (type="products" ou attrs.item_id) → chercher dans productMap
-          const product = productMap.get(itemRelId)
-          productGroupId = product?.product_group_id || undefined
+          productGroupId = productMap.get(itemRelId)?.product_group_id || undefined
         }
 
-        // attrs.description = nom du produit sur la ligne (le plus fiable dans boomerang)
-        // Fallbacks : productGroupMap (si itemRelType=product_groups), productMap (si itemRelType=products)
+        // Nom du produit : description sur la ligne en priorité, puis lookup included
         const productName = String(
           attrs.description ||
           (itemRelType === 'product_groups' ? productGroupMap.get(itemRelId)?.name : undefined) ||
@@ -202,10 +177,11 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           productGroupMap.get(itemRelId)?.name ||
           ''
         )
-        if (!productName && !itemRelId) continue  // ignorer uniquement les lignes sans nom ET sans référence produit
+        if (!productName && !itemRelId) continue
 
-        const planningId = String(attrs.planning_id || '')
-        const stockItemId = planningStockMap.get(planningId) || undefined
+        // stock_item assigné si dispo dans les relations de la ligne
+        const stockItemRel = rels?.stock_item?.data
+        const stockItemId  = stockItemRel?.id || undefined
         const stockItemIdentifier = stockItemId ? stockItemMap.get(stockItemId) : undefined
 
         lines.push({
