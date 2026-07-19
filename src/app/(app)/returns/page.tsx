@@ -1013,10 +1013,10 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Statut</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Commande SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Commande d&apos;origine</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Période</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Commande d&apos;origine</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Commande de retour</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 w-56 max-w-56">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Date suivi SAV</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Prix</th>
@@ -1043,9 +1043,9 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      {o.order_sav ? (
+                      {o.number ? (
                         <a href={o.url} target="_blank" rel="noopener noreferrer"
-                          className="font-mono text-xs text-blue-600 hover:underline">{o.order_sav}</a>
+                          className="font-mono text-xs text-blue-600 hover:underline">{o.number}</a>
                       ) : <span className="font-mono text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-900">{o.customer_name}</td>
@@ -1053,7 +1053,12 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                       <div className="text-xs text-gray-600">{fmtDate(o.starts_at)}</div>
                       <div className="text-xs text-gray-400">→ {fmtDate(o.stops_at)}</div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{o.number || '—'}</td>
+                    <td className="px-4 py-3">
+                      {o.order_sav ? (
+                        <a href={o.url} target="_blank" rel="noopener noreferrer"
+                          className="font-mono text-xs text-blue-600 hover:underline">{o.order_sav}</a>
+                      ) : <span className="font-mono text-xs text-gray-400">—</span>}
+                    </td>
                     <td className="px-4 py-3 w-56 max-w-56 whitespace-pre-wrap break-words text-xs text-gray-600">{o.notes_sav || '—'}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
                     <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-gray-900">{formatPrice(o.grand_total_in_cents)}</td>
@@ -1311,10 +1316,10 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Statut</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande SAV</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d&apos;origine</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Client</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Période</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande d&apos;origine</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande de retour</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
@@ -1358,7 +1363,12 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                       <div>{fmtDate(o.starts_at)}</div>
                       <div>→ {fmtDate(o.stops_at)}</div>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.order_sav || '—'}</td>
+                    <td className="px-4 py-3">
+                      {o.order_sav ? (
+                        <a href={o.url} target="_blank" rel="noopener noreferrer"
+                          className="font-mono text-xs text-blue-600 hover:underline">{o.order_sav}</a>
+                      ) : <span className="font-mono text-xs text-gray-400">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-gray-600 text-xs w-56 max-w-56 whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
