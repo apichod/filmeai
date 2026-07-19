@@ -30,7 +30,16 @@ function parseGroupNum(label: string): number {
   return m ? parseInt(m[1], 10) : 999
 }
 
-// ── Placeholders helper ────────────────────────────────────────────────────────
+function slugify(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    || `template_${Date.now()}`
+}
+
+// ── Placeholders ────────────────────────────────────────────────────────────────
 
 const PLACEHOLDERS = [
   { token: '{{customerName}}',      desc: 'Nom du client' },
@@ -53,10 +62,20 @@ export default function EmailTemplatesPage() {
   const [saved, setSaved]           = useState<string | null>(null)
   const [loading, setLoading]       = useState(true)
 
-  // Label editing (panneau droit uniquement)
+  // Label editing
   const [labelDraft, setLabelDraft]   = useState('')
   const [savingLabel, setSavingLabel] = useState(false)
   const [savedLabel, setSavedLabel]   = useState(false)
+
+  // Nouveau template
+  const [showNewTemplate, setShowNewTemplate] = useState(false)
+  const [newTemplateLabel, setNewTemplateLabel] = useState('')
+  const [creatingTemplate, setCreatingTemplate] = useState(false)
+
+  // Nouvelle variante
+  const [showNewVariant, setShowNewVariant] = useState(false)
+  const [newVariantLabel, setNewVariantLabel] = useState('')
+  const [creatingVariant, setCreatingVariant] = useState(false)
 
   useEffect(() => {
     fetch('/api/email-templates')
@@ -87,6 +106,8 @@ export default function EmailTemplatesPage() {
     if (selectedGroup) setLabelDraft(selectedGroup.label)
   }, [selectedId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Handlers existants ──────────────────────────────────────────────────────
+
   const handleChange = useCallback((templateId: string, caseKey: string, field: 'subject' | 'body' | 'slug', value: string) => {
     const k = `${templateId}__${caseKey}`
     setEditing(prev => ({ ...prev, [k]: { ...prev[k], [field]: value } }))
@@ -103,7 +124,6 @@ export default function EmailTemplatesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ template_id: templateId, case_key: caseKey, subject: vals.subject, body: vals.body, slug: vals.slug }),
       })
-      // Mettre à jour le slug dans la liste locale
       setGroups(prev => prev.map(g =>
         g.template_id !== templateId ? g : {
           ...g,
@@ -140,6 +160,83 @@ export default function EmailTemplatesPage() {
     }
   }, [selectedGroup, labelDraft])
 
+  // ── Créer un nouveau template ───────────────────────────────────────────────
+
+  const handleCreateTemplate = useCallback(async () => {
+    const label = newTemplateLabel.trim()
+    if (!label) return
+    const template_id = slugify(label)
+    setCreatingTemplate(true)
+    try {
+      const res = await fetch('/api/email-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_id, case_key: 'default', label, subject: '', body: '', sort_order: 0 }),
+      })
+      const data = await res.json() as { ok?: boolean; row?: TemplateCase; error?: string }
+      if (!data.ok || !data.row) { alert(data.error || 'Erreur'); return }
+
+      const newCase: TemplateCase = { ...data.row, slug: data.row.slug || template_id }
+      const newGroup: TemplateGroup = { template_id, label, cases: [newCase] }
+
+      setGroups(prev =>
+        [...prev, newGroup].sort((a, b) => parseGroupNum(a.label) - parseGroupNum(b.label))
+      )
+      setEditing(prev => ({
+        ...prev,
+        [`${template_id}__default`]: { subject: '', body: '', slug: template_id },
+      }))
+      setSelectedId(template_id)
+      setLabelDraft(label)
+      setNewTemplateLabel('')
+      setShowNewTemplate(false)
+    } finally {
+      setCreatingTemplate(false)
+    }
+  }, [newTemplateLabel])
+
+  // ── Créer une nouvelle variante ─────────────────────────────────────────────
+
+  const handleCreateVariant = useCallback(async () => {
+    if (!selectedGroup) return
+    const case_label = newVariantLabel.trim()
+    const case_key = case_label ? slugify(case_label) : `variante_${selectedGroup.cases.length + 1}`
+    const sort_order = Math.max(0, ...selectedGroup.cases.map(c => c.sort_order)) + 1
+    setCreatingVariant(true)
+    try {
+      const res = await fetch('/api/email-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: selectedGroup.template_id,
+          case_key,
+          label: selectedGroup.label,
+          case_label,
+          subject: '',
+          body: '',
+          sort_order,
+        }),
+      })
+      const data = await res.json() as { ok?: boolean; row?: TemplateCase; error?: string }
+      if (!data.ok || !data.row) { alert(data.error || 'Erreur'); return }
+
+      const newCase: TemplateCase = { ...data.row, slug: data.row.slug || `${selectedGroup.template_id}_cas_${sort_order + 1}` }
+      setGroups(prev => prev.map(g =>
+        g.template_id !== selectedGroup.template_id ? g : { ...g, cases: [...g.cases, newCase] }
+      ))
+      setEditing(prev => ({
+        ...prev,
+        [`${selectedGroup.template_id}__${case_key}`]: { subject: '', body: '', slug: newCase.slug || '' },
+      }))
+      setNewVariantLabel('')
+      setShowNewVariant(false)
+    } finally {
+      setCreatingVariant(false)
+    }
+  }, [selectedGroup, newVariantLabel])
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
   if (loading) {
     return <div className="text-sm text-gray-400 py-8 text-center">Chargement des templates…</div>
   }
@@ -148,26 +245,68 @@ export default function EmailTemplatesPage() {
     <div className="flex gap-6 min-h-[600px]">
 
       {/* ── Colonne gauche : navigation ── */}
-      <div className="w-56 flex-shrink-0 space-y-1">
-        {groups.map(g => (
+      <div className="w-56 flex-shrink-0 flex flex-col gap-1">
+        <div className="flex-1 space-y-1">
+          {groups.map(g => (
+            <button
+              key={g.template_id}
+              onClick={() => { setSelectedId(g.template_id); setShowNewVariant(false) }}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                selectedId === g.template_id
+                  ? 'bg-black text-white font-medium'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <span className="block leading-snug truncate">{g.label}</span>
+              <span className={`text-xs mt-0.5 block ${selectedId === g.template_id ? 'text-gray-300' : 'text-gray-400'}`}>
+                {g.cases.length} variante{g.cases.length > 1 ? 's' : ''}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Nouveau template */}
+        {showNewTemplate ? (
+          <div className="mt-2 space-y-1.5">
+            <input
+              autoFocus
+              type="text"
+              value={newTemplateLabel}
+              onChange={e => setNewTemplateLabel(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreateTemplate(); if (e.key === 'Escape') setShowNewTemplate(false) }}
+              placeholder="ex: 15 – Mon template"
+              className="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-black/10"
+            />
+            <div className="flex gap-1">
+              <button
+                onClick={handleCreateTemplate}
+                disabled={creatingTemplate || !newTemplateLabel.trim()}
+                className="flex-1 px-2 py-1 bg-black text-white text-xs rounded-lg hover:bg-gray-800 disabled:opacity-40 transition-colors"
+              >
+                {creatingTemplate ? '…' : 'Créer'}
+              </button>
+              <button
+                onClick={() => { setShowNewTemplate(false); setNewTemplateLabel('') }}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        ) : (
           <button
-            key={g.template_id}
-            onClick={() => setSelectedId(g.template_id)}
-            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
-              selectedId === g.template_id
-                ? 'bg-black text-white font-medium'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
+            onClick={() => setShowNewTemplate(true)}
+            className="mt-2 w-full flex items-center gap-1.5 px-3 py-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <span className="block leading-snug truncate">{g.label}</span>
-            <span className={`text-xs mt-0.5 block ${selectedId === g.template_id ? 'text-gray-300' : 'text-gray-400'}`}>
-              {g.cases.length} variante{g.cases.length > 1 ? 's' : ''}
-            </span>
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Nouveau template
           </button>
-        ))}
+        )}
 
         {/* Légende placeholders */}
-        <div className="pt-4 border-t border-gray-100 mt-4">
+        <div className="pt-4 border-t border-gray-100 mt-2 space-y-0.5">
           <p className="text-xs font-medium text-gray-500 mb-2 px-1">Variables disponibles</p>
           {PLACEHOLDERS.map(p => (
             <div key={p.token} className="px-1 py-0.5">
@@ -215,6 +354,7 @@ export default function EmailTemplatesPage() {
                 : 'Template unique'}
             </p>
 
+            {/* Cartes des variantes */}
             {selectedGroup.cases.map((c) => {
               const k = `${c.template_id}__${c.case_key}`
               const vals = editing[k] ?? { subject: c.subject, body: c.body, slug: c.slug || '' }
@@ -224,7 +364,7 @@ export default function EmailTemplatesPage() {
               return (
                 <div key={c.case_key} className="border border-gray-200 rounded-xl p-5 space-y-4">
                   {/* Badges conditions */}
-                  {(c.case_label || c.conditions) && (
+                  {(c.case_label || Object.keys(c.conditions || {}).length > 0) && (
                     <div className="flex flex-wrap items-center gap-2">
                       {c.case_label && (
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
@@ -293,6 +433,47 @@ export default function EmailTemplatesPage() {
                 </div>
               )
             })}
+
+            {/* Ajouter une variante */}
+            {showNewVariant ? (
+              <div className="border border-dashed border-gray-300 rounded-xl p-4 space-y-3">
+                <p className="text-xs font-medium text-gray-500">Nouvelle variante</p>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newVariantLabel}
+                  onChange={e => setNewVariantLabel(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateVariant(); if (e.key === 'Escape') setShowNewVariant(false) }}
+                  placeholder="ex: Avec assurance, sans caution (optionnel)"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/10"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => { setShowNewVariant(false); setNewVariantLabel('') }}
+                    className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleCreateVariant}
+                    disabled={creatingVariant}
+                    className="px-4 py-1.5 bg-black text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                  >
+                    {creatingVariant ? 'Création…' : 'Créer la variante'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowNewVariant(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:text-gray-900 hover:border-gray-400 hover:bg-gray-50 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Ajouter une variante
+              </button>
+            )}
           </>
         )}
       </div>
