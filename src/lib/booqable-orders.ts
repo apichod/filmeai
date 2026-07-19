@@ -59,11 +59,6 @@ function bqDate(date: Date): string {
 }
 
 function today(): Date { return new Date() }
-function inDays(n: number): Date {
-  const d = new Date()
-  d.setDate(d.getDate() + n)
-  return d
-}
 /** Dernier jour de l'année en cours à 23h45 (date de fin des commandes de retour) */
 function endOfYear(): Date {
   const d = new Date()
