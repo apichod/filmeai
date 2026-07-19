@@ -109,7 +109,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
   try {
     const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
     const boomRes = await fetch(
-      `${BASE_BOOMERANG}/lines?filter[order_id]=${order.id}&include=item&per=200`,
+      `${BASE_BOOMERANG}/lines?filter[order_id]=${order.id}&include=item,planning,stock_item&per=200`,
       { headers: headers(), signal: AbortSignal.timeout(12000) }
     )
 
@@ -121,29 +121,23 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
       const linesData = boomData.data || []
       const included  = boomData.included || []
 
-      // Index des produits dans included : id → { name, product_group_id }
-      const productMap = new Map<string, { name: string; product_group_id: string }>()
-      for (const r of included) {
-        if (r.type === 'products') {
-          productMap.set(r.id, {
-            name: String(r.attributes.name || ''),
-            product_group_id: String(r.attributes.product_group_id || ''),
-          })
-        }
-      }
+      // Index universel : tous les objets included par id
+      // Supporte : products, product_groups, product_group (variantes de nommage Booqable)
+      const itemNameMap   = new Map<string, string>()
+      const itemGroupMap  = new Map<string, string>() // id → product_group_id
+      const stockItemMap  = new Map<string, string>() // id → identifier
 
-      // Index des product_groups dans included : id → { name }
-      const productGroupMap = new Map<string, { name: string }>()
       for (const r of included) {
-        if (r.type === 'product_groups') {
-          productGroupMap.set(r.id, { name: String(r.attributes.name || '') })
+        const name = String(r.attributes.name || r.attributes.display_name || '')
+        if (r.type === 'products' || r.type === 'product') {
+          itemNameMap.set(r.id, name)
+          const pgId = String(r.attributes.product_group_id || '')
+          if (pgId) itemGroupMap.set(r.id, pgId)
         }
-      }
-
-      // Index des stock_items dans included : id → identifier
-      const stockItemMap = new Map<string, string>()
-      for (const r of included) {
-        if (r.type === 'stock_items') {
+        if (r.type === 'product_groups' || r.type === 'product_group') {
+          itemNameMap.set(r.id, name)
+        }
+        if (r.type === 'stock_items' || r.type === 'stock_item') {
           stockItemMap.set(r.id, String(r.attributes.identifier || ''))
         }
       }
@@ -161,25 +155,23 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         const itemRelId   = itemRel?.id   || String(attrs.item_id || '')
         const itemRelType = itemRel?.type || ''
 
-        // product_group_id : direct si item=product_groups, sinon via productMap
-        let productGroupId: string | undefined
-        if (itemRelType === 'product_groups') {
-          productGroupId = itemRelId || undefined
-        } else {
-          productGroupId = productMap.get(itemRelId)?.product_group_id || undefined
-        }
+        // product_group_id
+        const isGroup = itemRelType === 'product_groups' || itemRelType === 'product_group'
+        const productGroupId: string | undefined = isGroup
+          ? itemRelId
+          : (itemGroupMap.get(itemRelId) || undefined)
 
-        // Nom du produit : description sur la ligne en priorité, puis lookup included
+        // Nom : attrs.description / name / title en priorité, sinon lookup included
         const productName = String(
           attrs.description ||
-          (itemRelType === 'product_groups' ? productGroupMap.get(itemRelId)?.name : undefined) ||
-          productMap.get(itemRelId)?.name ||
-          productGroupMap.get(itemRelId)?.name ||
+          attrs.name ||
+          attrs.title ||
+          itemNameMap.get(itemRelId) ||
           ''
         )
         if (!productName && !itemRelId) continue
 
-        // stock_item assigné si dispo dans les relations de la ligne
+        // stock_item
         const stockItemRel = rels?.stock_item?.data
         const stockItemId  = stockItemRel?.id || undefined
         const stockItemIdentifier = stockItemId ? stockItemMap.get(stockItemId) : undefined
