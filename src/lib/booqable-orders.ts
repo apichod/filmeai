@@ -235,8 +235,10 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
   // ── Passe 3 : stock_item_identifier via /api/4/stock_item_plannings ──────────
   // planning_id et stock_item_id sont des ATTRIBUTS directs (pas des relationships).
   // On match en priorité par planning_id (exact), sinon par product_group_id (fallback).
-  console.log('[pass3-pre] lines:', JSON.stringify((order.lines || []).map(l => ({ id: l.id, pg: l.product_group_id ?? null, si: l.stock_item_identifier ?? null, plan: l.planning_id ?? null }))))
-  if ((order.lines || []).some(l => l.product_group_id && !l.stock_item_identifier)) {
+  for (const _l of (order.lines || [])) {
+    console.log(`[pass3-pre] line id=${_l.id} pg=${_l.product_group_id ?? 'NULL'} si=${_l.stock_item_identifier ?? 'NULL'} plan=${_l.planning_id ?? 'NULL'}`)
+  }
+  if ((order.lines || []).some(l => (l.product_group_id || l.planning_id) && !l.stock_item_identifier)) {
     try {
       type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
       const sipUrl = `${BASE4}/stock_item_plannings?filter[order_id]=${order.id}&include=stock_item&page[size]=200`
