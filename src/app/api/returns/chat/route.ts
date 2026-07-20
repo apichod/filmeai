@@ -497,7 +497,9 @@ async function executeTool(
       }
 
       case 'revert_to_concept': {
-        await revertToConcept(String(args.order_id))
+        const revertOrderId = await resolveOrderId(String(args.order_id))
+        if (!revertOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
+        await revertToConcept(revertOrderId)
         return { result: `✓ Commande ${args.order_id} repassée en draft (concept)` }
       }
 

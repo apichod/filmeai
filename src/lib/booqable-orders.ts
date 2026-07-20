@@ -985,6 +985,7 @@ export async function duplicateOrder(orderId: string): Promise<{ newOrderId: str
   })
   if (!res.ok) {
     const text = await res.text()
+    console.log(`[duplicateOrder] FAILED ${res.status} orderId=${orderId}: ${text}`)
     throw new Error(`Booqable duplicateOrder error ${res.status}: ${text}`)
   }
   const data = await res.json() as {
@@ -1035,6 +1036,12 @@ export async function revertToConcept(orderId: string): Promise<void> {
       }),
       signal: AbortSignal.timeout(10000),
     })
+    if (!res.ok) {
+      const text = await res.text()
+      console.log(`[revertToConcept] ${from}→${to} FAILED ${res.status}: ${text.slice(0, 300)}`)
+    } else {
+      console.log(`[revertToConcept] ${from}→${to} OK`)
+    }
     return res.ok
   }
 
