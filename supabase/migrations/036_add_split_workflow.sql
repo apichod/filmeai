@@ -181,9 +181,4 @@ RÈGLES :
 - Tags selon le problème : retard → r11_late | perte → r12_missing | vol → r13_theft | dommage → r14_damage. Toujours ajouter r21_open en plus.
 - Réserver puis démarrer chaque commande dans l'ordre (N°1 entièrement, puis N°2).$$
 )
-ON CONFLICT (slug) DO UPDATE SET
-  name        = EXCLUDED.name,
-  description = EXCLUDED.description,
-  steps       = EXCLUDED.steps,
-  prompt      = EXCLUDED.prompt,
-  updated_at  = NOW();
+ON CONFLICT (slug) DO NOTHING;
