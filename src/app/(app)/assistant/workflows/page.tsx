@@ -402,6 +402,32 @@ export default function WorkflowsPage() {
     }
   }
 
+  async function duplicateWorkflow(wf: Workflow) {
+    setCreating(true)
+    try {
+      const res = await fetch('/api/returns/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug:        `${wf.slug}_copy_${Date.now()}`,
+          name:        `${wf.name} (copie)`,
+          description: wf.description,
+          prompt:      wf.prompt,
+          steps:       wf.steps,
+          is_active:   false,
+        }),
+      })
+      const d = await res.json() as { workflow?: Workflow; error?: string }
+      if (d.workflow) {
+        setWorkflows(prev => [...prev, d.workflow!].sort((a, b) => a.name.localeCompare(b.name, 'fr')))
+        select(d.workflow!)
+        setEditing(true)
+      }
+    } finally {
+      setCreating(false)
+    }
+  }
+
   async function createNew() {
     setCreating(true)
     try {
@@ -500,20 +526,31 @@ export default function WorkflowsPage() {
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                <div className="font-medium pr-5">{wf.name}</div>
+                <div className="font-medium pr-10">{wf.name}</div>
                 <div className={`text-xs mt-0.5 font-mono ${selected?.id === wf.id ? 'text-white/50' : 'text-gray-400'}`}>
                   {wf.slug} · {wf.steps?.length || 0} étapes
                 </div>
               </button>
-              <button
-                onClick={() => deleteWorkflow(wf)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-red-500 transition-all"
-                title="Supprimer"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                <button
+                  onClick={e => { e.stopPropagation(); duplicateWorkflow(wf) }}
+                  className="p-1 rounded text-gray-400 hover:text-blue-500 transition-colors"
+                  title="Dupliquer"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); deleteWorkflow(wf) }}
+                  className="p-1 rounded text-gray-400 hover:text-red-500 transition-colors"
+                  title="Supprimer"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
           ))}
         </div>
