@@ -24,7 +24,14 @@ type WorkflowStep = {
   title: string
   description: string
   booqable_action?: string
+  parameters?: Record<string, unknown>
   variable?: string
+}
+
+// Hint JSON par outil
+const PARAMETERS_HINT: Record<string, string> = {
+  add_tag:    '{"tags_add": ["R22_WAIVED"], "tags_remove": ["R21_OPEN"]}',
+  draft_email: '{"template_id": "retour_ok"}',
 }
 
 type Workflow = {
@@ -44,6 +51,57 @@ function StepBadge({ type }: { type: string }) {
   if (type === 'question')    return <span className="px-2 py-0.5 rounded-full text-xs bg-purple-50 text-purple-700 font-medium">Question</span>
   if (type === 'instruction') return <span className="px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 font-medium">Instruction</span>
   return <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{type}</span>
+}
+
+// ── Éditeur de parameters JSON ────────────────────────────────────────────────
+
+function ParametersEditor({
+  value,
+  hint,
+  onChange,
+}: {
+  value?: Record<string, unknown>
+  hint?: string
+  onChange: (params: Record<string, unknown> | undefined) => void
+}) {
+  const [raw, setRaw] = useState(value ? JSON.stringify(value, null, 2) : '')
+  const [error, setError] = useState(false)
+
+  function handleChange(text: string) {
+    setRaw(text)
+    if (text.trim() === '') {
+      setError(false)
+      onChange(undefined)
+      return
+    }
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>
+      setError(false)
+      onChange(parsed)
+    } catch {
+      setError(true)
+    }
+  }
+
+  return (
+    <div>
+      <label className="block text-xs text-gray-400 mb-1">
+        Paramètres <span className="text-gray-300">(JSON)</span>
+      </label>
+      <textarea
+        value={raw}
+        onChange={e => handleChange(e.target.value)}
+        rows={3}
+        placeholder={hint ? `ex: ${hint}` : '{}'}
+        className={`w-full border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 resize-y bg-white ${
+          error
+            ? 'border-red-300 focus:ring-red-200 text-red-700'
+            : 'border-gray-200 focus:ring-gray-300 text-gray-700'
+        }`}
+      />
+      {error && <p className="text-xs text-red-500 mt-0.5">JSON invalide</p>}
+    </div>
+  )
 }
 
 // ── Composant StepList avec drag-and-drop ─────────────────────────────────────
@@ -157,18 +215,29 @@ function StepList({
 
           {/* Outil Booqable — affiché pour les actions */}
           {step.type === 'action' && (
-            <div className="pl-7">
-              <label className="block text-xs text-gray-400 mb-1">Appel API Booqable</label>
-              <select
-                value={step.booqable_action || ''}
-                onChange={e => updateStep(idx, { booqable_action: e.target.value })}
-                className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
-              >
-                <option value="">— aucun —</option>
-                {BOOQABLE_TOOLS.map(t => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
+            <div className="pl-7 space-y-2">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Appel API Booqable</label>
+                <select
+                  value={step.booqable_action || ''}
+                  onChange={e => updateStep(idx, { booqable_action: e.target.value || undefined })}
+                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+                >
+                  <option value="">— aucun —</option>
+                  {BOOQABLE_TOOLS.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Paramètres structurés — visibles quand booqable_action est sélectionné */}
+              {step.booqable_action && (
+                <ParametersEditor
+                  value={step.parameters}
+                  hint={PARAMETERS_HINT[step.booqable_action]}
+                  onChange={params => updateStep(idx, { parameters: params })}
+                />
+              )}
             </div>
           )}
         </div>
