@@ -1170,3 +1170,34 @@ export async function stopOrder(orderId: string): Promise<void> {
 
   throw new Error(`Booqable stopOrder error ${r2.status}: ${r2.text}`)
 }
+
+// ── sendEmailViaBooqable ──────────────────────────────────────────────────────
+// Envoie un email via Booqable (qui gère le destinataire depuis l'order et
+// remplace les {{variables}} Booqable au moment de l'envoi).
+export async function sendEmailViaBooqable(
+  orderId: string,
+  subject: string,
+  body: string
+): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(`${BASE_BOOMERANG}/emails`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'emails',
+        attributes: {
+          order_id:        orderId,
+          subject,
+          body,
+          send_immediately: true,
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable sendEmail error ${res.status}: ${text}`)
+  }
+}

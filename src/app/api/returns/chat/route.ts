@@ -1,7 +1,6 @@
 import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
-import nodemailer from 'nodemailer'
 import { renderEmail, type EmailTemplateId } from '@/lib/email-templates'
 import {
   fetchOrderByNumber,
@@ -22,6 +21,7 @@ import {
   clearTags,
   duplicateOrder,
   startSAVOrder,
+  sendEmailViaBooqable,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -204,24 +204,17 @@ function buildTools(
     type: 'function',
     function: {
       name: 'draft_email',
-      description: `Génère un email client à partir de la bibliothèque de templates Filme.\nTemplates disponibles :\n${templateList}`,
+      description: `Récupère le template email depuis la bibliothèque Filme et retourne subject + body bruts (avec {{variables}} Booqable préservées — Booqable les remplace à l'envoi).\nTemplates disponibles :\n${templateList}`,
       parameters: {
         type: 'object',
         properties: {
-          template_id:         { type: 'string', enum: templateIds.length > 0 ? templateIds : ['retour_ok'], description: 'ID du template à utiliser' },
-          insurance:           { type: 'boolean', description: 'Le client a souscrit à l\'assurance' },
-          caution:             { type: 'boolean', description: 'Une caution est active sur l\'order' },
-          amount_above_500:    { type: 'boolean', description: 'Montant réparation/remplacement > 500 € (pour templates facturation avec franchise)' },
-          late_payment:        { type: 'boolean', description: 'Cas retard de paiement (templates facturation uniquement)' },
-          customer_name:       { type: 'string', description: 'Prénom/nom du client' },
-          customer_email:      { type: 'string', description: 'Email du client (champ customer_email de fetch_order)' },
-          order_number:        { type: 'string', description: 'Numéro de location (pour retour_ok)' },
-          origin_order_number: { type: 'string', description: 'Numéro de l\'order d\'origine (order_sav)' },
-          sav_comment:         { type: 'string', description: 'Détail du problème (notes_sav)' },
-          payment_link:        { type: 'string', description: 'Lien paiement CB (templates facturation)' },
-          document_number:     { type: 'string', description: 'Numéro de facture Booqable (templates facturation)' },
+          template_id:      { type: 'string', enum: templateIds.length > 0 ? templateIds : ['retour_ok'], description: 'ID du template à utiliser' },
+          insurance:        { type: 'boolean', description: 'Le client a souscrit à l\'assurance (pour sélection de variante)' },
+          caution:          { type: 'boolean', description: 'Une caution est active (pour sélection de variante)' },
+          amount_above_500: { type: 'boolean', description: 'Montant > 500 € (pour sélection de variante)' },
+          late_payment:     { type: 'boolean', description: 'Retard de paiement (pour sélection de variante)' },
         },
-        required: ['template_id', 'customer_name'],
+        required: ['template_id'],
       },
     },
   },
@@ -369,15 +362,15 @@ function buildTools(
     type: 'function',
     function: {
       name: 'send_email',
-      description: 'Envoie l\'email au client. À appeler UNIQUEMENT si l\'opérateur a confirmé l\'envoi.',
+      description: 'Envoie l\'email via Booqable (Booqable gère le destinataire depuis l\'order et remplace les {{variables}}). À appeler UNIQUEMENT après confirmation de l\'opérateur.',
       parameters: {
         type: 'object',
         properties: {
-          to:      { type: 'string', description: 'Adresse email du destinataire' },
-          subject: { type: 'string', description: 'Objet de l\'email' },
-          body:    { type: 'string', description: 'Corps de l\'email (texte brut)' },
+          order_id: { type: 'string', description: 'UUID Booqable de la commande (champ "id" de fetch_order)' },
+          subject:  { type: 'string', description: 'Objet de l\'email — copier EXACTEMENT depuis draft_email, sans modifier les {{variables}}' },
+          body:     { type: 'string', description: 'Corps de l\'email — copier EXACTEMENT depuis draft_email, sans modifier les {{variables}}' },
         },
-        required: ['to', 'subject', 'body'],
+        required: ['order_id', 'subject', 'body'],
       },
     },
   },
@@ -633,30 +626,13 @@ async function executeTool(
 
       case 'draft_email': {
         const templateId = String(args.template_id || '')
-        // Fallback : si l'IA passe un placeholder, utiliser les valeurs mémorisées côté client (via ctx)
-        const PLACEHOLDER_NAME_RE = /^(nom\s*(du\s*)?client|customer[_\s]?name|client|prénom|[a-z]+_[a-z]+)$/i
-        const resolvedName = (args.customer_name && !PLACEHOLDER_NAME_RE.test(String(args.customer_name)))
-          ? String(args.customer_name)
-          : (ctx.customerName || String(args.customer_name || ''))
-        const PLACEHOLDER_EMAIL_RE = /^(email@example\.com|customer[_@]|example\.com|test@|placeholder)/i
-        const resolvedEmail = (args.customer_email && !PLACEHOLDER_EMAIL_RE.test(String(args.customer_email)))
-          ? String(args.customer_email)
-          : (ctx.customerEmail || (args.customer_email ? String(args.customer_email) : undefined))
 
-        const vars = {
-          customerName:       resolvedName,
-          customerEmail:      resolvedEmail,
-          orderNumber:        args.order_number ? String(args.order_number) : undefined,
-          originOrderNumber:  args.origin_order_number ? String(args.origin_order_number) : undefined,
-          notesSav:           args.sav_comment ? String(args.sav_comment) : undefined,
-          insurance:          Boolean(args.insurance),
-          caution:            Boolean(args.caution),
-          amountAbove500:     Boolean(args.amount_above_500),
-          latePayment:        Boolean(args.late_payment),
-          paymentLink:        args.payment_link ? String(args.payment_link) : undefined,
-          documentNumber:     args.document_number ? String(args.document_number) : undefined,
-          orderStartsAt:      args.order_starts_at ? String(args.order_starts_at) : undefined,
-          orderStopsAt:       args.order_stops_at ? String(args.order_stops_at) : undefined,
+        // Conditions pour sélection de variante (pas de données client ici)
+        const conditions: Record<string, boolean> = {
+          insurance:      Boolean(args.insurance),
+          caution:        Boolean(args.caution),
+          amountAbove500: Boolean(args.amount_above_500),
+          latePayment:    Boolean(args.late_payment),
         }
 
         // Charger le template depuis la DB
@@ -668,13 +644,6 @@ async function executeTool(
           .order('sort_order')
 
         if (rows && rows.length > 0) {
-          // Sélectionner la meilleure variante selon les conditions
-          const conditions: Record<string, boolean> = {
-            insurance:      Boolean(args.insurance),
-            caution:        Boolean(args.caution),
-            amountAbove500: Boolean(args.amount_above_500),
-            latePayment:    Boolean(args.late_payment),
-          }
           const best = rows.reduce((prev, cur) => {
             const score = (row: typeof rows[0]) => {
               const c = (row.conditions as Record<string, boolean>) || {}
@@ -683,44 +652,26 @@ async function executeTool(
             }
             return score(cur) >= score(prev) ? cur : prev
           })
-          // Garder les {{variables}} brutes — Booqable les remplace à l'envoi
-          return { result: JSON.stringify({ subject: best.subject, body: best.body, to: resolvedEmail || '' }) }
+          // Retourner subject + body BRUTS — {{variables}} préservées pour Booqable
+          return { result: JSON.stringify({ subject: best.subject, body: best.body }) }
         }
 
         // Fallback : templates hardcodés (rétrocompatibilité)
         try {
-          const email = renderEmail(templateId as EmailTemplateId, vars)
-          return { result: JSON.stringify({ subject: email.subject, body: email.body, to: email.to || resolvedEmail || '' }) }
+          const email = renderEmail(templateId as EmailTemplateId, {})
+          return { result: JSON.stringify({ subject: email.subject, body: email.body }) }
         } catch {
           return { result: `Erreur : template "${templateId}" introuvable en DB et non reconnu.` }
         }
       }
 
       case 'send_email': {
-        const to      = String(args.to)
+        const sendOrderId = await resolveOrderId(String(args.order_id || ''))
+        if (!sendOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
         const subject = String(args.subject)
         const body    = String(args.body)
-
-        if (!to || !to.includes('@')) {
-          return { result: 'Erreur : adresse email destinataire manquante ou invalide.' }
-        }
-
-        const transporter = nodemailer.createTransport({
-          host:   'smtp.gmail.com',
-          port:   465,
-          secure: true,
-          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-        })
-
-        await transporter.sendMail({
-          from:    `"filme" <${process.env.SMTP_USER}>`,
-          to,
-          subject,
-          text: body,
-          html: body.replace(/\n/g, '<br>'),
-        })
-
-        return { result: `✓ Email envoyé à ${to}` }
+        await sendEmailViaBooqable(sendOrderId, subject, body)
+        return { result: `✓ Email envoyé via Booqable pour la commande ${args.order_id}` }
       }
 
       default:
@@ -1026,13 +977,15 @@ C1. Appelle draft_email avec le template adapté :
     - Facturation perte        → facturation_perdu
     - Facturation vol          → facturation_vole
 
-C2. Présente l'email :
-    "Voici l'email que je propose d'envoyer à [customer_email] :
-    Objet : [subject]
-    [body]
+C2. Présente l'email EXACTEMENT comme retourné par draft_email — ne remplace JAMAIS les {{variables}} :
+    "Voici l'email que je propose :
+    Objet : [subject tel quel]
+    [body tel quel, avec {{variables}} visibles]
     Souhaitez-vous envoyer cet email ?"
 
-C3. Confirmation opérateur → send_email(to, subject, body).
+C3. Confirmation opérateur → send_email(order_id, subject, body).
+    order_id = UUID de la commande (original_order ou return_order selon le workflow).
+    subject et body = copie EXACTE de draft_email, {{variables}} incluses.
 
 ═══════════════════════════════════════════════════
 RÈGLES IDs — JAMAIS LES MÉLANGER
@@ -1041,7 +994,7 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
 - fetch_order → "id" (UUID) = id de l'original_order / "number" pour affichage humain.
 - create_new_return_order → "id" (UUID) = id de la return_order, à utiliser pour add_tag, add_sav_comment, add_new_product_line.
 - customer_id pour create_new_return_order = champ "customer_id" de fetch_order.
-- Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.
+- Pour draft_email : passer uniquement template_id + flags conditions (insurance, caution, etc.). NE PAS passer customer_name, customer_email — Booqable les gère via {{variables}}.
 
 RÈGLE ABSOLUE — EMAIL DRAFT :
 Quand tu affiches le brouillon d'email retourné par draft_email, tu dois copier-coller le subject et le body EXACTEMENT tels quels, sans modifier un seul caractère.
