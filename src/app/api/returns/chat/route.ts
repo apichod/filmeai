@@ -235,7 +235,7 @@ function buildTools(
     type: 'function',
     function: {
       name: 'choose_problem_tag',
-      description: 'Présente 4 boutons à l\'opérateur pour choisir le type de problème et le tag correspondant : Retard (r11_late), Perte (r12_missing), Vol (r13_theft), Dommage (r14_damage). Appeler cette fonction quand l\'opérateur doit choisir un tag de problème.',
+      description: 'Présente 4 boutons à l\'opérateur pour choisir le type de problème : Retard (r11_late), Perte (r12_missing), Vol (r13_theft), Dommage (r14_damage). IMPORTANT : après avoir appelé cette fonction, STOP — ne pas appeler d\'autres tools. Attendre que l\'utilisateur réponde avec le tag sélectionné. Le prochain message de l\'utilisateur SERA le tag (ex: "r11_late"). À ce moment seulement, appeler add_tag avec ce tag + r21_open, puis continuer.',
       parameters: {
         type: 'object',
         properties: {
@@ -894,8 +894,14 @@ Avant d'appeler un outil, lis l'historique de conversation pour vérifier s'il a
 - Si duplicate_order apparaît déjà dans l'historique avec un résultat new_order_id → NE PAS le rappeler.
 - Si revert_to_concept apparaît déjà dans l'historique (succès ou échec) → NE PAS le rappeler.
 - Si fetch_order a déjà été appelé pour cette commande → utiliser les données mémorisées, NE PAS refaire l'appel sauf si explicitement demandé.
+- Si clear_tags apparaît déjà dans l'historique pour cette commande → NE PAS le rappeler avant d'avoir avancé au moins jusqu'à reserve_order.
 - En général : si un tool_call est visible dans l'historique pour cette session → considérer que ce step est fait, passer au step suivant.
 Quand l'utilisateur répond à une [QUESTION], continuer depuis la [ACTION] qui SUIT cette question, pas depuis le début du workflow.
+
+RÈGLE ABSOLUE — choose_problem_tag :
+Après avoir appelé choose_problem_tag, STOPPER immédiatement — ne pas appeler d'autres tools dans le même tour.
+Le prochain message de l'utilisateur est TOUJOURS le tag sélectionné (ex: "r11_late", "r12_missing", "r14_damage").
+À la réception de ce message : appeler add_tag avec CE tag (ex: r11_late) + r21_open en une seule fois, puis passer directement au step suivant (reserve_order). NE PAS rappeler add_sav_comment, clear_tags, ou choose_problem_tag.
 
 ═══════════════════════════════════════════════════
 DÉTERMINATION DU TYPE DE CAS
