@@ -279,8 +279,6 @@ export default function WorkflowsPage() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [seeding, setSeeding] = useState(false)
-  const [seedMsg, setSeedMsg] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
   // Champs en cours d'édition
@@ -381,27 +379,6 @@ export default function WorkflowsPage() {
     }
   }
 
-  async function seed() {
-    setSeeding(true)
-    setSeedMsg(null)
-    try {
-      const res = await fetch('/api/returns/workflows/seed')
-      const d = await res.json() as { message?: string; created?: number; error?: string }
-      setSeedMsg(d.error ? `Erreur : ${d.error}` : (d.message ?? 'OK'))
-      if (!d.error) {
-        // Recharger la liste
-        const r2 = await fetch('/api/returns/workflows')
-        const d2 = await r2.json() as { workflows: Workflow[] }
-        const wfs = (d2.workflows || []).sort((a: Workflow, b: Workflow) => a.name.localeCompare(b.name, 'fr'))
-        setWorkflows(wfs)
-        if (wfs.length > 0 && !selected) select(wfs[0])
-      }
-    } finally {
-      setSeeding(false)
-      setTimeout(() => setSeedMsg(null), 4000)
-    }
-  }
-
   async function duplicateWorkflow(wf: Workflow) {
     setCreating(true)
     try {
@@ -473,11 +450,6 @@ export default function WorkflowsPage() {
           <p className="text-sm text-gray-500 mt-0.5">Éditez les procédures utilisées par l&apos;assistant</p>
         </div>
         <div className="flex items-center gap-3">
-          {seedMsg && (
-            <span className={`text-xs font-medium ${seedMsg.startsWith('Erreur') ? 'text-red-600' : 'text-green-600'}`}>
-              {seedMsg}
-            </span>
-          )}
           {saved && (
             <span className="text-sm text-green-600 font-medium flex items-center gap-1">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -487,18 +459,14 @@ export default function WorkflowsPage() {
             </span>
           )}
           <button
-            onClick={seed}
-            disabled={seeding}
+            onClick={() => selected && duplicateWorkflow(selected)}
+            disabled={creating || !selected}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
-            {seeding ? (
-              <span className="w-3 h-3 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
-            ) : (
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-            )}
-            Créer les 5 workflows
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            Dupliquer
           </button>
           <button
             onClick={createNew}
