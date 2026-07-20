@@ -884,12 +884,14 @@ export async function POST(req: NextRequest) {
         : ''
 
       if (s.type === 'check') {
-        // Étape bloquante : l'IA DOIT vérifier et redemander si incomplet
+        // Étape bloquante : l'IA DOIT vérifier article par article et redemander si incomplet
         return `${i + 1}. [⚠ ARRÊT — VÉRIFICATION OBLIGATOIRE AVANT DE CONTINUER]\n` +
           `   Condition : ${s.title}${desc}\n` +
-          `   → Si une information manque, POSE LA QUESTION à l'opérateur et ATTENDS sa réponse.\n` +
-          `   → Ne passe à l'étape suivante QUE si toutes les informations requises sont présentes.\n` +
-          `   → NE JAMAIS supposer ou inventer une valeur manquante.`
+          `   → Passe en revue CHAQUE article listé, UN PAR UN.\n` +
+          `   → Pour chaque article, si une information requise manque : POSE LA QUESTION et ATTENDS la réponse avant de passer à l'article suivant.\n` +
+          `   → L'opérateur doit répondre explicitement pour chaque article (ex: "pas d'ID" est une réponse valide).\n` +
+          `   → NE JAMAIS supposer, déduire ou inventer une valeur manquante.\n` +
+          `   → Ne passe à l'étape suivante QUE lorsque chaque article a été validé individuellement.`
       }
 
       const tag = s.type === 'action' ? '[ACTION]' : s.type === 'question' ? '[QUESTION]' : '[INSTRUCTION]'
