@@ -34,15 +34,6 @@ function getSupabaseAdmin() {
   )
 }
 
-// ── Substitution de variables dans les templates email ───────────────────────
-// Remplace {{variable}} par la valeur correspondante (si connue), sinon laisse intact.
-function substituteTemplateVars(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{([^}]+)\}\}/g, (match, key: string) => {
-    const v = vars[key.trim()]
-    return (v !== undefined && v !== '') ? v : match
-  })
-}
-
 // ── Outils disponibles pour l'IA (construits dynamiquement depuis la DB) ──────
 
 function buildTools(
@@ -62,7 +53,7 @@ function buildTools(
     type: 'function',
     function: {
       name: 'fetch_order',
-      description: 'Récupère les détails d\'une order Booqable par son numéro. Retourne les lignes enrichies avec product_name, product_group_id, stock_item_id et stock_item_label (ex: "ID-2"). Si product_group_id et stock_item_id sont présents dans une ligne, tu peux passer directement à create_sav_order sans appeler search_products ni get_stock_items.',
+      description: 'Récupère les détails d\'une order Booqable par son numéro. Retourne les lignes enrichies avec product_name, product_group_id, stock_item_id et stock_item_label (ex: "ID-2"). Si product_group_id et stock_item_id sont présents dans une ligne, tu peux passer directement à create_new_return_order sans appeler search_products ni get_stock_items.',
       parameters: {
         type: 'object',
         properties: {
@@ -77,7 +68,7 @@ function buildTools(
     type: 'function',
     function: {
       name: 'create_new_return_order',
-      description: 'Crée une nouvelle commande de retour (return_order) dans Booqable : même client que la commande d\'origine, date de fin au dernier jour de l\'année à 23h45, remise 100%, caution = aucune. NE PAS passer de produits ici — les ajouter ensuite avec add_new_product_line.',
+      description: 'Crée une nouvelle return_order dans Booqable : même client que l\'original_order, date de fin au dernier jour de l\'année à 23h45, remise 100%, caution = aucune. NE PAS passer de produits ici — les ajouter ensuite avec add_new_product_line.',
       parameters: {
         type: 'object',
         properties: {
@@ -115,12 +106,12 @@ function buildTools(
     type: 'function',
     function: {
       name: 'add_sav_comment',
-      description: 'Ajoute le commentaire SAV à la SAV order (numéro order origine + détail)',
+      description: 'Ajoute le commentaire sur la return_order (numéro original_order + détail)',
       parameters: {
         type: 'object',
         properties: {
-          order_id:             { type: 'string', description: 'UUID Booqable de la SAV order — utiliser le champ "id" retourné par create_sav_order' },
-          origin_order_number:  { type: 'string', description: 'Numéro de l\'order d\'origine' },
+          order_id:             { type: 'string', description: 'UUID Booqable de la return_order — utiliser le champ "id" retourné par create_new_return_order' },
+          origin_order_number:  { type: 'string', description: 'Numéro de l\'original_order' },
           comment:              { type: 'string', description: 'Détail du problème (et cas si cassé)' },
         },
         required: ['order_id', 'origin_order_number', 'comment'],
@@ -131,12 +122,12 @@ function buildTools(
     type: 'function',
     function: {
       name: 'set_original_order',
-      description: 'Renseigne la propriété "Commande d\'origine" (original_order) sur la commande de retour. À appeler après create_new_return_order pour lier la commande de retour à la commande d\'origine.',
+      description: 'Renseigne la propriété "original_order" sur la return_order. À appeler après create_new_return_order pour lier la return_order à l\'original_order.',
       parameters: {
         type: 'object',
         properties: {
-          return_order_id:        { type: 'string', description: 'UUID Booqable de la commande de retour (id retourné par create_new_return_order)' },
-          original_order_number:  { type: 'string', description: 'Numéro de la commande d\'origine (ex: 1234)' },
+          return_order_id:        { type: 'string', description: 'UUID Booqable de la return_order (id retourné par create_new_return_order)' },
+          original_order_number:  { type: 'string', description: 'Numéro de l\'original_order (ex: 1234)' },
         },
         required: ['return_order_id', 'original_order_number'],
       },
@@ -146,7 +137,7 @@ function buildTools(
     type: 'function',
     function: {
       name: 'search_products',
-      description: 'Cherche un produit dans le catalogue Booqable par nom. Retourne le type (bulk/trackable) pour chaque résultat. À appeler pour chaque article endommagé avant de créer la SAV order.',
+      description: 'Cherche un produit dans le catalogue Booqable par nom. Retourne le type (bulk/trackable) pour chaque résultat.',
       parameters: {
         type: 'object',
         properties: {
@@ -160,7 +151,7 @@ function buildTools(
     type: 'function',
     function: {
       name: 'get_stock_items',
-      description: 'Récupère tous les exemplaires (stock items) d\'un produit trackable. Appelle cette fonction avec le productGroupId retourné par search_products dès que tracking=trackable. Retourne la liste des unités avec leur UUID et identifiant (ex: "camera-sony-fx3-nue-id-2"). Quand l\'utilisateur dit "ID-2", trouve l\'item dont l\'identifier se termine par "-2" et utilise son UUID comme stock_item_id dans add_sav_line.',
+      description: 'Récupère tous les exemplaires (stock items) d\'un produit trackable. Appelle cette fonction avec le productGroupId retourné par search_products dès que tracking=trackable. Retourne la liste des unités avec leur UUID et identifiant (ex: "camera-sony-fx3-nue-id-2"). Quand l\'utilisateur dit "ID-2", trouve l\'item dont l\'identifier se termine par "-2" et utilise son UUID comme stock_item_id dans add_new_product_line.',
       parameters: {
         type: 'object',
         properties: {
@@ -178,7 +169,7 @@ function buildTools(
       parameters: {
         type: 'object',
         properties: {
-          order_id:         { type: 'string', description: 'UUID de la SAV order (champ "id" de create_sav_order)' },
+          order_id:         { type: 'string', description: 'UUID de la return_order (champ "id" retourné par create_new_return_order)' },
           line_type:        { type: 'string', enum: ['product', 'custom'], description: '"product" si trouvé dans le catalogue, "custom" sinon' },
           product_group_id: { type: 'string', description: 'ID du product_group Booqable (si line_type=product)' },
           stock_item_id:    { type: 'string', description: 'UUID du stock item spécifique (si produit trackable — obtenu via get_stock_items)' },
@@ -200,7 +191,7 @@ function buildTools(
         properties: {
           origin_order:       { type: 'string', description: 'Numéro de l\'order d\'origine' },
           origin_order_id:    { type: 'string', description: 'ID Booqable de l\'order d\'origine' },
-          sav_order_id:       { type: 'string', description: 'ID Booqable de la SAV order créée' },
+          sav_order_id:       { type: 'string', description: 'ID Booqable de la return_order créée' },
           problem_type:       { type: 'string', description: 'manquant ou casse', enum: ['manquant', 'casse'] },
           problem_description:{ type: 'string', description: 'Description du problème' },
           metadata:           { type: 'object', description: 'Infos supplémentaires (assurance, caution, cas, etc.)' },
@@ -238,7 +229,7 @@ function buildTools(
     type: 'function',
     function: {
       name: 'duplicate_order',
-      description: 'Duplique une commande Booqable. Retourne l\'ID et le numéro de la nouvelle commande (child_return_order). À appeler avant revert_to_concept dans le workflow split.',
+      description: 'Duplique l\'original_order pour créer une child_return_order. Retourne l\'ID et le numéro de la child_return_order. À appeler avant revert_to_concept dans le workflow split.',
       parameters: {
         type: 'object',
         properties: {
@@ -459,9 +450,9 @@ async function executeTool(
         const customerId = String(args.customer_id || '')
         if (!customerId) return { result: 'Erreur : customer_id manquant — utiliser le champ "customer_id" retourné par fetch_order' }
         const sav = await createSAVOrder({ customerId })
-        if (!sav) return { result: 'Erreur : commande de retour non créée' }
+        if (!sav) return { result: 'Erreur : return_order non créée' }
         const numDisplay = sav.number ? ` (numéro: ${sav.number})` : ''
-        return { result: `✓ Commande de retour créée${numDisplay} | id: ${sav.id} | customer_id: ${customerId} | date de fin: 31 déc 23h45\nUtilise cet "id" pour add_new_product_line, add_tag, add_sav_comment, set_original_order.` }
+        return { result: `✓ return_order créée${numDisplay} | id: ${sav.id} | customer_id: ${customerId} | date de fin: 31 déc 23h45\nUtilise cet "id" pour add_new_product_line, add_tag, add_sav_comment, set_original_order.` }
       }
 
       case 'add_tag': {
@@ -586,7 +577,7 @@ async function executeTool(
           const stockItemId = args.stock_item_id ? String(args.stock_item_id) : undefined
           const { startError } = await addSAVLine({ type: 'product', orderId, productGroupId: String(args.product_group_id), quantity: qty, stockItemId })
           const stockInfo = stockItemId ? ` | stock_item_id: ${stockItemId}` : ''
-          let result = `✓ Ligne produit ajoutée à la SAV order (product_group_id: ${args.product_group_id}${stockInfo}, qté: ${qty})`
+          let result = `✓ Ligne produit ajoutée à la return_order (product_group_id: ${args.product_group_id}${stockInfo}, qté: ${qty})`
           if (startError) result += `\n⚠️ Réservation non bloquante échouée : ${startError}`
           return { result }
         } else {
@@ -671,20 +662,8 @@ async function executeTool(
             }
             return score(cur) >= score(prev) ? cur : prev
           })
-          // Substituer les {{variables}} avec les valeurs connues de FilmeAI
-          const emailVars: Record<string, string> = {
-            'customer.name':       resolvedName,
-            'customer_name':       resolvedName,
-            'originOrderNumber':   args.origin_order_number ? String(args.origin_order_number) : '',
-            'origin_order_number': args.origin_order_number ? String(args.origin_order_number) : '',
-            'notesSav':            args.sav_comment ? String(args.sav_comment) : '',
-            'sav_comment':         args.sav_comment ? String(args.sav_comment) : '',
-            'order.number':        args.order_number ? String(args.order_number) : '',
-            'order_number':        args.order_number ? String(args.order_number) : '',
-          }
-          const resolvedSubject = substituteTemplateVars(best.subject, emailVars)
-          const resolvedBody    = substituteTemplateVars(best.body,    emailVars)
-          return { result: JSON.stringify({ subject: resolvedSubject, body: resolvedBody, to: resolvedEmail || '' }) }
+          // Garder les {{variables}} brutes — Booqable les remplace à l'envoi
+          return { result: JSON.stringify({ subject: best.subject, body: best.body, to: resolvedEmail || '' }) }
         }
 
         // Fallback : templates hardcodés (rétrocompatibilité)
@@ -746,8 +725,8 @@ Workflow :
 1. fetch_order → afficher les articles de la commande.
 2. Si pas déjà précisé : "Quels articles n'ont pas été rendus ?"
 3. B0 : demander à l'opérateur de retourner manuellement les articles dans Booqable, attendre confirmation.
-4. create_sav_order(customer_id, return_days=30)
-5. add_sav_line pour chaque article non rendu.
+4. create_new_return_order(customer_id)
+5. add_new_product_line pour chaque article non rendu.
 6. add_tag : tags=["late"]
 7. add_sav_comment(origin_order_number, détail)
 8. log_case(problem_type="manquant", problem_description="Retard - matériel non rendu")
@@ -762,8 +741,8 @@ Tout le matériel a été rendu, mais avec du retard. Pas de dommage.
 Workflow :
 1. fetch_order → confirmer les articles.
 2. B0 : si pas encore fait, demander à l'opérateur de retourner les articles dans Booqable, attendre confirmation.
-3. create_sav_order(customer_id)
-4. add_sav_line pour les articles rendus en retard.
+3. create_new_return_order(customer_id)
+4. add_new_product_line pour les articles rendus en retard.
 5. add_tag : tags=["late_returned"]
 6. add_sav_comment(origin_order_number, "Rendu en retard — tout OK")
 7. log_case(problem_type="manquant", problem_description="Rendu en retard - tout OK")
@@ -779,8 +758,8 @@ Workflow :
 1. fetch_order → afficher tous les articles.
 2. "Quels articles ont été rendus ? Lesquels sont encore manquants ?"
 3. B0 : demander à l'opérateur de retourner manuellement dans Booqable les articles rendus, attendre confirmation.
-4. create_sav_order(customer_id)
-5. add_sav_line UNIQUEMENT pour les articles encore manquants.
+4. create_new_return_order(customer_id)
+5. add_new_product_line UNIQUEMENT pour les articles encore manquants.
 6. add_tag : tags=["late"] (pour les articles encore en attente)
 7. add_sav_comment avec la liste des articles rendus vs manquants.
 8. log_case(problem_type="manquant", problem_description="Rendu partiel en retard - articles manquants : ...")
@@ -796,8 +775,8 @@ Workflow :
 1. fetch_order → identifier les articles perdus.
 2. Poser les questions : "Le client a-t-il souscrit une assurance ? Y a-t-il une caution active sur la commande ?"
 3. B0 : demander à l'opérateur de retourner les articles dans Booqable, attendre confirmation.
-4. create_sav_order(customer_id, full_discount=true)
-5. add_sav_line pour chaque article perdu.
+4. create_new_return_order(customer_id)
+5. add_new_product_line pour chaque article perdu.
 6. add_tag : tags=["missing"]
 7. add_sav_comment(origin_order_number, détail de la perte)
 8. log_case(problem_type="manquant", problem_description="Perte - ...", metadata={insurance, caution})
@@ -814,8 +793,8 @@ Workflow :
 2. Poser : "Le client a-t-il souscrit une assurance ? Y a-t-il une caution active ?"
 3. Déterminer le cas (1: assurance+caution / 2: assurance seule / 3: caution seule / 4: aucun)
 4. B0 : demander à l'opérateur de retourner les articles dans Booqable, attendre confirmation.
-5. create_sav_order(customer_id)
-6. add_sav_line pour chaque article endommagé (avec stock_item_id si trackable et connu).
+5. create_new_return_order(customer_id)
+6. add_new_product_line pour chaque article endommagé (avec stock_item_id si trackable et connu).
 7. add_tag : tags=["damage"]
 8. add_sav_comment(origin_order_number, détail + cas)
 9. log_case(problem_type="casse", problem_description="Dommage - ...", metadata={insurance, caution, cas})
@@ -953,12 +932,12 @@ Pour MANQUANT : pas besoin de questions préalables.
 
 fetch_order retourne les lignes enrichies :
   - product_name     : nom du produit
-  - product_group_id : UUID Booqable (utiliser directement dans add_sav_line si présent)
+  - product_group_id : UUID Booqable (utiliser directement dans add_new_product_line si présent)
   - stock_item_id    : UUID de l'exemplaire assigné (si trackable)
   - stock_item_label : ex: "ID-2"
 
-A1. Récupère l'order avec fetch_order, puis affiche les articles :
-    "Voici les articles de l'order [numéro] :
+A1. Récupère l'original_order avec fetch_order, puis affiche les articles :
+    "Voici les articles de l'original_order [numéro] :
     1x Caméra Sony FX3
     2x Carte CFexpress Type A
     ..."
@@ -980,25 +959,25 @@ A2. Pour chaque article concerné, identifie le product_group_id et stock_item_i
     → SI la ligne fetch_order a product_group_id : utilise-le directement.
     → SI pas de product_group_id : appelle search_products.
     → Pour un trackable manquant : si l'utilisateur a précisé un numéro d'ID (ex: "ID 8", "ID 1"),
-      appelle get_stock_items pour trouver le stock_item_id correspondant, puis utilise-le dans add_sav_line.
+      appelle get_stock_items pour trouver le stock_item_id correspondant, puis utilise-le dans add_new_product_line.
       Si l'ID n'est pas précisé, ajoute quand même la ligne (sans stock_item_id).
     → Si aucun résultat catalogue : crée une ligne custom.
 
 A3. Répète A2 pour chaque article avant de passer à B.
 
 ═══════════════════════════════════════════════════
-ÉTAPE B — CRÉER LA SAV ORDER
+ÉTAPE B — CRÉER LA RETURN ORDER
 ═══════════════════════════════════════════════════
 
-B0. AVANT de créer la SAV order, annonce à l'opérateur :
-    "⚠️ Avant de continuer, merci de retourner manuellement les articles [liste] dans l'order d'origine #[numéro] dans Booqable."
+B0. AVANT de créer la return_order, annonce à l'opérateur :
+    "⚠️ Avant de continuer, merci de retourner manuellement les articles [liste] dans l'original_order #[numéro] dans Booqable."
     Attends une confirmation ou un "ok" avant de passer à B1.
 
-B1. "Je crée la nouvelle order SAV..."
-    → create_sav_order(customer_id). Mémorise l'"id" retourné.
+B1. "Je crée la return_order..."
+    → create_new_return_order(customer_id). Mémorise l'"id" retourné.
 
-B2. "J'ajoute [article] à la SAV order..."
-    → add_sav_line pour chaque article :
+B2. "J'ajoute [article] à la return_order..."
+    → add_new_product_line pour chaque article :
       - Trackable avec unité : line_type=product, product_group_id + stock_item_id
       - Bulk : line_type=product, product_group_id seul
       - Custom : line_type=custom, custom_title
@@ -1008,8 +987,8 @@ B3. "J'ajoute les tags..."
       - CASSE  → tags: ["LATE", "TO_BE_REPAIRED"]
       - MANQUANT → tags: ["LATE"]
 
-B4. "J'ajoute le commentaire SAV..."
-    → add_sav_comment(sav_order_id, origin_order_number, détail_du_problème)
+B4. "J'ajoute le commentaire..."
+    → add_sav_comment(return_order_id, origin_order_number, détail_du_problème)
       Pour CASSE : inclure le cas (ex: "Cas 3 : Pas d'assurance + Pas de caution.")
 
 B5. "J'enregistre le cas..."
@@ -1038,11 +1017,10 @@ C3. Confirmation opérateur → send_email(to, subject, body).
 RÈGLES IDs — JAMAIS LES MÉLANGER
 ═══════════════════════════════════════════════════
 
-- fetch_order → "id" (UUID) pour toutes les actions sur l'order d'origine / "number" pour affichage humain.
-- create_sav_order → "id" (UUID) pour add_tag, add_sav_comment, add_sav_line.
-- customer_id pour create_sav_order = champ "customer_id" de fetch_order.
-- Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.
-- Si le workflow contient des étapes reserve_order et/ou start_order : les appeler OBLIGATOIREMENT avec l'id de la SAV order retourné par create_new_return_order, APRÈS add_new_product_line et AVANT draft_email. Ne jamais sauter ces étapes, même si leur description est vide. Ordre : create_new_return_order → add_new_product_line → reserve_order → start_order → (reste du workflow).`
+- fetch_order → "id" (UUID) = id de l'original_order / "number" pour affichage humain.
+- create_new_return_order → "id" (UUID) = id de la return_order, à utiliser pour add_tag, add_sav_comment, add_new_product_line.
+- customer_id pour create_new_return_order = champ "customer_id" de fetch_order.
+- Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.`
 
   const scenarioSection = buildScenarioPrompt(scenario)
 
