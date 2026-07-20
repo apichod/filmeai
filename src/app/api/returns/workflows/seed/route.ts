@@ -35,26 +35,29 @@ Règles :
   },
   {
     slug: 'late_returned',
-    name: 'Rendu en retard',
+    name: 'R11-22A – Retard – Régularisé',
     description: 'Tout le matériel a été rendu, avec du retard',
     is_active: true,
     steps: [
-      { id: '1', type: 'action',      title: 'Récupérer la commande',        description: 'fetch_order — confirmer les articles',                                         booqable_action: 'fetch_order' },
-      { id: '2', type: 'instruction', title: 'Retour manuel dans Booqable',   description: 'Vérifier que tous les articles sont bien retournés dans Booqable'             },
-      { id: '3', type: 'action',      title: 'Créer la SAV order',           description: 'create_sav_order(customer_id)',                                                booqable_action: 'create_sav_order' },
-      { id: '4', type: 'action',      title: 'Ajouter les articles',         description: 'add_sav_line pour les articles rendus en retard',                              booqable_action: 'add_sav_line' },
-      { id: '5', type: 'action',      title: 'Tagger',                       description: 'add_tag : ["late_returned"]',                                                  booqable_action: 'add_tag' },
-      { id: '6', type: 'action',      title: 'Commenter',                    description: 'add_sav_comment "Rendu en retard — tout OK"',                                  booqable_action: 'add_sav_comment' },
-      { id: '7', type: 'action',      title: 'Logger',                       description: 'log_case(problem_type="manquant", description="Rendu en retard - tout OK")',   booqable_action: 'log_case' },
-      { id: '8', type: 'action',      title: 'Email client',                 description: 'draft_email template=retour_ok → proposer envoi',                             booqable_action: 'add_sav_comment' },
+      { id: '1', type: 'action',      title: 'Identifier la commande',       description: 'fetch_order — récupérer la commande de retour à régulariser',                booqable_action: 'fetch_order' },
+      { id: '2', type: 'instruction', title: 'Changer la date de retour',    description: '⚠️ Dans Booqable : changer la date de retour de la commande d\'origine par celle du jour' },
+      { id: '3', type: 'instruction', title: 'Retourner le matériel',        description: 'Dans Booqable : retourner tous les articles de la commande'                  },
+      { id: '4', type: 'action',      title: 'Remplacer le tag',             description: 'add_tag : supprimer R21_OPEN, ajouter R22_WAIVED',                           booqable_action: 'add_tag' },
     ],
-    prompt: `WORKFLOW : RENDU EN RETARD
+    prompt: `WORKFLOW : RETARD – RÉGULARISÉ (R11-22A)
 Tout le matériel a été rendu, mais avec du retard. Aucun dommage constaté.
+Ce workflow régularise la commande d'origine directement — aucune SAV order à créer.
+
+Étapes :
+1. fetch_order → identifier la commande et confirmer les articles
+2. Demander à l'opérateur de changer la date de retour par celle du jour dans Booqable (⚠️ action manuelle)
+3. Demander à l'opérateur de retourner le matériel dans Booqable (action manuelle)
+4. add_tag : retirer R21_OPEN, ajouter R22_WAIVED
 
 Règles :
-- Tag à utiliser : "late_returned".
-- Utiliser le template email retour_ok pour confirmer au client que tout est OK.
-- Ne pas facturer de pénalités sauf indication contraire de l'opérateur.`,
+- Ne pas créer de SAV order.
+- Ne pas facturer de pénalités sauf indication contraire de l'opérateur.
+- Confirmer chaque étape manuelle avec l'opérateur avant de passer à la suivante.`,
   },
   {
     slug: 'late_partial',
