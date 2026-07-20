@@ -651,13 +651,7 @@ async function executeTool(
           return { result: JSON.stringify({ subject: best.subject, body: best.body }) }
         }
 
-        // Fallback : templates hardcodés (rétrocompatibilité)
-        try {
-          const email = renderEmail(templateId as EmailTemplateId, {})
-          return { result: JSON.stringify({ subject: email.subject, body: email.body }) }
-        } catch {
-          return { result: `Erreur : template "${templateId}" introuvable en DB et non reconnu.` }
-        }
+        return { result: `Erreur : template "${templateId}" introuvable en DB.` }
       }
 
       case 'send_email': {
