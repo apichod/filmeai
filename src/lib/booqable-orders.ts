@@ -882,6 +882,35 @@ export async function addSAVLine(params: SAVLineParams): Promise<{ startError?: 
   return {}
 }
 
+// ── duplicateOrder ────────────────────────────────────────────────────────────
+// Duplique une commande Booqable via l'API boomerang order_duplications.
+// Retourne l'ID et le numéro de la nouvelle commande.
+export async function duplicateOrder(orderId: string): Promise<{ newOrderId: string; newOrderNumber: string }> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(`${BASE_BOOMERANG}/order_duplications`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'order_duplications',
+        attributes: { order_id: orderId },
+      },
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable duplicateOrder error ${res.status}: ${text}`)
+  }
+  const data = await res.json() as {
+    data?: { attributes?: { new_order_id?: string; new_order_number?: string | number } }
+  }
+  const newOrderId     = data.data?.attributes?.new_order_id
+  const newOrderNumber = data.data?.attributes?.new_order_number
+  if (!newOrderId) throw new Error('Booqable duplicateOrder : new_order_id absent de la réponse')
+  return { newOrderId, newOrderNumber: String(newOrderNumber || '') }
+}
+
 // ── clearTags ────────────────────────────────────────────────────────────────
 // Supprime tous les tags d'une commande.
 export async function clearTags(orderId: string): Promise<void> {
