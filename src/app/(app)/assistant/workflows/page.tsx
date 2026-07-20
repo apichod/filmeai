@@ -354,13 +354,26 @@ export default function WorkflowsPage() {
   const [exportCopied, setExportCopied] = useState(false)
 
   function exportJson() {
+    const normalizedSteps = editSteps.map(s => {
+      const step: Record<string, unknown> = {
+        id:          s.id,
+        type:        s.type,
+        title:       s.title,
+        description: s.description,
+        execution:   s.execution ?? 'ai',
+      }
+      if (s.order_context)   step.order_context   = s.order_context
+      if (s.booqable_action) step.booqable_action  = s.booqable_action
+      if (s.parameters && Object.keys(s.parameters).length > 0) step.parameters = s.parameters
+      return step
+    })
     return JSON.stringify({
       name:        editName,
       slug:        editSlug,
       description: editDescription,
       is_active:   editActive,
       prompt_ia:   editPrompt,
-      steps:       editSteps,
+      steps:       normalizedSteps,
     }, null, 2)
   }
 
