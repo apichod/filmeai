@@ -9,6 +9,10 @@ const BOOQABLE_TOOLS = [
   { value: 'create_new_return_order', label: 'create_new_return_order — créer la commande de retour' },
   { value: 'add_new_product_line',    label: 'add_new_product_line — ajouter un article à la commande' },
   { value: 'set_original_order',      label: 'set_original_order — renseigner la commande d\'origine (original_order)' },
+  { value: 'cancel_order',         label: 'cancel_order — annuler la commande' },
+  { value: 'remove_product_line', label: 'remove_product_line — supprimer une ligne de la commande' },
+  { value: 'reserve_order',       label: 'reserve_order — réserver la commande (concept → reserved)' },
+  { value: 'start_order',         label: 'start_order — démarrer la commande (pickup)' },
   { value: 'update_return_date',  label: 'update_return_date — changer la date de retour à aujourd\'hui' },
   { value: 'stop_order',          label: 'stop_order — retourner le matériel (started → stopped)' },
   { value: 'add_tag',             label: 'add_tag — ajouter / supprimer des tags' },
@@ -32,10 +36,15 @@ type WorkflowStep = {
 
 // Hint JSON par outil
 const PARAMETERS_HINT: Record<string, string> = {
-  update_return_date: '{}',
-  stop_order:         '{}',
-  add_tag:            '{"tags_add": ["R22_WAIVED"], "tags_remove": ["R21_OPEN"]}',
-  draft_email:        '{"template_id": "retour_ok"}',
+  cancel_order:        '{}',
+  remove_product_line: '{}',
+  reserve_order:       '{}',
+  start_order:         '{}',
+  update_return_date:  '{}',
+  stop_order:          '{}',
+  add_tag:             '{"tags_add": ["R22_WAIVED"], "tags_remove": ["R21_OPEN"]}',
+  draft_email:         '{"template_id": "retour_ok"}',
+  log_case:            '{"problem_type": "manquant"}',
 }
 
 type Workflow = {

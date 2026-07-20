@@ -15,6 +15,10 @@ import {
   addSAVLine,
   updateOrderReturnDate,
   stopOrder,
+  reserveOrder,
+  cancelOrder,
+  removeProductLine,
+  startSAVOrder,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -221,6 +225,62 @@ function buildTools(
   {
     type: 'function',
     function: {
+      name: 'cancel_order',
+      description: 'Annule une commande Booqable (quel que soit son état : started, reserved, concept). Utilisé pour annuler la commande d\'origine après duplication dans le workflow split.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande à annuler (champ "id" de fetch_order)' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remove_product_line',
+      description: 'Supprime une ligne d\'une commande Booqable. Utiliser les line_id retournés par fetch_order. Appeler une fois par ligne à supprimer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          line_id: { type: 'string', description: 'UUID de la ligne à supprimer (champ "line_id" dans les lignes de fetch_order)' },
+        },
+        required: ['line_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'reserve_order',
+      description: 'Passe une commande Booqable de "concept" à "reserved".',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande (champ "id" de fetch_order)' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'start_order',
+      description: 'Passe une commande Booqable en "started" (pickup). Tente reserved→started, ou concept→reserved→started.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'update_return_date',
       description: 'Change la date de retour (stops_at) d\'une commande Booqable à la date du jour. À appeler avant stop_order pour régulariser une commande rendue en retard.',
       parameters: {
@@ -296,6 +356,7 @@ async function executeTool(
           return {
             product_name: l.product_name,
             quantity: l.quantity,
+            line_id: l.id,
             product_group_id: l.product_group_id || null,
             stock_item_id: l.stock_item_id || null,
             stock_item_label: stockLabel, // ex: "ID-2" — utile si l'exemplaire est déjà connu
@@ -339,6 +400,27 @@ async function executeTool(
         await addTagToOrder(String(args.order_id), tagList, tagRemove.length > 0 ? tagRemove : undefined)
         const removePart = tagRemove.length > 0 ? ` | supprimés : ${tagRemove.join(', ')}` : ''
         return { result: `✓ Tags ajoutés : ${tagList.join(', ')}${removePart}` }
+      }
+
+      case 'cancel_order': {
+        await cancelOrder(String(args.order_id))
+        return { result: `✓ Commande ${args.order_id} annulée` }
+      }
+
+      case 'remove_product_line': {
+        await removeProductLine(String(args.line_id))
+        return { result: `✓ Ligne ${args.line_id} supprimée` }
+      }
+
+      case 'reserve_order': {
+        await reserveOrder(String(args.order_id))
+        return { result: `✓ Commande ${args.order_id} réservée (concept → reserved)` }
+      }
+
+      case 'start_order': {
+        const { error } = await startSAVOrder(String(args.order_id))
+        if (error) return { result: `⚠️ start_order non bloquant : ${error}` }
+        return { result: `✓ Commande ${args.order_id} démarrée (started)` }
       }
 
       case 'update_return_date': {

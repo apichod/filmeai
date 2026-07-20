@@ -882,6 +882,75 @@ export async function addSAVLine(params: SAVLineParams): Promise<{ startError?: 
   return {}
 }
 
+// ── reserveOrder ─────────────────────────────────────────────────────────────
+// Passe la commande de "concept" à "reserved".
+export async function reserveOrder(orderId: string): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'order_transitions',
+        attributes: {
+          order_id:         orderId,
+          transition_from:  'concept',
+          transition_to:    'reserved',
+          confirm_shortage: false,
+          revert_until:     null,
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable reserveOrder error ${res.status}: ${text}`)
+  }
+}
+
+// ── cancelOrder ──────────────────────────────────────────────────────────────
+// Annule une commande (tente : started→stopped→concept→canceled ou reserved→concept→canceled).
+export async function cancelOrder(orderId: string): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+
+  const tryTransition = async (from: string, to: string): Promise<boolean> => {
+    const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          type: 'order_transitions',
+          attributes: { order_id: orderId, transition_from: from, transition_to: to, confirm_shortage: false, revert_until: null },
+        },
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.ok
+  }
+
+  // Essaie les chemins possibles selon l'état courant
+  await tryTransition('started',  'stopped')
+  await tryTransition('reserved', 'concept')
+  await tryTransition('stopped',  'concept')
+  const ok = await tryTransition('concept',  'canceled')
+  if (!ok) throw new Error(`Booqable cancelOrder: impossible d'annuler la commande ${orderId}`)
+}
+
+// ── removeProductLine ─────────────────────────────────────────────────────────
+// Supprime une ligne d'une commande par son ID de ligne.
+export async function removeProductLine(lineId: string): Promise<void> {
+  const res = await fetch(`${BASE4}/lines/${lineId}`, {
+    method: 'DELETE',
+    headers: headers(),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text()
+    throw new Error(`Booqable removeProductLine error ${res.status}: ${text}`)
+  }
+}
+
 // ── updateOrderReturnDate ─────────────────────────────────────────────────────
 // Change la date de retour (stops_at) d'une commande à aujourd'hui.
 export async function updateOrderReturnDate(orderId: string): Promise<void> {
