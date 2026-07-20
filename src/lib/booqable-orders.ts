@@ -237,14 +237,16 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
   // On match en priorité par planning_id (exact), sinon par product_group_id (fallback).
   if ((order.lines || []).some(l => l.product_group_id && !l.stock_item_identifier)) {
     try {
-      const BASE4 = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/4`
       type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
-      const sipRes = await fetch(
-        `${BASE4}/stock_item_plannings?filter[order_id]=${order.id}&include=stock_item&page[size]=200`,
-        { headers: headers(), signal: AbortSignal.timeout(10000) }
-      )
+      const sipUrl = `${BASE4}/stock_item_plannings?filter[order_id]=${order.id}&include=stock_item&page[size]=200`
+      console.log('[pass3] fetching:', sipUrl)
+      const sipRes = await fetch(sipUrl, { headers: headers(), signal: AbortSignal.timeout(10000) })
+      console.log('[pass3] status:', sipRes.status)
       if (sipRes.ok) {
         const sipData = await sipRes.json() as { data?: SIPNode[]; included?: SIPNode[] }
+        console.log('[pass3] sips count:', sipData.data?.length, '| included count:', sipData.included?.length)
+        console.log('[pass3] first sip attrs:', JSON.stringify(sipData.data?.[0]?.attributes))
+        console.log('[pass3] first included:', JSON.stringify(sipData.included?.[0]?.attributes))
 
         // Index stock_items from included: id → node
         const siMap = new Map<string, SIPNode>()
@@ -267,6 +269,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           if (!si) continue
           const ident = String(si.attributes.identifier || '')
           const pgId  = String(si.attributes.product_group_id || '')
+          console.log(`[pass3] sip planId=${planId} siId=${siId} ident=${ident} pgId=${pgId}`)
           if (planId && !planToSI.has(planId)) planToSI.set(planId, { ident, siId })
           if (pgId) {
             const list = pgToSI.get(pgId) || []
@@ -281,11 +284,15 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           let info: SIInfo | undefined
           if (line.planning_id) info = planToSI.get(line.planning_id)
           if (!info && line.product_group_id) info = pgToSI.get(line.product_group_id)?.[0]
+          console.log(`[pass3] line ${line.id} planning_id=${line.planning_id} pgId=${line.product_group_id} → info=${JSON.stringify(info)}`)
           if (info && info.ident) {
             line.stock_item_identifier = info.ident
             if (!line.stock_item_id) line.stock_item_id = info.siId
           }
         }
+      } else {
+        const errText = await sipRes.text()
+        console.warn('[pass3] error response:', errText.slice(0, 200))
       }
     } catch (e) {
       console.warn('fetchOrderByNumber: stock_item_plannings pass failed:', e)
