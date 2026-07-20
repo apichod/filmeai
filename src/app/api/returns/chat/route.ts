@@ -1148,11 +1148,21 @@ Affiche les {{...}} littéralement, toujours.`
 
         // Boucle agent (gère les tool_calls)
         while (true) {
+          // Si on est dans un step 'ai' action → forcer l'appel du bon outil uniquement
+          const aiStep = activeSteps.length > 0
+            ? activeSteps[wfState.step_index] as WorkflowStep | undefined
+            : undefined
+          const forcedToolChoice: OpenAI.Chat.ChatCompletionToolChoiceOption =
+            aiStep?.execution === 'ai' && aiStep?.type === 'action' && aiStep?.booqable_action
+              ? { type: 'function', function: { name: aiStep.booqable_action } }
+              : 'auto'
+
           const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
             messages: currentMessages,
             tools: tools,
-            tool_choice: 'auto',
+            tool_choice: forcedToolChoice,
+            parallel_tool_calls: false,
             stream: true,
             temperature: 0.3,
           })
