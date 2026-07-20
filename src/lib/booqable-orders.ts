@@ -978,8 +978,16 @@ export async function duplicateOrder(orderId: string): Promise<{ newOrderId: str
     body: JSON.stringify({
       data: {
         type: 'order_duplications',
-        relationships: {
-          order: { data: { type: 'orders', id: orderId } },
+        attributes: {
+          original_order_id:    orderId,
+          dates:                true,
+          properties:           true,
+          discount:             true,
+          custom_lines:         true,
+          customer:             true,
+          stock_item_plannings: true,
+          tags:                 true,
+          deposit:              'current',
         },
       },
     }),
@@ -990,13 +998,14 @@ export async function duplicateOrder(orderId: string): Promise<{ newOrderId: str
     console.log(`[duplicateOrder] FAILED ${res.status} orderId=${orderId}: ${text}`)
     throw new Error(`Booqable duplicateOrder error ${res.status}: ${text}`)
   }
-  const data = await res.json() as {
-    data?: { attributes?: { new_order_id?: string; new_order_number?: string | number } }
-  }
-  const newOrderId     = data.data?.attributes?.new_order_id
-  const newOrderNumber = data.data?.attributes?.new_order_number
+  const data = await res.json() as Record<string, unknown>
+  console.log(`[duplicateOrder] response:`, JSON.stringify(data).slice(0, 500))
+  // Extraire le new_order_id depuis la réponse (format à confirmer via log)
+  const attrs = (data.data as Record<string, unknown> | undefined)?.attributes as Record<string, unknown> | undefined
+  const newOrderId     = String(attrs?.new_order_id     || attrs?.order_id     || '')
+  const newOrderNumber = String(attrs?.new_order_number || attrs?.order_number || '')
   if (!newOrderId) throw new Error('Booqable duplicateOrder : new_order_id absent de la réponse')
-  return { newOrderId, newOrderNumber: String(newOrderNumber || '') }
+  return { newOrderId, newOrderNumber }
 }
 
 // ── clearTags ────────────────────────────────────────────────────────────────
@@ -1026,7 +1035,30 @@ export async function clearTags(orderId: string): Promise<void> {
 export async function revertToConcept(orderId: string): Promise<void> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
 
-  const tryTransition = async (from: string, to: string): Promise<boolean> => {
+  // Essayer via l'API v4 order_status_transitions (supporte le retour en concept)
+  const tryV4Transition = async (transition: string): Promise<boolean> => {
+    const res = await fetch(`${BASE4}/order_status_transitions`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          type: 'order_status_transitions',
+          attributes: { order_id: orderId, transition, confirm_shortage: true, revert_until: null },
+        },
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      console.log(`[revertToConcept] v4 ${transition} FAILED ${res.status}: ${text.slice(0, 300)}`)
+    } else {
+      console.log(`[revertToConcept] v4 ${transition} OK`)
+    }
+    return res.ok
+  }
+
+  // Essayer via boomerang order_transitions (ancien endpoint)
+  const tryBoomerangTransition = async (from: string, to: string): Promise<boolean> => {
     const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
       method: 'POST',
       headers: headers(),
@@ -1040,25 +1072,30 @@ export async function revertToConcept(orderId: string): Promise<void> {
     })
     if (!res.ok) {
       const text = await res.text()
-      console.log(`[revertToConcept] ${from}→${to} FAILED ${res.status}: ${text.slice(0, 300)}`)
+      console.log(`[revertToConcept] boomerang ${from}→${to} FAILED ${res.status}: ${text.slice(0, 200)}`)
     } else {
-      console.log(`[revertToConcept] ${from}→${to} OK`)
+      console.log(`[revertToConcept] boomerang ${from}→${to} OK`)
     }
     return res.ok
   }
 
-  // 1. reserved → concept
-  if (await tryTransition('reserved', 'concept')) return
-  // 2. started → concept (sans items trackables)
-  if (await tryTransition('started',  'concept')) return
-  // 3. stopped → concept
-  if (await tryTransition('stopped',  'concept')) return
-  // 4. Pour les items trackables : stopOrder arrête les stock_items → stopped → concept
+  // 1. Essayer v4 avec différents noms de transition
+  if (await tryV4Transition('revert_to_concept')) return
+  if (await tryV4Transition('concept'))           return
+  if (await tryV4Transition('draft'))             return
+
+  // 2. Essayer boomerang classique
+  if (await tryBoomerangTransition('reserved', 'concept')) return
+  if (await tryBoomerangTransition('started',  'concept')) return
+  if (await tryBoomerangTransition('stopped',  'concept')) return
+
+  // 3. Pour items trackables : stopOrder → stopped → concept
   console.log('[revertToConcept] tentative via stopOrder (items trackables)')
   try {
     await stopOrder(orderId)
-    console.log('[revertToConcept] stopOrder OK, tentative stopped→concept')
-    if (await tryTransition('stopped', 'concept')) return
+    console.log('[revertToConcept] stopOrder OK')
+    if (await tryV4Transition('revert_to_concept')) return
+    if (await tryBoomerangTransition('stopped', 'concept')) return
   } catch (e) {
     console.log('[revertToConcept] stopOrder failed:', String(e))
   }
