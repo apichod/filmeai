@@ -1030,72 +1030,43 @@ export async function clearTags(orderId: string): Promise<void> {
 }
 
 // ── revertToConcept ───────────────────────────────────────────────────────────
-// Repasse une commande en état "concept" (draft) depuis n'importe quel état.
-// Essaie chaque état source possible → concept, dans l'ordre le plus probable.
+// Repasse une commande en état "draft" (concept) depuis n'importe quel état.
+// Endpoint : POST /api/boomerang/order_status_transitions avec revert: true
 export async function revertToConcept(orderId: string): Promise<void> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
 
-  // Essayer via l'API v4 order_status_transitions (supporte le retour en concept)
-  const tryV4Transition = async (transition: string): Promise<boolean> => {
-    const res = await fetch(`${BASE4}/order_status_transitions`, {
+  const tryRevert = async (from: string): Promise<boolean> => {
+    const res = await fetch(`${BASE_BOOMERANG}/order_status_transitions`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({
         data: {
           type: 'order_status_transitions',
-          attributes: { order_id: orderId, transition, confirm_shortage: true, revert_until: null },
+          attributes: { order_id: orderId, transition_from: from, transition_to: 'draft', revert: true },
         },
       }),
       signal: AbortSignal.timeout(10000),
     })
     if (!res.ok) {
       const text = await res.text()
-      console.log(`[revertToConcept] v4 ${transition} FAILED ${res.status}: ${text.slice(0, 300)}`)
+      console.log(`[revertToConcept] ${from}→draft FAILED ${res.status}: ${text.slice(0, 300)}`)
     } else {
-      console.log(`[revertToConcept] v4 ${transition} OK`)
+      console.log(`[revertToConcept] ${from}→draft OK`)
     }
     return res.ok
   }
 
-  // Essayer via boomerang order_transitions (ancien endpoint)
-  const tryBoomerangTransition = async (from: string, to: string): Promise<boolean> => {
-    const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({
-        data: {
-          type: 'order_transitions',
-          attributes: { order_id: orderId, transition_from: from, transition_to: to, confirm_shortage: true, revert_until: null },
-        },
-      }),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!res.ok) {
-      const text = await res.text()
-      console.log(`[revertToConcept] boomerang ${from}→${to} FAILED ${res.status}: ${text.slice(0, 200)}`)
-    } else {
-      console.log(`[revertToConcept] boomerang ${from}→${to} OK`)
-    }
-    return res.ok
-  }
+  // Essayer depuis chaque état possible
+  if (await tryRevert('reserved')) return
+  if (await tryRevert('started'))  return
+  if (await tryRevert('stopped'))  return
 
-  // 1. Essayer v4 avec différents noms de transition
-  if (await tryV4Transition('revert_to_concept')) return
-  if (await tryV4Transition('concept'))           return
-  if (await tryV4Transition('draft'))             return
-
-  // 2. Essayer boomerang classique
-  if (await tryBoomerangTransition('reserved', 'concept')) return
-  if (await tryBoomerangTransition('started',  'concept')) return
-  if (await tryBoomerangTransition('stopped',  'concept')) return
-
-  // 3. Pour items trackables : stopOrder → stopped → concept
+  // Pour items trackables : stopOrder d'abord → stopped → draft
   console.log('[revertToConcept] tentative via stopOrder (items trackables)')
   try {
     await stopOrder(orderId)
-    console.log('[revertToConcept] stopOrder OK')
-    if (await tryV4Transition('revert_to_concept')) return
-    if (await tryBoomerangTransition('stopped', 'concept')) return
+    console.log('[revertToConcept] stopOrder OK, tentative stopped→draft')
+    if (await tryRevert('stopped')) return
   } catch (e) {
     console.log('[revertToConcept] stopOrder failed:', String(e))
   }
