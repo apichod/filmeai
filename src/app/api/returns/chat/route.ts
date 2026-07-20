@@ -2,7 +2,7 @@ import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import nodemailer from 'nodemailer'
-import { renderEmail, type EmailTemplateId } from '@/lib/email-templates'
+import { renderEmail, renderEmailFromRow, type EmailTemplateId } from '@/lib/email-templates'
 import {
   fetchOrderByNumber,
   createSAVOrder,
@@ -26,9 +26,21 @@ function getSupabaseAdmin() {
   )
 }
 
-// ── Outils disponibles pour l'IA ──────────────────────────────────────────────
+// ── Outils disponibles pour l'IA (construits dynamiquement depuis la DB) ──────
 
-const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
+function buildTools(
+  emailTemplates: Array<{ template_id: string; label: string }>,
+  tags: string[]
+): OpenAI.Chat.ChatCompletionTool[] {
+  const templateIds  = emailTemplates.map(t => t.template_id)
+  const templateList = emailTemplates.length > 0
+    ? emailTemplates.map(t => `- ${t.template_id} : ${t.label}`).join('\n')
+    : '(aucun template disponible)'
+  const tagHint = tags.length > 0
+    ? `Tags disponibles (depuis les workflows actifs) : ${tags.map(t => `"${t}"`).join(', ')}`
+    : 'Utiliser les tags appropriés au scénario actif'
+
+  return [
   {
     type: 'function',
     function: {
@@ -70,7 +82,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           tags: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Tags à ajouter. Utiliser EXACTEMENT ces valeurs — En retard : ["r11_late", "r21_open"] | Perte : ["r12_missing", "r21_open"] | Vol : ["r13_theft", "r21_open"] | Dommage : ["r14_damage", "r21_open"] | Gracié : ["r22_waived"] | Caution débitée : ["r23_deposit"] | Facturé : ["r24_billed"] | À réparer : ["r31_repair_needed"] | À remplacer : ["r33_replace_needed"]',
+            description: tagHint,
           },
         },
         required: ['order_id', 'tags'],
@@ -179,18 +191,11 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'draft_email',
-      description: `Génère un email client à partir de la bibliothèque de templates Filme. À appeler après log_case.
-Templates disponibles :
-- retour_ok : #10 tout est OK, pas de problème
-- retour_casse : #11 contrôle retour matériel cassé (requiert insurance, caution)
-- retour_manquant : #11 contrôle retour matériel manquant
-- facturation_casse : #12 facture réparation (requiert insurance, caution, amount_above_500)
-- facturation_perdu : #12 facture perte matériel (requiert insurance, caution)
-- facturation_vole : #12 facture vol matériel (requiert insurance, caution, amount_above_500)`,
+      description: `Génère un email client à partir de la bibliothèque de templates Filme.\nTemplates disponibles :\n${templateList}`,
       parameters: {
         type: 'object',
         properties: {
-          template_id:         { type: 'string', enum: ['retour_ok','retour_casse','retour_manquant','facturation_casse','facturation_perdu','facturation_vole'], description: 'ID du template à utiliser' },
+          template_id:         { type: 'string', enum: templateIds.length > 0 ? templateIds : ['retour_ok'], description: 'ID du template à utiliser' },
           insurance:           { type: 'boolean', description: 'Le client a souscrit à l\'assurance' },
           caution:             { type: 'boolean', description: 'Une caution est active sur l\'order' },
           amount_above_500:    { type: 'boolean', description: 'Montant réparation/remplacement > 500 € (pour templates facturation avec franchise)' },
@@ -223,7 +228,9 @@ Templates disponibles :
       },
     },
   },
-]
+  ] // fin buildTools
+}
+
 
 // ── Exécution des outils ──────────────────────────────────────────────────────
 
@@ -385,7 +392,7 @@ async function executeTool(
       }
 
       case 'draft_email': {
-        const templateId = String(args.template_id || 'retour_casse') as EmailTemplateId
+        const templateId = String(args.template_id || '')
         // Fallback : si l'IA passe un placeholder, utiliser les valeurs mémorisées côté client (via ctx)
         const PLACEHOLDER_NAME_RE = /^(nom\s*(du\s*)?client|customer[_\s]?name|client|prénom|[a-z]+_[a-z]+)$/i
         const resolvedName = (args.customer_name && !PLACEHOLDER_NAME_RE.test(String(args.customer_name)))
@@ -395,7 +402,8 @@ async function executeTool(
         const resolvedEmail = (args.customer_email && !PLACEHOLDER_EMAIL_RE.test(String(args.customer_email)))
           ? String(args.customer_email)
           : (ctx.customerEmail || (args.customer_email ? String(args.customer_email) : undefined))
-        const email = renderEmail(templateId, {
+
+        const vars = {
           customerName:       resolvedName,
           customerEmail:      resolvedEmail,
           orderNumber:        args.order_number ? String(args.order_number) : undefined,
@@ -409,8 +417,43 @@ async function executeTool(
           documentNumber:     args.document_number ? String(args.document_number) : undefined,
           orderStartsAt:      args.order_starts_at ? String(args.order_starts_at) : undefined,
           orderStopsAt:       args.order_stops_at ? String(args.order_stops_at) : undefined,
-        })
-        return { result: JSON.stringify({ subject: email.subject, body: email.body, to: email.to || resolvedEmail || '' }) }
+        }
+
+        // Charger le template depuis la DB
+        const sbDraft = getSupabaseAdmin()
+        const { data: rows } = await sbDraft
+          .from('email_templates')
+          .select('case_key, subject, body, conditions, sort_order')
+          .eq('template_id', templateId)
+          .order('sort_order')
+
+        if (rows && rows.length > 0) {
+          // Sélectionner la meilleure variante selon les conditions
+          const conditions: Record<string, boolean> = {
+            insurance:      Boolean(args.insurance),
+            caution:        Boolean(args.caution),
+            amountAbove500: Boolean(args.amount_above_500),
+            latePayment:    Boolean(args.late_payment),
+          }
+          const best = rows.reduce((prev, cur) => {
+            const score = (row: typeof rows[0]) => {
+              const c = (row.conditions as Record<string, boolean>) || {}
+              return Object.entries(c).filter(([k, v]) => conditions[k] === v).length
+                   - Object.entries(c).filter(([k, v]) => conditions[k] !== v).length
+            }
+            return score(cur) >= score(prev) ? cur : prev
+          })
+          const email = renderEmailFromRow(best, vars)
+          return { result: JSON.stringify({ subject: email.subject, body: email.body, to: email.to || resolvedEmail || '' }) }
+        }
+
+        // Fallback : templates hardcodés (rétrocompatibilité)
+        try {
+          const email = renderEmail(templateId as EmailTemplateId, vars)
+          return { result: JSON.stringify({ subject: email.subject, body: email.body, to: email.to || resolvedEmail || '' }) }
+        } catch {
+          return { result: `Erreur : template "${templateId}" introuvable en DB et non reconnu.` }
+        }
       }
 
       case 'send_email': {
@@ -564,6 +607,36 @@ export async function POST(req: NextRequest) {
   if (scenario) query = query.eq('slug', scenario)
 
   const { data: workflows } = await query
+
+  // Charge les templates email depuis la DB → enum dynamique pour draft_email
+  const { data: emailTemplateRows } = await supabase
+    .from('email_templates')
+    .select('template_id, label')
+    .order('sort_order')
+  const emailTemplatesMap = new Map<string, { template_id: string; label: string }>()
+  for (const t of (emailTemplateRows || [])) {
+    if (!emailTemplatesMap.has(t.template_id)) {
+      emailTemplatesMap.set(t.template_id, { template_id: t.template_id, label: t.label as string })
+    }
+  }
+  const emailTemplates = Array.from(emailTemplatesMap.values())
+
+  // Extrait les tags depuis les étapes add_tag de tous les workflows actifs
+  const allTags = (() => {
+    const tags = new Set<string>()
+    for (const w of (workflows || [])) {
+      for (const step of ((w.steps || []) as Array<{ booqable_action?: string; description?: string }>)) {
+        if (step.booqable_action === 'add_tag' && step.description) {
+          const matches = step.description.match(/"([^"]+)"/g) || []
+          matches.forEach(m => tags.add(m.replace(/"/g, '')))
+        }
+      }
+    }
+    return Array.from(tags)
+  })()
+
+  // Construit les outils dynamiquement
+  const tools = buildTools(emailTemplates, allTags)
 
   // Convertit les étapes structurées en instructions lisibles par l'IA
   function stepsToPrompt(steps: Array<{ type: string; title: string; description?: string; booqable_action?: string }>): string {
@@ -732,7 +805,7 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
           const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
             messages: currentMessages,
-            tools: TOOLS,
+            tools: tools,
             tool_choice: 'auto',
             stream: true,
             temperature: 0.3,
