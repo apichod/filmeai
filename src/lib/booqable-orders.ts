@@ -1134,11 +1134,58 @@ export async function updateOrderReturnDate(orderId: string): Promise<void> {
 }
 
 // ── stopOrder ────────────────────────────────────────────────────────────────
-// Passe la commande en "stopped" (retour du matériel).
-// Essaie started→stopped, puis reserved→stopped si la 1ère échoue.
+// Retourne le matériel d'une commande dans Booqable.
+// Pour les items trackables : stop_stock_items via order_fulfillments.
+// Fallback : order_transitions (items bulk / commandes sans stock_item_plannings actifs).
 export async function stopOrder(orderId: string): Promise<void> {
-  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
 
+  // ── Approche 1 : stop_stock_items via order_fulfillments ────────────────
+  try {
+    const sipRes = await fetch(
+      `${BASE4}/stock_item_plannings?filter[order_id]=${orderId}&include=stock_item&page[size]=200`,
+      { headers: headers(), signal: AbortSignal.timeout(10000) }
+    )
+    if (sipRes.ok) {
+      const sipData = await sipRes.json() as { data?: SIPNode[]; included?: SIPNode[] }
+
+      const siMap = new Map<string, SIPNode>()
+      for (const r of sipData.included || []) {
+        if (r.type === 'stock_items') siMap.set(r.id, r)
+      }
+
+      const actions: Array<Record<string, unknown>> = []
+      for (const sip of sipData.data || []) {
+        if (!sip.attributes.started || sip.attributes.stopped) continue
+        const planId = String(sip.attributes.planning_id   || '')
+        const siId   = String(sip.attributes.stock_item_id || '')
+        if (!planId || !siId) continue
+        const si = siMap.get(siId)
+        const productId = String(si?.attributes.product_id || '')
+        if (!productId) continue
+        actions.push({ action: 'stop_stock_items', planning_id: planId, product_id: productId, stock_item_ids: [siId] })
+      }
+
+      if (actions.length > 0) {
+        const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            data: { type: 'order_fulfillments', attributes: { order_id: orderId, actions } },
+          }),
+          signal: AbortSignal.timeout(15000),
+        })
+        if (fulfillRes.ok) return
+        const errText = await fulfillRes.text()
+        console.warn('[stopOrder] stop_stock_items failed:', fulfillRes.status, errText.slice(0, 300))
+      }
+    }
+  } catch (e) {
+    console.warn('[stopOrder] fulfillments approach error:', e)
+  }
+
+  // ── Approche 2 : order_transitions (bulk items / fallback) ───────────────
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
   const tryTransition = async (from: string): Promise<{ ok: boolean; status: number; text: string }> => {
     const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
       method: 'POST',
@@ -1146,12 +1193,7 @@ export async function stopOrder(orderId: string): Promise<void> {
       body: JSON.stringify({
         data: {
           type: 'order_transitions',
-          attributes: {
-            order_id:         orderId,
-            transition_from:  from,
-            transition_to:    'stopped',
-            confirm_shortage: false,
-          },
+          attributes: { order_id: orderId, transition_from: from, transition_to: 'stopped', confirm_shortage: true },
         },
       }),
       signal: AbortSignal.timeout(10000),
@@ -1160,26 +1202,19 @@ export async function stopOrder(orderId: string): Promise<void> {
     return { ok: res.ok, status: res.status, text }
   }
 
-  console.log('[stopOrder] orderId:', orderId)
-
-  // 1. started → stopped
   const r1 = await tryTransition('started')
-  console.log('[stopOrder] started→stopped:', r1.status, r1.text)
   if (r1.ok) return
-
-  // 2. reserved → stopped (fallback si pas encore démarré)
   const r2 = await tryTransition('reserved')
-  console.log('[stopOrder] reserved→stopped:', r2.status, r2.text)
   if (r2.ok) return
 
-  // 3. Vérifier si la commande est déjà stopped (idempotent)
+  // ── Approche 3 : vérifier si déjà stopped ────────────────────────────────
   try {
     const checkRes = await fetch(`${BASE4}/orders/${orderId}?fields[orders]=status`, {
-      headers: headers(), signal: AbortSignal.timeout(8000)
+      headers: headers(), signal: AbortSignal.timeout(8000),
     })
     if (checkRes.ok) {
       const data = await checkRes.json() as { data?: { attributes?: { status?: string } } }
-      if (data.data?.attributes?.status === 'stopped') return // déjà stoppée → OK
+      if (data.data?.attributes?.status === 'stopped') return
     }
   } catch { /* ignore */ }
 
