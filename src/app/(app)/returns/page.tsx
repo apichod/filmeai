@@ -203,40 +203,48 @@ function toolSummary(name: string, result: string | undefined): string | null {
 
 // ── Scénarios ──────────────────────────────────────────────────────────────────
 
-type Scenario = 'late' | 'late_returned' | 'late_partial' | 'missing' | 'damage'
+type Scenario = 'late' | 'late_returned' | 'late_partial' | 'missing' | 'damage' | 'split_v2'
 
-const SCENARIOS: { id: Scenario; label: string; desc: string; welcome: string }[] = [
-  {
-    id: 'late',
-    label: 'En retard',
-    desc: 'Le matériel n\'a pas encore été rendu',
-    welcome: 'Scénario En retard sélectionné.\nDonnez-moi le numéro de la commande d\'origine.',
-  },
-  {
-    id: 'late_returned',
-    label: 'Rendu en retard',
-    desc: 'Tout a été rendu, avec du retard',
-    welcome: 'Scénario Rendu en retard sélectionné.\nDonnez-moi le numéro de la commande d\'origine.',
-  },
-  {
-    id: 'late_partial',
-    label: 'Rendu en retard partiel',
-    desc: 'Une partie du matériel a été rendue',
-    welcome: 'Scénario Rendu en retard partiel sélectionné.\nDonnez-moi le numéro de la commande d\'origine et précisez quels articles ont été rendus.',
-  },
-  {
-    id: 'missing',
-    label: 'Perte',
-    desc: 'Du matériel est perdu ou volé',
-    welcome: 'Scénario Perte sélectionné.\nDonnez-moi le numéro de la commande d\'origine.',
-  },
-  {
-    id: 'damage',
-    label: 'Dommage',
-    desc: 'Du matériel a été endommagé',
-    welcome: 'Scénario Dommage sélectionné.\nDonnez-moi le numéro de la commande d\'origine.',
-  },
+// ── Menu 2 niveaux ─────────────────────────────────────────────────────────────
+
+type Level1Key = 'retard' | 'perte' | 'vol' | 'dommage' | 'split'
+
+type SubOption = { label: string; scenario: Scenario; welcome: string }
+
+const LEVEL1_ITEMS: { key: Level1Key; label: string }[] = [
+  { key: 'retard',  label: 'Retard' },
+  { key: 'perte',   label: 'Perte' },
+  { key: 'vol',     label: 'Vol' },
+  { key: 'dommage', label: 'Dommage' },
+  { key: 'split',   label: 'Séparer 2 problèmes' },
 ]
+
+const LEVEL2_MAP: Record<Exclude<Level1Key, 'split'>, SubOption[]> = {
+  retard: [
+    { label: 'Créer un dossier de retard',       scenario: 'late',          welcome: 'Tâche : Créer un dossier de retard.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Régulariser et gracier',            scenario: 'late_returned', welcome: 'Tâche : Régulariser un retard et gracier.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Régulariser et débiter la caution', scenario: 'late_returned', welcome: 'Tâche : Régulariser un retard et débiter la caution.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Régulariser et facturer',           scenario: 'late_returned', welcome: 'Tâche : Régulariser un retard et facturer le client.\nDonnez-moi le numéro de la commande d\'origine.' },
+  ],
+  perte: [
+    { label: 'Créer un dossier de perte',     scenario: 'missing', welcome: 'Tâche : Créer un dossier de perte.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer et gracier',           scenario: 'missing', welcome: 'Tâche : Clôturer un dossier de perte et gracier.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par débit de caution', scenario: 'missing', welcome: 'Tâche : Clôturer un dossier de perte par débit de caution.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par facturation',      scenario: 'missing', welcome: 'Tâche : Clôturer un dossier de perte par facturation.\nDonnez-moi le numéro de la commande d\'origine.' },
+  ],
+  vol: [
+    { label: 'Créer un dossier de vol',       scenario: 'missing', welcome: 'Tâche : Créer un dossier de vol.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer et gracier',           scenario: 'missing', welcome: 'Tâche : Clôturer un dossier de vol et gracier.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par débit de caution', scenario: 'missing', welcome: 'Tâche : Clôturer un dossier de vol par débit de caution.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par facturation',      scenario: 'missing', welcome: 'Tâche : Clôturer un dossier de vol par facturation.\nDonnez-moi le numéro de la commande d\'origine.' },
+  ],
+  dommage: [
+    { label: 'Créer un dossier de dommage',   scenario: 'damage', welcome: 'Tâche : Créer un dossier de dommage.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer et gracier',           scenario: 'damage', welcome: 'Tâche : Clôturer un dossier de dommage et gracier.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par débit de caution', scenario: 'damage', welcome: 'Tâche : Clôturer un dossier de dommage par débit de caution.\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par facturation',      scenario: 'damage', welcome: 'Tâche : Clôturer un dossier de dommage par facturation.\nDonnez-moi le numéro de la commande d\'origine.' },
+  ],
+}
 
 // ── Composant Chat ─────────────────────────────────────────────────────────────
 
@@ -253,6 +261,8 @@ function ChatPanel() {
   const [pendingChoices, setPendingChoices] = useState<Array<{ label: string; tag: string }> | null>(null)
   const [caseId, setCaseId] = useState<string | null>(null)
   const [scenario, setScenario] = useState<Scenario | null>(null)
+  const [level1, setLevel1] = useState<Level1Key | null>(null)
+  const [selectedLabel, setSelectedLabel] = useState<string>('')
   // Données client extraites du dernier fetch_order — passées à chaque requête pour éviter les placeholders IA
   const [fetchedCustomerId, setFetchedCustomerId] = useState<string | null>(null)
   const [fetchedCustomerName, setFetchedCustomerName] = useState<string | null>(null)
@@ -531,6 +541,8 @@ function ChatPanel() {
 
   function reset() {
     setScenario(null)
+    setLevel1(null)
+    setSelectedLabel('')
     setMessages([{
       id: 'welcome',
       role: 'assistant',
@@ -543,10 +555,10 @@ function ChatPanel() {
     setFetchedCustomerEmail(null)
   }
 
-  function selectScenario(s: Scenario) {
-    const cfg = SCENARIOS.find(x => x.id === s)!
-    setScenario(s)
-    setMessages([{ id: 'welcome', role: 'assistant', content: cfg.welcome }])
+  function selectSubOption(opt: SubOption, label: string) {
+    setScenario(opt.scenario)
+    setSelectedLabel(label)
+    setMessages([{ id: 'welcome', role: 'assistant', content: opt.welcome }])
     setCaseId(null)
     setInput('')
     setFetchedCustomerId(null)
@@ -554,33 +566,72 @@ function ChatPanel() {
     setFetchedCustomerEmail(null)
   }
 
-  // ── Sélecteur de scénario ──────────────────────────────────────────────────
-  if (!scenario) return (
+  function selectLevel1(key: Level1Key) {
+    if (key === 'split') {
+      selectSubOption(
+        { label: 'Séparer 2 problèmes', scenario: 'split_v2', welcome: 'Tâche : Séparer 2 problèmes sur la même commande.\nDonnez-moi le numéro de la commande d\'origine.' },
+        'Séparer 2 problèmes',
+      )
+      return
+    }
+    setLevel1(key)
+  }
+
+  // ── Sélecteur niveau 1 ────────────────────────────────────────────────────
+  if (!scenario && !level1) return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="flex items-center px-5 py-3 border-b border-gray-100">
-        <h2 className="text-sm font-semibold text-gray-900">Quel type de problème ?</h2>
+        <h2 className="text-sm font-semibold text-gray-900">Comment puis-je t&apos;aider aujourd&apos;hui ?</h2>
       </div>
-      <div className="flex-1 p-5 flex flex-col gap-3 overflow-y-auto">
-        {SCENARIOS.map(s => (
+      <div className="flex-1 p-5 flex flex-col gap-2 overflow-y-auto justify-center">
+        {LEVEL1_ITEMS.map(item => (
           <button
-            key={s.id}
-            onClick={() => selectScenario(s.id)}
-            className="text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-all group"
+            key={item.key}
+            onClick={() => selectLevel1(item.key)}
+            className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-900 hover:bg-gray-900 hover:text-white transition-all group"
           >
-            <div className="text-sm font-medium text-gray-900 group-hover:text-black">{s.label}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{s.desc}</div>
+            <span className="text-sm font-medium">{item.label}</span>
           </button>
         ))}
       </div>
     </div>
   )
 
+  // ── Sélecteur niveau 2 ────────────────────────────────────────────────────
+  if (!scenario && level1) {
+    const l1Label = LEVEL1_ITEMS.find(i => i.key === level1)!.label
+    const subOptions = LEVEL2_MAP[level1 as Exclude<Level1Key, 'split'>]
+    return (
+      <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100">
+          <button onClick={() => setLevel1(null)} className="text-gray-400 hover:text-gray-700 transition-colors text-xs">
+            ← Retour
+          </button>
+          <span className="text-xs text-gray-300">|</span>
+          <h2 className="text-sm font-semibold text-gray-900">Quelle tâche veux-tu exécuter ?</h2>
+          <span className="ml-auto text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{l1Label}</span>
+        </div>
+        <div className="flex-1 p-5 flex flex-col gap-2 overflow-y-auto justify-center">
+          {subOptions.map(opt => (
+            <button
+              key={opt.label}
+              onClick={() => selectSubOption(opt, `${l1Label} — ${opt.label}`)}
+              className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-900 hover:bg-gray-900 hover:text-white transition-all"
+            >
+              <span className="text-sm font-medium">{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
         <div>
           <h2 className="text-sm font-semibold text-gray-900">
-            {SCENARIOS.find(s => s.id === scenario)?.label ?? 'Assistant retours'}
+            {selectedLabel || 'Assistant retours'}
           </h2>
           {caseId && <p className="text-xs text-green-600 mt-0.5">Cas actif en cours de traitement</p>}
         </div>
