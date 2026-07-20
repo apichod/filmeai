@@ -1140,6 +1140,18 @@ export async function updateOrderReturnDate(orderId: string): Promise<void> {
 export async function stopOrder(orderId: string): Promise<void> {
   type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
 
+  // ── Mise à jour stops_at à l'heure exacte du retour ─────────────────────
+  try {
+    await fetch(`${BASE4}/orders/${orderId}`, {
+      method: 'PUT',
+      headers: headers(),
+      body: JSON.stringify({
+        data: { id: orderId, type: 'orders', attributes: { stops_at: bqDate(new Date()) } },
+      }),
+      signal: AbortSignal.timeout(8000),
+    })
+  } catch { /* non bloquant */ }
+
   // ── Approche 1 : stop_stock_items via order_fulfillments ────────────────
   try {
     const sipRes = await fetch(
