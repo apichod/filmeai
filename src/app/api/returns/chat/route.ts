@@ -2,6 +2,15 @@ import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import {
+  loadWorkflowState,
+  saveWorkflowState,
+  buildStepInstruction,
+  extractVarsFromResult,
+  advanceStep,
+  type WorkflowStep,
+  type WorkflowState,
+} from '@/lib/workflow-state'
+import {
   fetchOrderByNumber,
   createSAVOrder,
   addTagToOrder,
@@ -784,15 +793,16 @@ Workflow :
 export async function POST(req: NextRequest) {
   const body = await req.json() as {
     messages: OpenAI.Chat.ChatCompletionMessageParam[]
-    workflowSlug?: string  // 'manquant' | 'casse' (facultatif, l'IA détecte)
+    workflowSlug?: string
     caseId?: string
     scenario?: string | null
-    customerId?: string | null      // customer_id mémorisé côté client après fetch_order
-    customerName?: string | null    // nom client mémorisé côté client après fetch_order
-    customerEmail?: string | null   // email client mémorisé côté client après fetch_order
+    customerId?: string | null
+    customerName?: string | null
+    customerEmail?: string | null
+    workflowState?: WorkflowState | null   // état du workflow envoyé par le client
   }
 
-  const { messages, caseId = null, scenario = null, customerId: bodyCustomerId = null } = body
+  const { messages, caseId = null, scenario = null, customerId: bodyCustomerId = null, workflowState: clientWorkflowState = null } = body
 
   // Charge le prompt du workflow correspondant au scénario (ou tous si pas de scénario)
   const supabase = getSupabaseAdmin()
@@ -815,14 +825,7 @@ export async function POST(req: NextRequest) {
   const emailTemplates = Array.from(emailTemplatesMap.values())
 
   // Extrait les tags depuis les étapes add_tag de tous les workflows actifs
-  type WorkflowStep = {
-    id?: string
-    type: string
-    title: string
-    description?: string
-    booqable_action?: string
-    parameters?: Record<string, unknown>  // données structurées : tags, template_id, etc.
-  }
+  // WorkflowStep est importé depuis @/lib/workflow-state
 
   const allTags = (() => {
     const tags = new Set<string>()
@@ -889,19 +892,13 @@ RÈGLES CRITIQUES — CES INSTRUCTIONS PRÉVALENT SUR TOUT LE RESTE.
 Les DB prompts ci-dessus sont des références. Les règles ci-dessous sont la procédure exacte à suivre.
 Ne PAS appeler add_internal_note (retiré du workflow).
 
-RÈGLE ABSOLUE — NE JAMAIS RÉPÉTER UN STEP DÉJÀ EXÉCUTÉ :
-Avant d'appeler un outil, lis l'historique de conversation pour vérifier s'il a déjà été appelé avec succès.
-- Si duplicate_order apparaît déjà dans l'historique avec un résultat new_order_id → NE PAS le rappeler.
-- Si revert_to_concept apparaît déjà dans l'historique (succès ou échec) → NE PAS le rappeler.
-- Si fetch_order a déjà été appelé pour cette commande → utiliser les données mémorisées, NE PAS refaire l'appel sauf si explicitement demandé.
-- Si clear_tags apparaît déjà dans l'historique pour cette commande → NE PAS le rappeler avant d'avoir avancé au moins jusqu'à reserve_order.
-- En général : si un tool_call est visible dans l'historique pour cette session → considérer que ce step est fait, passer au step suivant.
-Quand l'utilisateur répond à une [QUESTION], continuer depuis la [ACTION] qui SUIT cette question, pas depuis le début du workflow.
+RÈGLE ABSOLUE — duplicate_order :
+Ne jamais appeler duplicate_order si son résultat (new_order_id) est déjà visible dans l'historique de conversation.
 
 RÈGLE ABSOLUE — choose_problem_tag :
 Après avoir appelé choose_problem_tag, STOPPER immédiatement — ne pas appeler d'autres tools dans le même tour.
 Le prochain message de l'utilisateur est TOUJOURS le tag sélectionné (ex: "r11_late", "r12_missing", "r14_damage").
-À la réception de ce message : appeler add_tag avec CE tag (ex: r11_late) + r21_open en une seule fois, puis passer directement au step suivant (reserve_order). NE PAS rappeler add_sav_comment, clear_tags, ou choose_problem_tag.
+À la réception de ce message : appeler add_tag avec CE tag + r21_open, puis passer directement au step suivant. NE PAS rappeler add_sav_comment, clear_tags, ou choose_problem_tag.
 
 ═══════════════════════════════════════════════════
 DÉTERMINATION DU TYPE DE CAS
@@ -1022,10 +1019,33 @@ Affiche les {{...}} littéralement, toujours.`
 
   const scenarioSection = buildScenarioPrompt(scenario)
 
+  // ── Moteur d'état workflow ────────────────────────────────────────────────
+  // Récupère les steps du workflow actif
+  const activeWorkflow = scenario
+    ? (workflows || []).find(w => w.slug === scenario) ?? (workflows || [])[0]
+    : (workflows || [])[0]
+  const activeSteps = ((activeWorkflow?.steps || []) as WorkflowStep[])
+
+  // État courant : envoyé par le client, ou initialisation à l'étape 0
+  let wfState: WorkflowState = clientWorkflowState ?? { step_index: 0, vars: {}, status: 'running' }
+
+  // Si l'étape courante est une QUESTION et qu'on attend une réponse → l'utilisateur vient de répondre → avancer
+  if (activeSteps.length > 0 && wfState.status === 'waiting_for_input') {
+    wfState = advanceStep(wfState, activeSteps.length)
+  }
+
+  // Construire l'instruction pour l'étape courante (si workflow actif avec steps)
+  const currentStep = activeSteps.length > 0 ? activeSteps[wfState.step_index] : null
+  const stepInstruction = currentStep
+    ? buildStepInstruction(currentStep, wfState.vars, wfState.step_index, activeSteps.length)
+    : null
+  // ─────────────────────────────────────────────────────────────────────────
+
   const systemPrompt = (combinedPrompt
     ? combinedPrompt + '\n\n' + uuidReminder
     : `Tu es un assistant de gestion des retours. Guide le responsable de stock étape par étape.\n\n${uuidReminder}`)
     + (scenarioSection ? '\n\n' + scenarioSection : '')
+    + (stepInstruction ? '\n\n' + stepInstruction : '')
 
   const systemMessage: OpenAI.Chat.ChatCompletionSystemMessageParam = {
     role: 'system',
@@ -1145,6 +1165,21 @@ Affiche les {{...}} littéralement, toujours.`
             const { result, caseId: newCaseId } = await executeTool(entry.name, args)
             if (newCaseId) currentCaseId = newCaseId
 
+            // ── Mise à jour de l'état workflow ──────────────────────────────
+            if (activeSteps.length > 0) {
+              const stepAtExecution = activeSteps[wfState.step_index] as WorkflowStep | undefined
+              // Extraire les variables du résultat (fetch_order → order_id, duplicate_order → child_order_id…)
+              const newVars = extractVarsFromResult(entry.name, result, stepAtExecution ?? { id: '', type: 'action', title: '' }, wfState.vars)
+              if (Object.keys(newVars).length > 0) {
+                wfState = { ...wfState, vars: { ...wfState.vars, ...newVars } }
+              }
+              // Avancer l'étape si ACTION réussie
+              if (stepAtExecution?.type === 'action') {
+                wfState = advanceStep(wfState, activeSteps.length)
+              }
+            }
+            // ───────────────────────────────────────────────────────────────
+
             // Émettre un event SSE 'choices' si le tool retourne un marqueur spécial
             try {
               const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string }
@@ -1166,8 +1201,16 @@ Affiche les {{...}} littéralement, toujours.`
           }
         }
 
-        // Fin du stream
-        send(JSON.stringify({ type: 'done', caseId: currentCaseId }))
+        // Si on a terminé sans tool call sur une étape QUESTION → passer en waiting_for_input
+        if (activeSteps.length > 0) {
+          const stepNow = activeSteps[wfState.step_index] as WorkflowStep | undefined
+          if (stepNow?.type === 'question' && wfState.status === 'running') {
+            wfState = { ...wfState, status: 'waiting_for_input' }
+          }
+        }
+
+        // Fin du stream — renvoyer l'état mis à jour au client
+        send(JSON.stringify({ type: 'done', caseId: currentCaseId, workflowState: activeSteps.length > 0 ? wfState : null }))
         controller.close()
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)

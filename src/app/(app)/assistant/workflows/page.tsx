@@ -35,6 +35,7 @@ type WorkflowStep = {
   description: string
   booqable_action?: string
   parameters?: Record<string, unknown>
+  order_context?: 'parent' | 'child' | 'original' | 'return'
   variable?: string
 }
 
@@ -245,6 +246,22 @@ function StepList({
               placeholder="Description"
               className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
             />
+          </div>
+
+          {/* order_context — affiché pour toutes les étapes */}
+          <div className="pl-7">
+            <label className="block text-xs text-gray-400 mb-1">order_context <span className="text-gray-300">(quelle commande cibler)</span></label>
+            <select
+              value={step.order_context || ''}
+              onChange={e => updateStep(idx, { order_context: (e.target.value as WorkflowStep['order_context']) || undefined })}
+              className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+            >
+              <option value="">— non défini —</option>
+              <option value="parent">parent — commande parent (U01)</option>
+              <option value="child">child — commande child/dupliquée (U01)</option>
+              <option value="original">original — commande d&apos;origine</option>
+              <option value="return">return — commande de retour</option>
+            </select>
           </div>
 
           {/* Outil Booqable — affiché pour les actions */}

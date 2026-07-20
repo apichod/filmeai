@@ -5,12 +5,27 @@ import { useUserRole } from '@/lib/user-role-context'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+type WorkflowState = {
+  step_index: number
+  vars: Record<string, string | undefined>
+  status: 'running' | 'waiting_for_input' | 'completed'
+}
+
+type WorkflowStep = {
+  id: string
+  type: 'action' | 'question' | 'check'
+  title: string
+  booqable_action?: string
+  order_context?: string
+  parameters?: Record<string, unknown>
+}
+
 type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'tool_call'; name: string }
   | { type: 'tool_result'; name: string; result: string }
   | { type: 'choices'; order_id: string; items: Array<{ label: string; tag: string }> }
-  | { type: 'done'; caseId: string | null }
+  | { type: 'done'; caseId: string | null; workflowState?: WorkflowState | null }
   | { type: 'error'; message: string }
 
 type ChatMessage = {
@@ -297,7 +312,22 @@ function ChatPanel() {
   const [fetchedCustomerId, setFetchedCustomerId] = useState<string | null>(null)
   const [fetchedCustomerName, setFetchedCustomerName] = useState<string | null>(null)
   const [fetchedCustomerEmail, setFetchedCustomerEmail] = useState<string | null>(null)
+  const [workflowState, setWorkflowState] = useState<WorkflowState | null>(null)
+  const [activeSteps, setActiveSteps] = useState<WorkflowStep[]>([])
+  const [showSteps, setShowSteps] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Charge les étapes du workflow actif depuis Supabase
+  useEffect(() => {
+    if (!scenario) { setActiveSteps([]); return }
+    fetch('/api/returns/workflows')
+      .then(r => r.json())
+      .then((d: { workflows?: Array<{ slug: string; steps?: WorkflowStep[] }> }) => {
+        const wf = (d.workflows || []).find(w => w.slug === scenario)
+        setActiveSteps((wf?.steps || []) as WorkflowStep[])
+      })
+      .catch(() => {})
+  }, [scenario])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -326,7 +356,7 @@ function ChatPanel() {
       const res = await fetch('/api/returns/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId, customerName: fetchedCustomerName, customerEmail: fetchedCustomerEmail }),
+        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId, customerName: fetchedCustomerName, customerEmail: fetchedCustomerEmail, workflowState }),
       })
 
       if (!res.body) throw new Error('No body')
@@ -396,6 +426,7 @@ function ChatPanel() {
             if (event.type === 'done') {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
+              if (event.workflowState !== undefined) setWorkflowState(event.workflowState ?? null)
             }
             if (event.type === 'error') {
               setMessages(prev => prev.map(m =>
@@ -459,7 +490,7 @@ function ChatPanel() {
       const res = await fetch('/api/returns/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId, customerName: fetchedCustomerName, customerEmail: fetchedCustomerEmail }),
+        body: JSON.stringify({ messages: apiMessages, caseId, scenario, customerId: fetchedCustomerId, customerName: fetchedCustomerName, customerEmail: fetchedCustomerEmail, workflowState }),
       })
       if (!res.body) throw new Error('No body')
 
@@ -520,6 +551,7 @@ function ChatPanel() {
             if (event.type === 'done') {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
+              if (event.workflowState !== undefined) setWorkflowState(event.workflowState ?? null)
             }
           } catch { /* ignore */ }
         }
@@ -590,6 +622,9 @@ function ChatPanel() {
     setSelectedLabel(label)
     setMessages([{ id: 'welcome', role: 'assistant', content: opt.welcome }])
     setCaseId(null)
+    setWorkflowState(null)
+    setActiveSteps([])
+    setShowSteps(false)
     setInput('')
     setFetchedCustomerId(null)
     setFetchedCustomerName(null)
@@ -667,6 +702,14 @@ function ChatPanel() {
     )
   }
 
+  const stepContextColor = (ctx?: string) => {
+    if (ctx === 'parent')   return 'bg-blue-50 text-blue-600 border-blue-200'
+    if (ctx === 'child')    return 'bg-violet-50 text-violet-600 border-violet-200'
+    if (ctx === 'original') return 'bg-amber-50 text-amber-600 border-amber-200'
+    if (ctx === 'return')   return 'bg-green-50 text-green-600 border-green-200'
+    return 'bg-gray-50 text-gray-400 border-gray-200'
+  }
+
   return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
@@ -676,10 +719,91 @@ function ChatPanel() {
           </h2>
           {caseId && <p className="text-xs text-green-600 mt-0.5">Cas actif en cours de traitement</p>}
         </div>
-        <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
-          Nouveau cas
-        </button>
+        <div className="flex items-center gap-3">
+          {activeSteps.length > 0 && (
+            <button
+              onClick={() => setShowSteps(v => !v)}
+              className={`text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
+                showSteps
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+              }`}
+            >
+              Étapes {workflowState ? `${workflowState.step_index + 1}/${activeSteps.length}` : `0/${activeSteps.length}`}
+            </button>
+          )}
+          <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
+            Nouveau cas
+          </button>
+        </div>
       </div>
+
+      {/* Panel étapes structurées */}
+      {showSteps && activeSteps.length > 0 && (
+        <div className="border-b border-gray-100 bg-gray-50 overflow-y-auto max-h-64">
+          <div className="px-4 py-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Étapes structurées</span>
+            {workflowState?.vars && Object.keys(workflowState.vars).filter(k => workflowState.vars[k]).length > 0 && (
+              <div className="flex gap-1 flex-wrap justify-end">
+                {Object.entries(workflowState.vars)
+                  .filter(([, v]) => v && !v.startsWith('['))
+                  .map(([k, v]) => (
+                    <span key={k} className="text-[10px] font-mono bg-white border border-gray-200 rounded px-1.5 py-0.5 text-gray-500">
+                      {k.replace(/_order_(id|number)$/, (_, g) => g === 'id' ? ' uuid' : ' #')} = {v!.length > 12 ? v!.slice(0, 8) + '…' : v}
+                    </span>
+                  ))}
+              </div>
+            )}
+          </div>
+          <div className="px-3 pb-3 space-y-1">
+            {activeSteps.map((step, i) => {
+              const isCurrent = workflowState?.step_index === i
+              const isDone    = workflowState ? i < workflowState.step_index : false
+              return (
+                <div
+                  key={step.id}
+                  className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all ${
+                    isCurrent ? 'bg-white border border-blue-200 shadow-sm' :
+                    isDone    ? 'opacity-40' : 'opacity-60'
+                  }`}
+                >
+                  {/* Numéro */}
+                  <span className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5 ${
+                    isCurrent ? 'bg-blue-500 text-white' :
+                    isDone    ? 'bg-gray-300 text-white' : 'bg-gray-100 text-gray-400'
+                  }`}>{i + 1}</span>
+                  {/* Contenu */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`font-medium ${isCurrent ? 'text-gray-900' : 'text-gray-600'}`}>{step.title}</span>
+                    </div>
+                    <div className="flex gap-1 mt-0.5 flex-wrap">
+                      {/* type badge */}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${
+                        step.type === 'action'   ? 'bg-orange-50 text-orange-500 border-orange-200' :
+                        step.type === 'question' ? 'bg-sky-50 text-sky-500 border-sky-200' :
+                        'bg-gray-50 text-gray-400 border-gray-200'
+                      }`}>{step.type}</span>
+                      {/* booqable_action */}
+                      {step.booqable_action && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-50 text-gray-500 border-gray-200 font-mono">
+                          {step.booqable_action}
+                        </span>
+                      )}
+                      {/* order_context */}
+                      {step.order_context && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${stepContextColor(step.order_context)}`}>
+                          {step.order_context}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map(msg => (
