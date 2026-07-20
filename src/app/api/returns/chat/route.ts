@@ -879,7 +879,12 @@ export async function POST(req: NextRequest) {
 
   const combinedPrompt = (workflows || [])
     .map(w => {
-      const stepsPart = stepsToPrompt(w.steps || [])
+      const steps = (w.steps || []) as WorkflowStep[]
+      // Si le workflow utilise le state machine (au moins un step avec execution défini),
+      // on ne génère PAS stepsToPrompt : le state machine est le séquenceur.
+      // Inclure la liste complète ferait ré-exécuter des steps déjà faits par le code executor.
+      const usesStateMachine = steps.some(s => s.execution === 'code' || s.execution === 'ai')
+      const stepsPart = usesStateMachine ? '' : stepsToPrompt(steps)
       const promptPart = (w.prompt || '').trim()
       return [stepsPart, promptPart].filter(Boolean).join('\n\n')
     })
@@ -893,7 +898,7 @@ Les DB prompts ci-dessus sont des références. Les règles ci-dessous sont la p
 Ne PAS appeler add_internal_note (retiré du workflow).
 
 RÈGLE ABSOLUE — duplicate_order :
-Ne jamais appeler duplicate_order si son résultat (new_order_id) est déjà visible dans l'historique de conversation.
+Ne jamais appeler duplicate_order si "child_order_id" est déjà défini dans le CONTEXTE VARIABLES de l'étape courante (section ci-dessous). Si child_order_id est présent, la duplication est déjà faite par le système.
 
 RÈGLE ABSOLUE — choose_problem_tag :
 Après avoir appelé choose_problem_tag, STOPPER immédiatement — ne pas appeler d'autres tools dans le même tour.

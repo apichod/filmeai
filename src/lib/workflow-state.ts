@@ -173,8 +173,8 @@ ${orderRef}
 Appelle UNIQUEMENT l'outil "${step.booqable_action}" avec ces paramètres :
 ${JSON.stringify(toolArgs, null, 2)}${commentNote}
 
-INTERDIT : appeler d'autres outils, poser des questions, répéter cette étape.
-Exécute et passe à l'étape suivante.${context}`
+INTERDIT ABSOLU : appeler d'autres outils que "${step.booqable_action}", poser des questions, répéter cette étape.
+Le système orchestre automatiquement toutes les autres étapes — tu n'exécutes QUE celle-ci.${context}`
   }
 
   if (step.type === 'question') {
