@@ -877,6 +877,10 @@ export async function POST(req: NextRequest) {
     return 'ÉTAPES À SUIVRE (dans cet ordre) :\n' + lines.join('\n')
   }
 
+  const workflowUsesStateMachine = (workflows || []).some(w =>
+    (w.steps as WorkflowStep[] || []).some(s => s.execution === 'code' || s.execution === 'ai')
+  )
+
   const combinedPrompt = (workflows || [])
     .map(w => {
       const steps = (w.steps || []) as WorkflowStep[]
@@ -1047,7 +1051,7 @@ Affiche les {{...}} littéralement, toujours.`
   // ─────────────────────────────────────────────────────────────────────────
 
   const systemPrompt = (combinedPrompt
-    ? combinedPrompt + '\n\n' + uuidReminder
+    ? combinedPrompt + (workflowUsesStateMachine ? '' : '\n\n' + uuidReminder)
     : `Tu es un assistant de gestion des retours. Guide le responsable de stock étape par étape.\n\n${uuidReminder}`)
     + (scenarioSection ? '\n\n' + scenarioSection : '')
     + (stepInstruction ? '\n\n' + stepInstruction : '')
