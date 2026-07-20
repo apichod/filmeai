@@ -390,10 +390,6 @@ async function resolveOrderId(orderIdOrNumber: string): Promise<string | null> {
 
 // ── Exécution des outils ──────────────────────────────────────────────────────
 
-type ToolContext = {
-  customerName?: string | null
-  customerEmail?: string | null
-}
 
 async function executeTool(
   name: string,
@@ -789,7 +785,7 @@ export async function POST(req: NextRequest) {
     customerEmail?: string | null   // email client mémorisé côté client après fetch_order
   }
 
-  const { messages, caseId = null, scenario = null, customerId: bodyCustomerId = null, customerName: bodyCustomerName = null, customerEmail: bodyCustomerEmail = null } = body
+  const { messages, caseId = null, scenario = null, customerId: bodyCustomerId = null } = body
 
   // Charge le prompt du workflow correspondant au scénario (ou tous si pas de scénario)
   const supabase = getSupabaseAdmin()
