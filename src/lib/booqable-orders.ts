@@ -305,6 +305,93 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
   return order
 }
 
+// ── Fetch order by UUID ───────────────────────────────────────────────────────
+// Utilisé par le workflow executor pour les steps 'code' qui ont déjà le UUID en mémoire
+
+export async function fetchOrderById(orderId: string): Promise<BooqableOrder | null> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(
+    `${BASE_BOOMERANG}/orders?filter[id]=${encodeURIComponent(orderId)}&include=customer&per=1`,
+    { headers: headers(), signal: AbortSignal.timeout(10000) }
+  )
+  if (!res.ok) throw new Error(`Booqable fetchOrderById error: ${res.status}`)
+  const data = await res.json() as {
+    data?: Array<{ id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown> }>
+    included?: Array<{ type: string; id: string; attributes: Record<string, unknown> }>
+  }
+  const orderData = data.data?.[0]
+  if (!orderData) return null
+
+  // Réutilise le même mapping que fetchOrderByNumber
+  const customerIncluded = (data.included || []).find(
+    r => r.type === 'customers' &&
+      r.id === (orderData.relationships?.customer as { data?: { id?: string } })?.data?.id
+  )
+  const order: BooqableOrder = {
+    id:        orderData.id,
+    number:    String(orderData.attributes.number ?? ''),
+    status:    String(orderData.attributes.status ?? ''),
+    starts_at: String(orderData.attributes.starts_at ?? ''),
+    stops_at:  String(orderData.attributes.stops_at ?? ''),
+    customer_id: String(
+      orderData.attributes.customer_id ||
+      (orderData.relationships?.customer as { data?: { id?: string } })?.data?.id ||
+      customerIncluded?.id || ''
+    ),
+    customer: customerIncluded ? {
+      id:    customerIncluded.id,
+      name:  String(customerIncluded.attributes.name ?? ''),
+      email: String(customerIncluded.attributes.email ?? ''),
+    } : null,
+    tags:  Array.isArray(orderData.attributes.tag_list) ? orderData.attributes.tag_list as string[] : [],
+    lines: [],
+    properties_attributes: (orderData.attributes.properties ?? {}) as Record<string, string>,
+  }
+
+  // Lignes (même logique que fetchOrderByNumber)
+  try {
+    type BoomNode = { type: string; id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown> }
+    const linesRes = await fetch(
+      `${BASE_BOOMERANG}/lines?filter[order_id]=${order.id}&include=item,stock_item&page[size]=200`,
+      { headers: headers(), signal: AbortSignal.timeout(12000) }
+    )
+    if (linesRes.ok) {
+      const linesData = await linesRes.json() as { data?: BoomNode[]; included?: BoomNode[] }
+      const included = linesData.included || []
+      const itemNameMap  = new Map<string, string>()
+      const itemGroupMap = new Map<string, string>()
+      const stockItemMap = new Map<string, string>()
+      for (const r of included) {
+        const name = String(r.attributes.name || r.attributes.display_name || '')
+        if (r.type === 'products' || r.type === 'product') {
+          itemNameMap.set(r.id, name)
+          const pgId = String(r.attributes.product_group_id || '')
+          if (pgId) itemGroupMap.set(r.id, pgId)
+        }
+        if (r.type === 'product_groups' || r.type === 'product_group') itemNameMap.set(r.id, name)
+        if (r.type === 'stock_items' || r.type === 'stock_item') stockItemMap.set(r.id, String(r.attributes.identifier || ''))
+      }
+      order.lines = (linesData.data || []).map(line => {
+        const itemRelId = (line.relationships?.item as { data?: { id?: string } })?.data?.id ?? ''
+        const stockRelId = (line.relationships?.stock_item as { data?: { id?: string } })?.data?.id ?? ''
+        return {
+          id:               line.id,
+          product_id:       itemRelId,
+          product_name:     itemNameMap.get(itemRelId) || String(line.attributes.title || ''),
+          product_group_id: itemGroupMap.get(itemRelId) || '',
+          stock_item_id:    stockRelId || '',
+          stock_item_identifier: stockItemMap.get(stockRelId) || '',
+          quantity:         Number(line.attributes.quantity ?? 1),
+          price_in_cents:   Number(line.attributes.price_in_cents ?? 0),
+        }
+      })
+    }
+  } catch (e) {
+    console.warn('fetchOrderById: lines fetch failed:', e)
+  }
+  return order
+}
+
 // ── Create SAV order ───────────────────────────────────────────────────────────
 
 export type CreateSAVOrderParams = {

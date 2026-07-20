@@ -49,6 +49,7 @@ export type WorkflowStep = {
   booqable_action?: string
   parameters?:     Record<string, unknown>   // params fixes (ex: tags_add: ["r21_open"])
   order_context?:  OrderContext               // quel order_id injecter
+  execution?:      'code' | 'ai'             // 'code' = exécution directe sans LLM (défaut: 'ai')
 }
 
 // ── Supabase CRUD ─────────────────────────────────────────────────────────────

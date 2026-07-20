@@ -3,11 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import {
   buildStepInstruction,
+  buildToolArgs,
   extractVarsFromResult,
   advanceStep,
   type WorkflowStep,
   type WorkflowState,
 } from '@/lib/workflow-state'
+import { executeCodeStep } from '@/lib/workflow-executor'
 import {
   fetchOrderByNumber,
   createSAVOrder,
@@ -1065,6 +1067,75 @@ Affiche les {{...}} littéralement, toujours.`
           ...messages,
         ]
         let currentCaseId = caseId
+
+        // ── Code execution pre-pass ────────────────────────────────────────────
+        // Exécute en séquence tous les steps consécutifs marqués execution:'code'
+        // sans appeler le LLM. Plus rapide, 100% fiable.
+        if (activeSteps.length > 0) {
+          const ghostMessages: OpenAI.Chat.ChatCompletionMessageParam[] = []
+          let codeStepRan = false
+          const ts = Date.now()
+          let stepSeq = 0
+
+          while (
+            wfState.status === 'running' &&
+            wfState.step_index < activeSteps.length
+          ) {
+            const codeStep = activeSteps[wfState.step_index] as WorkflowStep
+            if (codeStep.execution !== 'code') break
+
+            codeStepRan = true
+            const toolName = codeStep.booqable_action ?? 'code_step'
+            const callId   = `code_${ts}_${stepSeq++}`
+            const argsSnap = buildToolArgs(codeStep, wfState.vars)   // snapshot avant update vars
+
+            send(JSON.stringify({ type: 'tool_call', name: toolName }))
+
+            const { resultText, newVars } = await executeCodeStep(codeStep, wfState.vars)
+
+            if (Object.keys(newVars).length > 0) {
+              wfState = { ...wfState, vars: { ...wfState.vars, ...newVars } }
+            }
+            wfState = advanceStep(wfState, activeSteps.length)
+
+            send(JSON.stringify({ type: 'tool_result', name: toolName, result: resultText }))
+
+            // Ghost messages — l'IA verra l'historique complet des appels code
+            ghostMessages.push({
+              role: 'assistant' as const,
+              content: null,
+              tool_calls: [{ id: callId, type: 'function' as const, function: { name: toolName, arguments: JSON.stringify(argsSnap) } }],
+            })
+            ghostMessages.push({ role: 'tool' as const, tool_call_id: callId, content: resultText })
+          }
+
+          // Workflow terminé sans passer par le LLM
+          if (wfState.status === 'completed') {
+            send(JSON.stringify({ type: 'done', caseId: currentCaseId, workflowState: wfState }))
+            controller.close()
+            return
+          }
+
+          // Des steps code ont tourné → rebuild system message pour la nouvelle étape IA
+          if (codeStepRan) {
+            const updatedStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
+            const updatedInstruction = updatedStep
+              ? buildStepInstruction(updatedStep, wfState.vars, wfState.step_index, activeSteps.length)
+              : null
+            const updatedPrompt = (combinedPrompt
+              ? combinedPrompt + '\n\n' + uuidReminder
+              : `Tu es un assistant de gestion des retours. Guide le responsable de stock étape par étape.\n\n${uuidReminder}`)
+              + (scenarioSection ? '\n\n' + scenarioSection : '')
+              + (updatedInstruction ? '\n\n' + updatedInstruction : '')
+
+            currentMessages = [
+              { role: 'system' as const, content: updatedPrompt },
+              ...messages,
+              ...ghostMessages,
+            ]
+          }
+        }
+        // ── Fin code execution pre-pass ────────────────────────────────────────
 
         // Boucle agent (gère les tool_calls)
         while (true) {

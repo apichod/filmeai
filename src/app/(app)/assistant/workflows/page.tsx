@@ -36,6 +36,7 @@ type WorkflowStep = {
   booqable_action?: string
   parameters?: Record<string, unknown>
   order_context?: 'parent' | 'child' | 'original' | 'return'
+  execution?: 'code' | 'ai'   // 'code' = appel direct sans LLM (défaut: 'ai')
   variable?: string
 }
 
@@ -263,6 +264,40 @@ function StepList({
               <option value="return">return — commande de retour</option>
             </select>
           </div>
+
+          {/* execution — mode d'exécution */}
+          {step.type === 'action' && step.booqable_action && (
+            <div className="pl-7 flex items-center gap-3">
+              <label className="text-xs text-gray-400">Exécution</label>
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+                <button
+                  onClick={() => updateStep(idx, { execution: 'ai' })}
+                  className={`px-3 py-1.5 transition-colors ${
+                    (!step.execution || step.execution === 'ai')
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  🤖 IA
+                </button>
+                <button
+                  onClick={() => updateStep(idx, { execution: 'code' })}
+                  className={`px-3 py-1.5 transition-colors border-l border-gray-200 ${
+                    step.execution === 'code'
+                      ? 'bg-green-500 text-white'
+                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  ⚡ Code
+                </button>
+              </div>
+              {step.execution === 'code' && (
+                <span className="text-[10px] text-green-600 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
+                  Exécuté sans LLM — rapide et fiable
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Outil Booqable — affiché pour les actions */}
           {step.type === 'action' && (
