@@ -9,6 +9,8 @@ const BOOQABLE_TOOLS = [
   { value: 'create_new_return_order', label: 'create_new_return_order — créer la commande de retour' },
   { value: 'add_new_product_line',    label: 'add_new_product_line — ajouter un article à la commande' },
   { value: 'set_original_order',      label: 'set_original_order — renseigner la commande d\'origine (original_order)' },
+  { value: 'clear_tags',           label: 'clear_tags — supprimer tous les tags' },
+  { value: 'revert_to_concept',    label: 'revert_to_concept — repasser en draft (concept)' },
   { value: 'cancel_order',         label: 'cancel_order — annuler la commande' },
   { value: 'remove_product_line', label: 'remove_product_line — supprimer une ligne de la commande' },
   { value: 'reserve_order',       label: 'reserve_order — réserver la commande (concept → reserved)' },
@@ -36,6 +38,8 @@ type WorkflowStep = {
 
 // Hint JSON par outil
 const PARAMETERS_HINT: Record<string, string> = {
+  clear_tags:          '{}',
+  revert_to_concept:   '{}',
   cancel_order:        '{}',
   remove_product_line: '{}',
   reserve_order:       '{}',

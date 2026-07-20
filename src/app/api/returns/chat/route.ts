@@ -18,6 +18,8 @@ import {
   reserveOrder,
   cancelOrder,
   removeProductLine,
+  revertToConcept,
+  clearTags,
   startSAVOrder,
 } from '@/lib/booqable-orders'
 
@@ -225,6 +227,34 @@ function buildTools(
   {
     type: 'function',
     function: {
+      name: 'clear_tags',
+      description: 'Supprime tous les tags d\'une commande Booqable.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'revert_to_concept',
+      description: 'Repasse une commande Booqable en état "concept" (draft) pour la rendre éditable. Fonctionne depuis started, reserved ou stopped.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande (champ "id" de fetch_order)' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'cancel_order',
       description: 'Annule une commande Booqable (quel que soit son état : started, reserved, concept). Utilisé pour annuler la commande d\'origine après duplication dans le workflow split.',
       parameters: {
@@ -376,6 +406,8 @@ async function executeTool(
             tags: order.tags,
             lines: linesStructured,
             note_interne: order.properties_attributes?.note_interne || null,
+            notes_sav:    order.properties_attributes?.notes_sav    || null,
+            order_sav:    order.properties_attributes?.order_sav    || null,
           }),
         }
       }
@@ -400,6 +432,16 @@ async function executeTool(
         await addTagToOrder(String(args.order_id), tagList, tagRemove.length > 0 ? tagRemove : undefined)
         const removePart = tagRemove.length > 0 ? ` | supprimés : ${tagRemove.join(', ')}` : ''
         return { result: `✓ Tags ajoutés : ${tagList.join(', ')}${removePart}` }
+      }
+
+      case 'clear_tags': {
+        await clearTags(String(args.order_id))
+        return { result: `✓ Tous les tags supprimés sur la commande ${args.order_id}` }
+      }
+
+      case 'revert_to_concept': {
+        await revertToConcept(String(args.order_id))
+        return { result: `✓ Commande ${args.order_id} repassée en draft (concept)` }
       }
 
       case 'cancel_order': {

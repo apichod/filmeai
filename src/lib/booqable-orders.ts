@@ -882,6 +882,53 @@ export async function addSAVLine(params: SAVLineParams): Promise<{ startError?: 
   return {}
 }
 
+// ── clearTags ────────────────────────────────────────────────────────────────
+// Supprime tous les tags d'une commande.
+export async function clearTags(orderId: string): Promise<void> {
+  const res = await fetch(`${BASE4}/orders/${orderId}`, {
+    method: 'PUT',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        id:   orderId,
+        type: 'orders',
+        attributes: { tag_list: [] },
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable clearTags error ${res.status}: ${text}`)
+  }
+}
+
+// ── revertToConcept ───────────────────────────────────────────────────────────
+// Repasse une commande en état "concept" (draft) depuis started, reserved ou stopped.
+export async function revertToConcept(orderId: string): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+
+  const tryTransition = async (from: string, to: string): Promise<boolean> => {
+    const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          type: 'order_transitions',
+          attributes: { order_id: orderId, transition_from: from, transition_to: to, confirm_shortage: false, revert_until: null },
+        },
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.ok
+  }
+
+  if (await tryTransition('reserved', 'concept')) return
+  await tryTransition('started', 'stopped')
+  if (await tryTransition('stopped', 'concept')) return
+  throw new Error(`Booqable revertToConcept: impossible de passer la commande ${orderId} en draft`)
+}
+
 // ── reserveOrder ─────────────────────────────────────────────────────────────
 // Passe la commande de "concept" à "reserved".
 export async function reserveOrder(orderId: string): Promise<void> {
