@@ -30,7 +30,7 @@ const BOOQABLE_TOOLS = [
 
 type WorkflowStep = {
   id: string
-  type: 'action' | 'question' | 'instruction'
+  type: 'action' | 'question' | 'instruction' | 'check'
   title: string
   description: string
   booqable_action?: string
@@ -71,6 +71,7 @@ function StepBadge({ type }: { type: string }) {
   if (type === 'action')      return <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-medium">Action</span>
   if (type === 'question')    return <span className="px-2 py-0.5 rounded-full text-xs bg-purple-50 text-purple-700 font-medium">Question</span>
   if (type === 'instruction') return <span className="px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 font-medium">Instruction</span>
+  if (type === 'check')       return <span className="px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-600 font-medium">⚠ Vérification IA</span>
   return <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{type}</span>
 }
 
@@ -213,6 +214,7 @@ function StepList({
               <option value="action">Action</option>
               <option value="question">Question</option>
               <option value="instruction">Instruction</option>
+              <option value="check">⚠ Vérification IA</option>
             </select>
 
             <StepBadge type={step.type} />

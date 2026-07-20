@@ -20,6 +20,7 @@ import {
   removeProductLine,
   revertToConcept,
   clearTags,
+  duplicateOrder,
   startSAVOrder,
 } from '@/lib/booqable-orders'
 
@@ -221,6 +222,34 @@ function buildTools(
           document_number:     { type: 'string', description: 'Numéro de facture Booqable (templates facturation)' },
         },
         required: ['template_id', 'customer_name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'duplicate_order',
+      description: 'Duplique une commande Booqable. Retourne l\'ID et le numéro de la nouvelle commande (child_return_order). À appeler avant revert_to_concept dans le workflow split.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande à dupliquer (champ "id" de fetch_order)' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'choose_problem_tag',
+      description: 'Présente 4 boutons à l\'opérateur pour choisir le type de problème et le tag correspondant : Retard (r11_late), Perte (r12_missing), Vol (r13_theft), Dommage (r14_damage). Appeler cette fonction quand l\'opérateur doit choisir un tag de problème.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande concernée' },
+        },
+        required: ['order_id'],
       },
     },
   },
@@ -432,6 +461,28 @@ async function executeTool(
         await addTagToOrder(String(args.order_id), tagList, tagRemove.length > 0 ? tagRemove : undefined)
         const removePart = tagRemove.length > 0 ? ` | supprimés : ${tagRemove.join(', ')}` : ''
         return { result: `✓ Tags ajoutés : ${tagList.join(', ')}${removePart}` }
+      }
+
+      case 'duplicate_order': {
+        const { newOrderId, newOrderNumber } = await duplicateOrder(String(args.order_id))
+        return { result: JSON.stringify({ success: true, new_order_id: newOrderId, new_order_number: newOrderNumber, message: `✓ Commande dupliquée — nouvelle commande : numéro ${newOrderNumber || '?'}, id: ${newOrderId}` }) }
+      }
+
+      case 'choose_problem_tag': {
+        const orderId = String(args.order_id)
+        // Retourne un marqueur spécial → le streaming émet un event SSE 'choices'
+        return {
+          result: JSON.stringify({
+            __type__: 'choices',
+            order_id: orderId,
+            items: [
+              { label: 'Retard',  tag: 'r11_late'    },
+              { label: 'Perte',   tag: 'r12_missing'  },
+              { label: 'Vol',     tag: 'r13_theft'    },
+              { label: 'Dommage', tag: 'r14_damage'   },
+            ],
+          }),
+        }
       }
 
       case 'clear_tags': {
@@ -826,7 +877,7 @@ export async function POST(req: NextRequest) {
   function stepsToPrompt(steps: WorkflowStep[]): string {
     if (!steps || steps.length === 0) return ''
     const lines = steps.map((s, i) => {
-      const tag = s.type === 'action' ? '[ACTION]' : s.type === 'question' ? '[QUESTION]' : '[INSTRUCTION]'
+      const tag = s.type === 'action' ? '[ACTION]' : s.type === 'question' ? '[QUESTION]' : s.type === 'check' ? '[⚠ VÉRIFICATION OBLIGATOIRE]' : '[INSTRUCTION]'
       const tool = s.booqable_action ? ` → ${s.booqable_action}` : ''
       const desc = s.description ? ` : ${s.description}` : ''
       // Injecter les parameters structurés dans le prompt (tags, template_id, etc.)
@@ -1087,6 +1138,14 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
               customerEmail: bodyCustomerEmail,
             })
             if (newCaseId) currentCaseId = newCaseId
+
+            // Émettre un event SSE 'choices' si le tool retourne un marqueur spécial
+            try {
+              const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string }
+              if (parsed.__type__ === 'choices') {
+                send(JSON.stringify({ type: 'choices', order_id: parsed.order_id, items: parsed.items }))
+              }
+            } catch { /* pas JSON, continuer */ }
 
             send(JSON.stringify({ type: 'tool_result', name: entry.name, result }))
 
