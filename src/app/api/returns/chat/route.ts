@@ -468,7 +468,9 @@ async function executeTool(
       }
 
       case 'duplicate_order': {
-        const { newOrderId, newOrderNumber } = await duplicateOrder(String(args.order_id))
+        const dupOrderId = await resolveOrderId(String(args.order_id))
+        if (!dupOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
+        const { newOrderId, newOrderNumber } = await duplicateOrder(dupOrderId)
         return { result: JSON.stringify({ success: true, new_order_id: newOrderId, new_order_number: newOrderNumber, message: `✓ Commande dupliquée — nouvelle commande : numéro ${newOrderNumber || '?'}, id: ${newOrderId}` }) }
       }
 

@@ -1018,7 +1018,8 @@ export async function clearTags(orderId: string): Promise<void> {
 }
 
 // ── revertToConcept ───────────────────────────────────────────────────────────
-// Repasse une commande en état "concept" (draft) depuis started, reserved ou stopped.
+// Repasse une commande en état "concept" (draft) depuis n'importe quel état.
+// Essaie chaque état source possible → concept, dans l'ordre le plus probable.
 export async function revertToConcept(orderId: string): Promise<void> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
 
@@ -1029,7 +1030,7 @@ export async function revertToConcept(orderId: string): Promise<void> {
       body: JSON.stringify({
         data: {
           type: 'order_transitions',
-          attributes: { order_id: orderId, transition_from: from, transition_to: to, confirm_shortage: false, revert_until: null },
+          attributes: { order_id: orderId, transition_from: from, transition_to: to, confirm_shortage: true, revert_until: null },
         },
       }),
       signal: AbortSignal.timeout(10000),
@@ -1037,9 +1038,15 @@ export async function revertToConcept(orderId: string): Promise<void> {
     return res.ok
   }
 
+  // Essayer toutes les sources → concept dans l'ordre le plus courant
   if (await tryTransition('reserved', 'concept')) return
-  await tryTransition('started', 'stopped')
-  if (await tryTransition('stopped', 'concept')) return
+  if (await tryTransition('started',  'concept')) return
+  if (await tryTransition('stopped',  'concept')) return
+  // En dernier recours : passer par stopped si l'order est started (items trackables)
+  // stop_stock_items est géré séparément; essayer ici la transition directe
+  if (await tryTransition('started', 'stopped')) {
+    if (await tryTransition('stopped', 'concept')) return
+  }
   throw new Error(`Booqable revertToConcept: impossible de passer la commande ${orderId} en draft`)
 }
 
