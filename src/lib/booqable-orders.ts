@@ -1168,6 +1168,17 @@ export async function stopOrder(orderId: string): Promise<void> {
   const r2 = await tryTransition('reserved')
   if (r2.ok) return
 
+  // 3. Vérifier si la commande est déjà stopped (idempotent)
+  try {
+    const checkRes = await fetch(`${BASE4}/orders/${orderId}?fields[orders]=status`, {
+      headers: headers(), signal: AbortSignal.timeout(8000)
+    })
+    if (checkRes.ok) {
+      const data = await checkRes.json() as { data?: { attributes?: { status?: string } } }
+      if (data.data?.attributes?.status === 'stopped') return // déjà stoppée → OK
+    }
+  } catch { /* ignore */ }
+
   throw new Error(`Booqable stopOrder error ${r2.status}: ${r2.text}`)
 }
 
