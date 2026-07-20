@@ -622,13 +622,29 @@ export async function POST(req: NextRequest) {
   const emailTemplates = Array.from(emailTemplatesMap.values())
 
   // Extrait les tags depuis les étapes add_tag de tous les workflows actifs
+  type WorkflowStep = {
+    id?: string
+    type: string
+    title: string
+    description?: string
+    booqable_action?: string
+    parameters?: Record<string, unknown>  // données structurées : tags, template_id, etc.
+  }
+
   const allTags = (() => {
     const tags = new Set<string>()
     for (const w of (workflows || [])) {
-      for (const step of ((w.steps || []) as Array<{ booqable_action?: string; description?: string }>)) {
-        if (step.booqable_action === 'add_tag' && step.description) {
-          const matches = step.description.match(/"([^"]+)"/g) || []
-          matches.forEach(m => tags.add(m.replace(/"/g, '')))
+      for (const step of ((w.steps || []) as WorkflowStep[])) {
+        if (step.booqable_action === 'add_tag') {
+          // Priorité : parameters.tags (tableau structuré)
+          const paramTags = step.parameters?.tags
+          if (Array.isArray(paramTags)) {
+            paramTags.forEach((t: unknown) => typeof t === 'string' && tags.add(t))
+          } else if (step.description) {
+            // Fallback : extraire les guillemets dans la description
+            const matches = step.description.match(/"([^"]+)"/g) || []
+            matches.forEach(m => tags.add(m.replace(/"/g, '')))
+          }
         }
       }
     }
@@ -639,13 +655,17 @@ export async function POST(req: NextRequest) {
   const tools = buildTools(emailTemplates, allTags)
 
   // Convertit les étapes structurées en instructions lisibles par l'IA
-  function stepsToPrompt(steps: Array<{ type: string; title: string; description?: string; booqable_action?: string }>): string {
+  function stepsToPrompt(steps: WorkflowStep[]): string {
     if (!steps || steps.length === 0) return ''
     const lines = steps.map((s, i) => {
       const tag = s.type === 'action' ? '[ACTION]' : s.type === 'question' ? '[QUESTION]' : '[INSTRUCTION]'
       const tool = s.booqable_action ? ` → ${s.booqable_action}` : ''
       const desc = s.description ? ` : ${s.description}` : ''
-      return `${i + 1}. ${tag} ${s.title}${tool}${desc}`
+      // Injecter les parameters structurés dans le prompt (tags, template_id, etc.)
+      const params = s.parameters && Object.keys(s.parameters).length > 0
+        ? ` [params: ${JSON.stringify(s.parameters)}]`
+        : ''
+      return `${i + 1}. ${tag} ${s.title}${tool}${desc}${params}`
     })
     return 'ÉTAPES À SUIVRE (dans cet ordre) :\n' + lines.join('\n')
   }
