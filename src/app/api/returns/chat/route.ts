@@ -34,6 +34,15 @@ function getSupabaseAdmin() {
   )
 }
 
+// ── Substitution de variables dans les templates email ───────────────────────
+// Remplace {{variable}} par la valeur correspondante (si connue), sinon laisse intact.
+function substituteTemplateVars(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{([^}]+)\}\}/g, (match, key: string) => {
+    const v = vars[key.trim()]
+    return (v !== undefined && v !== '') ? v : match
+  })
+}
+
 // ── Outils disponibles pour l'IA (construits dynamiquement depuis la DB) ──────
 
 function buildTools(
@@ -662,8 +671,20 @@ async function executeTool(
             }
             return score(cur) >= score(prev) ? cur : prev
           })
-          // Garder les {{variables}} brutes — Booqable les remplace à l'envoi
-          return { result: JSON.stringify({ subject: best.subject, body: best.body, to: resolvedEmail || '' }) }
+          // Substituer les {{variables}} avec les valeurs connues de FilmeAI
+          const emailVars: Record<string, string> = {
+            'customer.name':       resolvedName,
+            'customer_name':       resolvedName,
+            'originOrderNumber':   args.origin_order_number ? String(args.origin_order_number) : '',
+            'origin_order_number': args.origin_order_number ? String(args.origin_order_number) : '',
+            'notesSav':            args.sav_comment ? String(args.sav_comment) : '',
+            'sav_comment':         args.sav_comment ? String(args.sav_comment) : '',
+            'order.number':        args.order_number ? String(args.order_number) : '',
+            'order_number':        args.order_number ? String(args.order_number) : '',
+          }
+          const resolvedSubject = substituteTemplateVars(best.subject, emailVars)
+          const resolvedBody    = substituteTemplateVars(best.body,    emailVars)
+          return { result: JSON.stringify({ subject: resolvedSubject, body: resolvedBody, to: resolvedEmail || '' }) }
         }
 
         // Fallback : templates hardcodés (rétrocompatibilité)
@@ -1020,7 +1041,8 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
 - fetch_order → "id" (UUID) pour toutes les actions sur l'order d'origine / "number" pour affichage humain.
 - create_sav_order → "id" (UUID) pour add_tag, add_sav_comment, add_sav_line.
 - customer_id pour create_sav_order = champ "customer_id" de fetch_order.
-- Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.`
+- Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.
+- Si le workflow contient des étapes reserve_order et/ou start_order : les appeler OBLIGATOIREMENT avec l'id de la SAV order retourné par create_new_return_order, APRÈS add_new_product_line et AVANT draft_email. Ne jamais sauter ces étapes, même si leur description est vide. Ordre : create_new_return_order → add_new_product_line → reserve_order → start_order → (reste du workflow).`
 
   const scenarioSection = buildScenarioPrompt(scenario)
 

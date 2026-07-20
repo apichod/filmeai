@@ -690,6 +690,19 @@ async function resolveProductId(productGroupId: string): Promise<string | null> 
     }
   } catch { /* continue */ }
 
+  // boomerang products endpoint (fallback final)
+  try {
+    const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+    const res = await fetch(
+      `${BASE_BOOMERANG}/products?filter[product_group_id]=${productGroupId}&page[number]=1&page[size]=1`,
+      { headers: headers(), signal: AbortSignal.timeout(8000) }
+    )
+    if (res.ok) {
+      const data = await res.json() as { data?: Array<{ id: string }> }
+      if (data.data?.[0]?.id) return data.data[0].id
+    }
+  } catch { /* continue */ }
+
   return null
 }
 
@@ -717,7 +730,7 @@ export async function addSAVLine(params: SAVLineParams): Promise<{ startError?: 
             type: 'order_fulfillments',
             attributes: {
               order_id: params.orderId,
-              confirm_shortage: false,
+              confirm_shortage: true,
               actions: [{ action: 'book_product', mode: 'create_new', product_id: productId, quantity: params.quantity }],
             },
           },
@@ -838,7 +851,7 @@ export async function addSAVLine(params: SAVLineParams): Promise<{ startError?: 
           type: 'order_fulfillments',
           attributes: {
             order_id: params.orderId,
-            confirm_shortage: false,
+            confirm_shortage: true,
             actions: [{ action: 'book_product', mode: 'create_new', product_id: productId, quantity: params.quantity }],
           },
         },
