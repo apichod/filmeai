@@ -1077,6 +1077,13 @@ Affiche les {{...}} littéralement, toujours.`
         ]
         let currentCaseId = caseId
 
+        // ── waiting_for_input → avance automatiquement ────────────────────────
+        // Si le dernier tour s'est terminé sur une question (waiting_for_input),
+        // l'utilisateur vient de répondre → on passe à l'étape suivante.
+        if (activeSteps.length > 0 && wfState.status === 'waiting_for_input') {
+          wfState = advanceStep(wfState, activeSteps.length)
+        }
+
         // ── Code execution pre-pass ────────────────────────────────────────────
         // Exécute en séquence tous les steps consécutifs marqués execution:'code'
         // sans appeler le LLM. Plus rapide, 100% fiable.
@@ -1132,7 +1139,7 @@ Affiche les {{...}} littéralement, toujours.`
               ? buildStepInstruction(updatedStep, wfState.vars, wfState.step_index, activeSteps.length)
               : null
             const updatedPrompt = (combinedPrompt
-              ? combinedPrompt + '\n\n' + uuidReminder
+              ? combinedPrompt + (workflowUsesStateMachine ? '' : '\n\n' + uuidReminder)
               : `Tu es un assistant de gestion des retours. Guide le responsable de stock étape par étape.\n\n${uuidReminder}`)
               + (scenarioSection ? '\n\n' + scenarioSection : '')
               + (updatedInstruction ? '\n\n' + updatedInstruction : '')
@@ -1148,19 +1155,41 @@ Affiche les {{...}} littéralement, toujours.`
 
         // Boucle agent (gère les tool_calls)
         while (true) {
-          // Si on est dans un step 'ai' action → forcer l'appel du bon outil uniquement
-          const aiStep = activeSteps.length > 0
+          // ── Étape courante ─────────────────────────────────────────────────
+          const aiStep = activeSteps.length > 0 && wfState.step_index < activeSteps.length
             ? activeSteps[wfState.step_index] as WorkflowStep | undefined
             : undefined
-          const forcedToolChoice: OpenAI.Chat.ChatCompletionToolChoiceOption =
-            aiStep?.execution === 'ai' && aiStep?.type === 'action' && aiStep?.booqable_action
+
+          // ── Rebuild system message à chaque itération (step peut avoir avancé) ──
+          if (workflowUsesStateMachine) {
+            const loopInstruction = aiStep
+              ? buildStepInstruction(aiStep, wfState.vars, wfState.step_index, activeSteps.length)
+              : null
+            const loopSystemContent = (combinedPrompt || 'Tu es un assistant de gestion des retours.')
+              + (scenarioSection ? '\n\n' + scenarioSection : '')
+              + (loopInstruction ? '\n\n' + loopInstruction : '')
+            currentMessages = [
+              { role: 'system' as const, content: loopSystemContent },
+              ...currentMessages.slice(1),
+            ]
+          }
+
+          // ── tool_choice ────────────────────────────────────────────────────
+          // question step  → 'none' (texte uniquement, pas d'outil)
+          // ai action step → forcer l'outil exact du step
+          // sinon          → 'auto'
+          const isQuestionStep = aiStep?.type === 'question'
+          const forcedToolChoice: OpenAI.Chat.ChatCompletionToolChoiceOption = isQuestionStep
+            ? 'none'
+            : aiStep?.execution === 'ai' && aiStep?.type === 'action' && aiStep?.booqable_action
               ? { type: 'function', function: { name: aiStep.booqable_action } }
               : 'auto'
 
           const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
             messages: currentMessages,
-            tools: tools,
+            // Ne pas passer tools quand tool_choice='none' (question step)
+            ...(forcedToolChoice === 'none' ? {} : { tools }),
             tool_choice: forcedToolChoice,
             parallel_tool_calls: false,
             stream: true,
@@ -1286,6 +1315,45 @@ Affiche les {{...}} littéralement, toujours.`
                 content: result,
               },
             ]
+          }
+
+          // ── State machine : après UNE action AI ────────────────────────────
+          // Exécute les steps code consécutifs qui suivent, puis :
+          //   - si question step → continue le loop pour poser la question
+          //   - sinon → break (un seul appel AI par tour)
+          if (workflowUsesStateMachine) {
+            const codeTs = Date.now()
+            let codeSeq = 0
+            while (wfState.status === 'running' && wfState.step_index < activeSteps.length) {
+              const postCodeStep = activeSteps[wfState.step_index] as WorkflowStep
+              if (postCodeStep.execution !== 'code') break
+              const codeId   = `code_post_${codeTs}_${codeSeq++}`
+              const codeArgs = buildToolArgs(postCodeStep, wfState.vars)
+              send(JSON.stringify({ type: 'tool_call', name: postCodeStep.booqable_action ?? 'code_step' }))
+              const codeRes = await executeCodeStep(postCodeStep, wfState.vars)
+              if (Object.keys(codeRes.newVars).length > 0) {
+                wfState = { ...wfState, vars: { ...wfState.vars, ...codeRes.newVars } }
+              }
+              wfState = advanceStep(wfState, activeSteps.length)
+              send(JSON.stringify({ type: 'tool_result', name: postCodeStep.booqable_action ?? 'code_step', result: codeRes.resultText }))
+              currentMessages = [
+                ...currentMessages,
+                { role: 'assistant' as const, content: null, tool_calls: [{ id: codeId, type: 'function' as const, function: { name: postCodeStep.booqable_action ?? '', arguments: JSON.stringify(codeArgs) } }] },
+                { role: 'tool' as const, tool_call_id: codeId, content: codeRes.resultText },
+              ]
+            }
+            if (wfState.status === 'completed') {
+              send(JSON.stringify({ type: 'done', caseId: currentCaseId, workflowState: wfState }))
+              controller.close()
+              return
+            }
+            // Si la prochaine étape est une question → on continue le loop pour la poser
+            const afterCodeStep = wfState.step_index < activeSteps.length
+              ? activeSteps[wfState.step_index] as WorkflowStep | undefined
+              : undefined
+            if (afterCodeStep?.type === 'question') continue
+            // Sinon → break (un seul appel AI par requête)
+            break
           }
         }
 
