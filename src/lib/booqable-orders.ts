@@ -978,7 +978,9 @@ export async function duplicateOrder(orderId: string): Promise<{ newOrderId: str
     body: JSON.stringify({
       data: {
         type: 'order_duplications',
-        attributes: { order_id: orderId },
+        relationships: {
+          order: { data: { type: 'orders', id: orderId } },
+        },
       },
     }),
     signal: AbortSignal.timeout(15000),
@@ -1045,14 +1047,20 @@ export async function revertToConcept(orderId: string): Promise<void> {
     return res.ok
   }
 
-  // Essayer toutes les sources → concept dans l'ordre le plus courant
+  // 1. reserved → concept
   if (await tryTransition('reserved', 'concept')) return
+  // 2. started → concept (sans items trackables)
   if (await tryTransition('started',  'concept')) return
+  // 3. stopped → concept
   if (await tryTransition('stopped',  'concept')) return
-  // En dernier recours : passer par stopped si l'order est started (items trackables)
-  // stop_stock_items est géré séparément; essayer ici la transition directe
-  if (await tryTransition('started', 'stopped')) {
+  // 4. Pour les items trackables : stopOrder arrête les stock_items → stopped → concept
+  console.log('[revertToConcept] tentative via stopOrder (items trackables)')
+  try {
+    await stopOrder(orderId)
+    console.log('[revertToConcept] stopOrder OK, tentative stopped→concept')
     if (await tryTransition('stopped', 'concept')) return
+  } catch (e) {
+    console.log('[revertToConcept] stopOrder failed:', String(e))
   }
   throw new Error(`Booqable revertToConcept: impossible de passer la commande ${orderId} en draft`)
 }
