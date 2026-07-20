@@ -26,7 +26,7 @@ type TemplateGroup = {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function parseGroupNum(label: string): number {
-  const m = (label || '').match(/^(\d+)/)
+  const m = (label || '').match(/^[R#]?(\d+)/)
   return m ? parseInt(m[1], 10) : 999
 }
 

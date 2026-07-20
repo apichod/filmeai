@@ -151,16 +151,18 @@ export async function GET() {
     }))
   }
 
-  // Trier les groupes par préfixe numérique du label ("10 –" → 10), puis par ordre historique en fallback
+  // Trier les groupes par préfixe numérique du label ("R00", "R11", "#12", "10 –" → 0, 11, 12, 10)
   function parseGroupNum(label: string): number {
-    const m = (label || '').match(/^(\d+)/)
+    const m = (label || '').match(/^[R#]?(\d+)/)
     return m ? parseInt(m[1], 10) : 999
   }
   const sorted = Object.values(grouped).sort((a, b) => {
     const na = parseGroupNum(a.label)
     const nb = parseGroupNum(b.label)
     if (na !== nb) return na - nb
-    return TEMPLATE_GROUP_ORDER.indexOf(a.template_id) - TEMPLATE_GROUP_ORDER.indexOf(b.template_id)
+    const ia = TEMPLATE_GROUP_ORDER.indexOf(a.template_id)
+    const ib = TEMPLATE_GROUP_ORDER.indexOf(b.template_id)
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
   })
 
   return NextResponse.json(sorted)
