@@ -166,7 +166,45 @@ export async function GET() {
   return NextResponse.json(sorted)
 }
 
-// PATCH — met à jour label (toutes les variantes) ou subject/body d'une variante
+// POST — crée un nouveau template ou une nouvelle variante
+export async function POST(req: NextRequest) {
+  const body = await req.json() as {
+    template_id: string
+    case_key: string
+    label: string
+    case_label?: string
+    subject?: string
+    body?: string
+    slug?: string
+    sort_order?: number
+  }
+
+  if (!body.template_id || !body.case_key || !body.label) {
+    return NextResponse.json({ error: 'template_id, case_key et label requis' }, { status: 400 })
+  }
+
+  const supabase = getSupabaseAdmin()
+  const { data, error } = await supabase
+    .from('email_templates')
+    .insert({
+      template_id: body.template_id,
+      case_key:    body.case_key,
+      label:       body.label,
+      case_label:  body.case_label || '',
+      subject:     body.subject || '',
+      body:        body.body || '',
+      conditions:  {},
+      sort_order:  body.sort_order ?? 0,
+      slug:        body.slug || null,
+    })
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true, row: data })
+}
+
+// PATCH — met à jour label (toutes les variantes) ou subject/body/slug d'une variante
 export async function PATCH(req: NextRequest) {
   const body = await req.json() as {
     template_id: string
