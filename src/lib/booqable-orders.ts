@@ -1136,7 +1136,7 @@ export async function updateOrderReturnDate(orderId: string): Promise<void> {
 // ── stopOrder ────────────────────────────────────────────────────────────────
 // Passe la commande de "started" à "stopped" (retour du matériel).
 export async function stopOrder(orderId: string): Promise<void> {
-  const BASE_BOOMERANG = `${process.env.BOOQABLE_BASE_URL || ''}/api/boomerang`
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
   const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
     method: 'POST',
     headers: headers(),

@@ -466,9 +466,16 @@ async function executeTool(
       }
 
       case 'add_tag': {
-        const tagList    = Array.isArray(args.tags)           ? args.tags.map(String)           : [String(args.tags || args.tag || '')]
-        const tagRemove  = Array.isArray(args.tags_to_remove) ? args.tags_to_remove.map(String) : []
-        await addTagToOrder(String(args.order_id), tagList, tagRemove.length > 0 ? tagRemove : undefined)
+        const resolvedTagOrderId = await resolveOrderId(String(args.order_id))
+        if (!resolvedTagOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
+        // Support both "tags"/"tags_add" and "tags_to_remove"/"tags_remove" (workflow step may use either)
+        const tagList   = Array.isArray(args.tags)           ? args.tags.map(String)
+                        : Array.isArray(args.tags_add)       ? args.tags_add.map(String)
+                        : [String(args.tags || args.tags_add || args.tag || '')]
+        const tagRemove = Array.isArray(args.tags_to_remove) ? args.tags_to_remove.map(String)
+                        : Array.isArray(args.tags_remove)    ? args.tags_remove.map(String)
+                        : []
+        await addTagToOrder(resolvedTagOrderId, tagList, tagRemove.length > 0 ? tagRemove : undefined)
         const removePart = tagRemove.length > 0 ? ` | supprimés : ${tagRemove.join(', ')}` : ''
         return { result: `✓ Tags ajoutés : ${tagList.join(', ')}${removePart}` }
       }
