@@ -877,13 +877,22 @@ export async function POST(req: NextRequest) {
   function stepsToPrompt(steps: WorkflowStep[]): string {
     if (!steps || steps.length === 0) return ''
     const lines = steps.map((s, i) => {
-      const tag = s.type === 'action' ? '[ACTION]' : s.type === 'question' ? '[QUESTION]' : s.type === 'check' ? '[⚠ VÉRIFICATION OBLIGATOIRE]' : '[INSTRUCTION]'
       const tool = s.booqable_action ? ` → ${s.booqable_action}` : ''
       const desc = s.description ? ` : ${s.description}` : ''
-      // Injecter les parameters structurés dans le prompt (tags, template_id, etc.)
       const params = s.parameters && Object.keys(s.parameters).length > 0
         ? ` [params: ${JSON.stringify(s.parameters)}]`
         : ''
+
+      if (s.type === 'check') {
+        // Étape bloquante : l'IA DOIT vérifier et redemander si incomplet
+        return `${i + 1}. [⚠ ARRÊT — VÉRIFICATION OBLIGATOIRE AVANT DE CONTINUER]\n` +
+          `   Condition : ${s.title}${desc}\n` +
+          `   → Si une information manque, POSE LA QUESTION à l'opérateur et ATTENDS sa réponse.\n` +
+          `   → Ne passe à l'étape suivante QUE si toutes les informations requises sont présentes.\n` +
+          `   → NE JAMAIS supposer ou inventer une valeur manquante.`
+      }
+
+      const tag = s.type === 'action' ? '[ACTION]' : s.type === 'question' ? '[QUESTION]' : '[INSTRUCTION]'
       return `${i + 1}. ${tag} ${s.title}${tool}${desc}${params}`
     })
     return 'ÉTAPES À SUIVRE (dans cet ordre) :\n' + lines.join('\n')
