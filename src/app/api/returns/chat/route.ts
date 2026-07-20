@@ -398,7 +398,7 @@ type ToolContext = {
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
-  ctx: ToolContext = {}
+  _ctx: ToolContext = {}
 ): Promise<{ result: string; caseId?: string }> {
   try {
     switch (name) {
