@@ -1160,12 +1160,16 @@ export async function stopOrder(orderId: string): Promise<void> {
     return { ok: res.ok, status: res.status, text }
   }
 
+  console.log('[stopOrder] orderId:', orderId)
+
   // 1. started → stopped
   const r1 = await tryTransition('started')
+  console.log('[stopOrder] started→stopped:', r1.status, r1.text)
   if (r1.ok) return
 
   // 2. reserved → stopped (fallback si pas encore démarré)
   const r2 = await tryTransition('reserved')
+  console.log('[stopOrder] reserved→stopped:', r2.status, r2.text)
   if (r2.ok) return
 
   // 3. Vérifier si la commande est déjà stopped (idempotent)
