@@ -1,7 +1,6 @@
 import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
-import { renderEmail, type EmailTemplateId } from '@/lib/email-templates'
 import {
   fetchOrderByNumber,
   createSAVOrder,
