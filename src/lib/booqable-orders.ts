@@ -230,6 +230,71 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     console.warn('fetchOrderByNumber: boomerang enrichment failed, lines may be empty:', e)
   }
 
+  // ── Passe 3 : stock_item_identifier via stock_item_plannings ─────────────────
+  // Les stock items ne sont pas liés directement aux lines — ils passent par les plannings.
+  // On enrichit les lignes qui ont un product_group_id mais pas encore de stock_item_identifier.
+  if ((order.lines || []).some(l => l.product_group_id && !l.stock_item_identifier)) {
+    try {
+      const BASE_BOOM3 = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+      type SIPNode = {
+        id: string; type: string
+        attributes: Record<string, unknown>
+        relationships?: Record<string, { data?: { id: string; type: string } | null }>
+      }
+      const sipRes = await fetch(
+        `${BASE_BOOM3}/stock_item_plannings?filter[order_id]=${order.id}&include=stock_item,planning&page[size]=200`,
+        { headers: headers(), signal: AbortSignal.timeout(10000) }
+      )
+      if (sipRes.ok) {
+        const sipData = await sipRes.json() as { data?: SIPNode[]; included?: SIPNode[] }
+
+        // Index included resources by id
+        const incMap = new Map<string, SIPNode>()
+        for (const r of sipData.included || []) incMap.set(r.id, r)
+
+        // Build: product_group_id → [stock_item_identifier, ...]
+        const pgToIdents = new Map<string, string[]>()
+        for (const sip of sipData.data || []) {
+          const planningId   = sip.relationships?.planning?.data?.id
+          const stockItemId  = sip.relationships?.stock_item?.data?.id
+          if (!planningId || !stockItemId) continue
+          const planning  = incMap.get(planningId)
+          const stockItem = incMap.get(stockItemId)
+          if (!planning || !stockItem) continue
+          const pgId = String(planning.attributes.product_group_id || '')
+          const ident = String(stockItem.attributes.identifier || '')
+          if (!pgId || !ident) continue
+          if (!pgToIdents.has(pgId)) pgToIdents.set(pgId, [])
+          if (!pgToIdents.get(pgId)!.includes(ident)) pgToIdents.get(pgId)!.push(ident)
+        }
+
+        // Enrich lines
+        for (const line of order.lines || []) {
+          if (!line.stock_item_identifier && line.product_group_id) {
+            const idents = pgToIdents.get(line.product_group_id)
+            if (idents && idents.length > 0) {
+              line.stock_item_identifier = idents[0]
+              if (!line.stock_item_id) {
+                // Retrouver l'UUID du stock_item depuis l'identifier
+                for (const sip of sipData.data || []) {
+                  const siId = sip.relationships?.stock_item?.data?.id
+                  if (!siId) continue
+                  const si = incMap.get(siId)
+                  if (si && String(si.attributes.identifier || '') === idents[0]) {
+                    line.stock_item_id = siId
+                    break
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('fetchOrderByNumber: stock_item_plannings pass failed:', e)
+    }
+  }
+
   return order
 }
 
