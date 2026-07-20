@@ -41,8 +41,8 @@ Règles :
     steps: [
       { id: '1784532402923', type: 'instruction', title: 'Identifier la commande return_order',  description: 'Demande de quelle commande de retour il s\'agit' },
       { id: '1',             type: 'action',      title: 'Récupérer les données de la commande', description: 'Récupère les détails complets de la commande depuis Booqable.',                   booqable_action: 'fetch_order' },
-      { id: '2',             type: 'action',      title: 'Changer la date de retour',            description: 'Dans Booqable : change la date de retour de la commande d\'origine par celle du jour' },
-      { id: '3',             type: 'action',      title: 'Retourner le matériel',                description: 'Dans Booqable : retourne tous les articles de la commande'                        },
+      { id: '2',             type: 'action',      title: 'Changer la date de retour',            description: 'Dans Booqable : change la date de retour de la commande d\'origine par celle du jour', booqable_action: 'update_return_date' },
+      { id: '3',             type: 'action',      title: 'Retourner le matériel',                description: 'Dans Booqable : retourne tous les articles de la commande',                         booqable_action: 'stop_order' },
       { id: '4',             type: 'action',      title: 'Remplacer le tag',                     description: 'Supprimer R21_OPEN, ajouter R22_WAIVED',                                           booqable_action: 'add_tag',    parameters: { tags_remove: ['R21_OPEN'], tags_add: ['R22_WAIVED'] } },
       { id: '1784532590048', type: 'action',      title: 'Proposer un brouillon d\'email',       description: 'Proposer un email de confirmation au client',                                      booqable_action: 'draft_email', parameters: { template_id: 'retour_ok' } },
       { id: '1784532617339', type: 'action',      title: 'Envoyer l\'email',                     description: 'Envoie l\'email via Booqable après confirmation de l\'opérateur',                  booqable_action: 'send_email' },

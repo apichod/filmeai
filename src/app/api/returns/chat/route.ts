@@ -14,6 +14,8 @@ import {
   getStockItems,
   addSAVLine,
   startSAVOrder,
+  updateOrderReturnDate,
+  stopOrder,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -74,15 +76,20 @@ function buildTools(
     type: 'function',
     function: {
       name: 'add_tag',
-      description: 'Ajoute un ou plusieurs tags à une SAV order Booqable selon le scénario actif.',
+      description: 'Ajoute et/ou supprime des tags sur une commande Booqable selon le scénario actif.',
       parameters: {
         type: 'object',
         properties: {
-          order_id: { type: 'string', description: 'UUID Booqable de la commande de retour — utiliser le champ "id" retourné par create_new_return_order' },
+          order_id: { type: 'string', description: 'UUID Booqable de la commande' },
           tags: {
             type: 'array',
             items: { type: 'string' },
             description: tagHint,
+          },
+          tags_to_remove: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Tags à supprimer de la commande (optionnel)',
           },
         },
         required: ['order_id', 'tags'],
@@ -215,6 +222,34 @@ function buildTools(
   {
     type: 'function',
     function: {
+      name: 'update_return_date',
+      description: 'Change la date de retour (stops_at) d\'une commande Booqable à la date du jour. À appeler avant stop_order pour régulariser une commande rendue en retard.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande d\'origine (champ "id" de fetch_order)' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'stop_order',
+      description: 'Passe la commande de "started" à "stopped" dans Booqable (retour du matériel). À appeler après update_return_date.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande d\'origine (champ "id" de fetch_order)' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'send_email',
       description: 'Envoie l\'email au client. À appeler UNIQUEMENT si l\'opérateur a confirmé l\'envoi.',
       parameters: {
@@ -300,11 +335,21 @@ async function executeTool(
       }
 
       case 'add_tag': {
-        const tagList = Array.isArray(args.tags) ? args.tags.map(String) : [String(args.tags || args.tag || '')]
-        await addTagToOrder(String(args.order_id), tagList)
-        // Pickup automatique après ajout des tags (toutes les lignes sont déjà ajoutées à ce stade)
-        await startSAVOrder(String(args.order_id))
-        return { result: `✓ Tags ajoutés : ${tagList.join(', ')}` }
+        const tagList    = Array.isArray(args.tags)           ? args.tags.map(String)           : [String(args.tags || args.tag || '')]
+        const tagRemove  = Array.isArray(args.tags_to_remove) ? args.tags_to_remove.map(String) : []
+        await addTagToOrder(String(args.order_id), tagList, tagRemove.length > 0 ? tagRemove : undefined)
+        const removePart = tagRemove.length > 0 ? ` | supprimés : ${tagRemove.join(', ')}` : ''
+        return { result: `✓ Tags ajoutés : ${tagList.join(', ')}${removePart}` }
+      }
+
+      case 'update_return_date': {
+        await updateOrderReturnDate(String(args.order_id))
+        return { result: `✓ Date de retour mise à jour à aujourd'hui pour la commande ${args.order_id}` }
+      }
+
+      case 'stop_order': {
+        await stopOrder(String(args.order_id))
+        return { result: `✓ Commande ${args.order_id} passée en "stopped" (matériel retourné)` }
       }
 
       case 'add_sav_comment': {

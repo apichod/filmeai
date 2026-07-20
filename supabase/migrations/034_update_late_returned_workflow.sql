@@ -25,13 +25,15 @@ SET
       "id": "2",
       "type": "action",
       "title": "Changer la date de retour",
-      "description": "Dans Booqable : change la date de retour de la commande d''origine par celle du jour"
+      "description": "Dans Booqable : change la date de retour de la commande d''origine par celle du jour",
+      "booqable_action": "update_return_date"
     },
     {
       "id": "3",
       "type": "action",
       "title": "Retourner le matériel",
-      "description": "Dans Booqable : retourne tous les articles de la commande"
+      "description": "Dans Booqable : retourne tous les articles de la commande",
+      "booqable_action": "stop_order"
     },
     {
       "id": "4",

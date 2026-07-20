@@ -428,8 +428,13 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
  * Ajoute un tag à une order existante (conserve les tags existants).
  * GET retourne `tags`, PUT accepte `tag_list` (array).
  */
-export async function addTagToOrder(orderId: string, tags: string | string[]): Promise<void> {
-  const newTags = (Array.isArray(tags) ? tags : [tags]).map(t => t.toLowerCase())
+export async function addTagToOrder(
+  orderId: string,
+  tags: string | string[],
+  tagsToRemove?: string[]
+): Promise<void> {
+  const newTags  = (Array.isArray(tags) ? tags : [tags]).map(t => t.toLowerCase())
+  const toRemove = (tagsToRemove || []).map(t => t.toLowerCase())
 
   const getRes = await fetch(`${BASE}/orders/${orderId}`, {
     headers: headers(),
@@ -441,7 +446,7 @@ export async function addTagToOrder(orderId: string, tags: string | string[]): P
   const existingTags = getData.order?.tags || []
 
   const merged = Array.from(new Set([...existingTags, ...newTags]))
-  if (merged.length === existingTags.length && newTags.every(t => existingTags.includes(t))) return  // tous déjà présents
+    .filter(t => !toRemove.includes(t))
 
   // v4 PUT
   const res = await fetch(`${BASE4}/orders/${orderId}`, {
@@ -875,4 +880,51 @@ export async function addSAVLine(params: SAVLineParams): Promise<{ startError?: 
     throw new Error(`Booqable addSAVLine custom error ${res.status}: ${text}`)
   }
   return {}
+}
+
+// ── updateOrderReturnDate ─────────────────────────────────────────────────────
+// Change la date de retour (stops_at) d'une commande à aujourd'hui.
+export async function updateOrderReturnDate(orderId: string): Promise<void> {
+  const res = await fetch(`${BASE4}/orders/${orderId}`, {
+    method: 'PUT',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        id:   orderId,
+        type: 'orders',
+        attributes: { stops_at: bqDate(today()) },
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable updateReturnDate error ${res.status}: ${text}`)
+  }
+}
+
+// ── stopOrder ────────────────────────────────────────────────────────────────
+// Passe la commande de "started" à "stopped" (retour du matériel).
+export async function stopOrder(orderId: string): Promise<void> {
+  const BASE_BOOMERANG = `${process.env.BOOQABLE_BASE_URL || ''}/api/boomerang`
+  const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'order_transitions',
+        attributes: {
+          order_id: orderId,
+          transition_from: 'started',
+          transition_to:   'stopped',
+          confirm_shortage: false,
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable stopOrder error ${res.status}: ${text}`)
+  }
 }
