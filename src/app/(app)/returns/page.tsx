@@ -204,12 +204,12 @@ function toolSummary(name: string, result: string | undefined): string | null {
 // ── Scénarios ──────────────────────────────────────────────────────────────────
 
 type Scenario =
-  | 'r00'
-  | 'r11_21' | 'r11_22' | 'r11_23' | 'r11_24'
-  | 'r12_21' | 'r12_22' | 'r12_23' | 'r12_24'
-  | 'r13_21' | 'r13_22' | 'r13_23' | 'r13_24'
-  | 'r14_21' | 'r14_22' | 'r14_23' | 'r14_24'
-  | 'u01'
+  | 'r00_return_ok'
+  | 'r11_21_late_open'  | 'r11_22_late_waived'    | 'r11_23_late_deposit'    | 'r11_24_late_billed'
+  | 'r12_21_missing_open' | 'r12_22_missing_waived' | 'r12_23_missing_deposit' | 'r12_24_missing_billed'
+  | 'r13_21_theft_open'  | 'r13_22_theft_waived'   | 'r13_23_theft_deposit'   | 'r13_24_theft_billed'
+  | 'r14_21_damage_open' | 'r14_22_damage_waived'  | 'r14_23_damage_deposit'  | 'r14_24_damage_billed'
+  | 'u01_split_return_order'
   // legacy
   | 'late' | 'late_returned' | 'late_partial' | 'missing' | 'damage' | 'split_v2'
 
@@ -229,28 +229,28 @@ const LEVEL1_ITEMS: { key: Level1Key; label: string }[] = [
 
 const LEVEL2_MAP: Record<Exclude<Level1Key, 'split'>, SubOption[]> = {
   retard: [
-    { label: 'Créer un dossier de retard',       scenario: 'r11_21', welcome: 'Tâche : Créer un dossier de retard (R11-21).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Régulariser et gracier',            scenario: 'r11_22', welcome: 'Tâche : Régulariser un retard et gracier (R11-22).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Régulariser et débiter la caution', scenario: 'r11_23', welcome: 'Tâche : Régulariser un retard et débiter la caution (R11-23).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Régulariser et facturer',           scenario: 'r11_24', welcome: 'Tâche : Régulariser un retard et facturer le client (R11-24).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Créer un dossier de retard',       scenario: 'r11_21_late_open',    welcome: 'Tâche : Créer un dossier de retard (R11-21).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Régulariser et gracier',            scenario: 'r11_22_late_waived',  welcome: 'Tâche : Régulariser un retard et gracier (R11-22).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Régulariser et débiter la caution', scenario: 'r11_23_late_deposit', welcome: 'Tâche : Régulariser un retard et débiter la caution (R11-23).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Régulariser et facturer',           scenario: 'r11_24_late_billed',  welcome: 'Tâche : Régulariser un retard et facturer le client (R11-24).\nDonnez-moi le numéro de la commande d\'origine.' },
   ],
   perte: [
-    { label: 'Créer un dossier de perte',     scenario: 'r12_21', welcome: 'Tâche : Créer un dossier de perte (R12-21).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer et gracier',           scenario: 'r12_22', welcome: 'Tâche : Clôturer un dossier de perte et gracier (R12-22).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par débit de caution', scenario: 'r12_23', welcome: 'Tâche : Clôturer un dossier de perte par débit de caution (R12-23).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par facturation',      scenario: 'r12_24', welcome: 'Tâche : Clôturer un dossier de perte par facturation (R12-24).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Créer un dossier de perte',     scenario: 'r12_21_missing_open',    welcome: 'Tâche : Créer un dossier de perte (R12-21).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer et gracier',           scenario: 'r12_22_missing_waived',  welcome: 'Tâche : Clôturer un dossier de perte et gracier (R12-22).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par débit de caution', scenario: 'r12_23_missing_deposit', welcome: 'Tâche : Clôturer un dossier de perte par débit de caution (R12-23).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par facturation',      scenario: 'r12_24_missing_billed',  welcome: 'Tâche : Clôturer un dossier de perte par facturation (R12-24).\nDonnez-moi le numéro de la commande d\'origine.' },
   ],
   vol: [
-    { label: 'Créer un dossier de vol',       scenario: 'r13_21', welcome: 'Tâche : Créer un dossier de vol (R13-21).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer et gracier',           scenario: 'r13_22', welcome: 'Tâche : Clôturer un dossier de vol et gracier (R13-22).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par débit de caution', scenario: 'r13_23', welcome: 'Tâche : Clôturer un dossier de vol par débit de caution (R13-23).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par facturation',      scenario: 'r13_24', welcome: 'Tâche : Clôturer un dossier de vol par facturation (R13-24).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Créer un dossier de vol',       scenario: 'r13_21_theft_open',    welcome: 'Tâche : Créer un dossier de vol (R13-21).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer et gracier',           scenario: 'r13_22_theft_waived',  welcome: 'Tâche : Clôturer un dossier de vol et gracier (R13-22).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par débit de caution', scenario: 'r13_23_theft_deposit', welcome: 'Tâche : Clôturer un dossier de vol par débit de caution (R13-23).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par facturation',      scenario: 'r13_24_theft_billed',  welcome: 'Tâche : Clôturer un dossier de vol par facturation (R13-24).\nDonnez-moi le numéro de la commande d\'origine.' },
   ],
   dommage: [
-    { label: 'Créer un dossier de dommage',   scenario: 'r14_21', welcome: 'Tâche : Créer un dossier de dommage (R14-21).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer et gracier',           scenario: 'r14_22', welcome: 'Tâche : Clôturer un dossier de dommage et gracier (R14-22).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par débit de caution', scenario: 'r14_23', welcome: 'Tâche : Clôturer un dossier de dommage par débit de caution (R14-23).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par facturation',      scenario: 'r14_24', welcome: 'Tâche : Clôturer un dossier de dommage par facturation (R14-24).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Créer un dossier de dommage',   scenario: 'r14_21_damage_open',    welcome: 'Tâche : Créer un dossier de dommage (R14-21).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer et gracier',           scenario: 'r14_22_damage_waived',  welcome: 'Tâche : Clôturer un dossier de dommage et gracier (R14-22).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par débit de caution', scenario: 'r14_23_damage_deposit', welcome: 'Tâche : Clôturer un dossier de dommage par débit de caution (R14-23).\nDonnez-moi le numéro de la commande d\'origine.' },
+    { label: 'Clôturer par facturation',      scenario: 'r14_24_damage_billed',  welcome: 'Tâche : Clôturer un dossier de dommage par facturation (R14-24).\nDonnez-moi le numéro de la commande d\'origine.' },
   ],
 }
 
@@ -577,7 +577,7 @@ function ChatPanel() {
   function selectLevel1(key: Level1Key) {
     if (key === 'split') {
       selectSubOption(
-        { label: 'Séparer 2 problèmes', scenario: 'u01', welcome: 'Tâche : Séparer 2 problèmes sur la même commande (U01).\nDonnez-moi le numéro de la commande d\'origine.' },
+        { label: 'Séparer 2 problèmes', scenario: 'u01_split_return_order', welcome: 'Tâche : Séparer 2 problèmes sur la même commande (U01).\nDonnez-moi le numéro de la commande d\'origine.' },
         'Séparer 2 problèmes',
       )
       return
