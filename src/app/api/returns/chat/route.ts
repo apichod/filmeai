@@ -955,7 +955,7 @@ A1. Récupère l'original_order avec fetch_order, puis affiche les articles :
     1x Caméra Sony FX3
     2x Carte CFexpress Type A
     ..."
-    Format OBLIGATOIRE : une ligne par article, "{quantité}x {nom}" — pas de numérotation, pas de parenthèses.
+    Format OBLIGATOIRE : une ligne par article, "{quantité}x {nom} (ID-X)" si stock_item_label est présent, sinon "{quantité}x {nom}" — pas de numérotation, pas de parenthèses supplémentaires.
     Puis : "Quel(s) article(s) est/sont [endommagé(s) / manquant(s)] ?"
     → Si déjà mentionné par l'utilisateur, utilise directement cette info.
 
