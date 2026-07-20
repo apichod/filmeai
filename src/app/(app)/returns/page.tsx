@@ -114,8 +114,30 @@ function toolLabel(name: string) {
 function toolStatus(result: string | undefined): 'pending' | 'success' | 'error' {
   if (!result) return 'pending'
   const lower = result.toLowerCase()
+  // Erreur texte
   if (lower.startsWith('erreur') || lower.startsWith('impossible') || lower.startsWith('échec')) return 'error'
+  // Erreur JSON { error: "..." } ou { message: "...error..." }
+  try {
+    const parsed = JSON.parse(result) as Record<string, unknown>
+    if (parsed.error || (typeof parsed.message === 'string' && parsed.message.toLowerCase().includes('error'))) return 'error'
+  } catch { /* pas du JSON */ }
+  // Erreur Booqable dans le texte
+  if (lower.includes('shortage') || lower.includes('booqable error') || lower.includes('failed')) return 'error'
   return 'success'
+}
+
+function toolErrorMessage(result: string | undefined): string | null {
+  if (!result) return null
+  try {
+    const parsed = JSON.parse(result) as Record<string, unknown>
+    if (typeof parsed.error === 'string') return parsed.error
+    if (typeof parsed.message === 'string') return parsed.message
+  } catch { /* pas JSON */ }
+  const lower = result.toLowerCase()
+  if (lower.includes('shortage')) return result.replace(/^.*?(shortage[^\n.]*)/i, '$1').slice(0, 120)
+  if (lower.includes('booqable error')) return result.slice(0, 120)
+  if (lower.startsWith('erreur') || lower.startsWith('impossible') || lower.startsWith('échec')) return result.slice(0, 120)
+  return null
 }
 
 function toolSummary(name: string, result: string | undefined): string | null {
@@ -682,7 +704,10 @@ function ChatPanel() {
                           )}
                           <span className={status === 'error' ? 'text-red-400' : 'text-gray-500'}>{toolLabel(tc.name)}</span>
                         </div>
-                        {summary && (
+                        {status === 'error' && toolErrorMessage(tc.result) && (
+                          <p className="mt-0.5 pl-5 text-red-400 text-xs">{toolErrorMessage(tc.result)}</p>
+                        )}
+                        {status !== 'error' && summary && (
                           <p className="mt-0.5 pl-5 text-gray-400 truncate">{summary}</p>
                         )}
                       </div>

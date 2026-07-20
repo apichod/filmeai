@@ -662,8 +662,8 @@ async function executeTool(
             }
             return score(cur) >= score(prev) ? cur : prev
           })
-          const email = renderEmailFromRow(best, vars)
-          return { result: JSON.stringify({ subject: email.subject, body: email.body, to: email.to || resolvedEmail || '' }) }
+          // Garder les {{variables}} brutes — Booqable les remplace à l'envoi
+          return { result: JSON.stringify({ subject: best.subject, body: best.body, to: resolvedEmail || '' }) }
         }
 
         // Fallback : templates hardcodés (rétrocompatibilité)
