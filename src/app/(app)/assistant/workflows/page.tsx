@@ -19,6 +19,8 @@ const BOOQABLE_TOOLS = [
   { value: 'stop_order',          label: 'stop_order — retourner le matériel (started → stopped)' },
   { value: 'add_tag',             label: 'add_tag — ajouter / supprimer des tags' },
   { value: 'add_sav_comment',     label: 'add_sav_comment — commentaire SAV' },
+  { value: 'duplicate_order',     label: 'duplicate_order — dupliquer la commande' },
+  { value: 'choose_problem_tag',  label: 'choose_problem_tag — afficher boutons choix de tag (retard/perte/vol/dommage)' },
   { value: 'draft_email',         label: 'draft_email — préparer l\'email client' },
   { value: 'send_email',          label: 'send_email — envoyer l\'email' },
   { value: 'log_case',            label: 'log_case — logger le cas FilmeAI' },
@@ -47,6 +49,8 @@ const PARAMETERS_HINT: Record<string, string> = {
   update_return_date:  '{}',
   stop_order:          '{}',
   add_tag:             '{"tags_add": ["R22_WAIVED"], "tags_remove": ["R21_OPEN"]}',
+  duplicate_order:     '{}',
+  choose_problem_tag:  '{}',
   draft_email:         '{"template_id": "retour_ok"}',
   log_case:            '{"problem_type": "manquant"}',
 }

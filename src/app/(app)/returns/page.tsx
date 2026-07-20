@@ -9,6 +9,7 @@ type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'tool_call'; name: string }
   | { type: 'tool_result'; name: string; result: string }
+  | { type: 'choices'; order_id: string; items: Array<{ label: string; tag: string }> }
   | { type: 'done'; caseId: string | null }
   | { type: 'error'; message: string }
 
@@ -249,6 +250,7 @@ function ChatPanel() {
   ])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [pendingChoices, setPendingChoices] = useState<Array<{ label: string; tag: string }> | null>(null)
   const [caseId, setCaseId] = useState<string | null>(null)
   const [scenario, setScenario] = useState<Scenario | null>(null)
   // Données client extraites du dernier fetch_order — passées à chaque requête pour éviter les placeholders IA
@@ -347,6 +349,9 @@ function ChatPanel() {
                   }),
                 }
               }))
+            }
+            if (event.type === 'choices') {
+              setPendingChoices(event.items)
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -637,6 +642,21 @@ function ChatPanel() {
       </div>
 
       <div className="p-3 border-t border-gray-100 space-y-2">
+        {/* Choix de tag problème (choose_problem_tag) */}
+        {pendingChoices && (
+          <div className="flex flex-wrap gap-1.5 px-1">
+            {pendingChoices.map(c => (
+              <button
+                key={c.tag}
+                onClick={() => { setPendingChoices(null); quickSend(c.tag) }}
+                disabled={sending}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 bg-white hover:bg-gray-900 hover:text-white hover:border-gray-900 text-gray-800 transition-all disabled:opacity-40"
+              >
+                {c.label} <span className="font-mono text-gray-400 text-[10px] ml-1">{c.tag}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {/* Quick replies */}
         {quickReplies.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-1">

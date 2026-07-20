@@ -25,15 +25,16 @@ VALUES (
     },
     {
       "id": "3",
-      "type": "instruction",
-      "title": "Dupliquer manuellement dans Booqable",
-      "description": "Dans Booqable : dupliquer parent_return_order pour créer child_return_order. Attendre confirmation de l''opérateur."
+      "type": "action",
+      "title": "Dupliquer la commande Parent",
+      "description": "Duplique parent_return_order via Booqable API pour créer child_return_order. Mémorise new_order_id et new_order_number.",
+      "booqable_action": "duplicate_order"
     },
     {
       "id": "4",
       "type": "question",
       "title": "Numéro de la commande Child",
-      "description": "Demande le numéro de la commande créée par duplication (child_return_order)"
+      "description": "Confirme le numéro de la commande créée par duplication (child_return_order). Si duplicate_order a réussi, proposer new_order_number, sinon demander à l''opérateur."
     },
     {
       "id": "5",
@@ -78,12 +79,9 @@ VALUES (
     {
       "id": "11",
       "type": "action",
-      "title": "Ajouter le tag du problème (Parent)",
-      "description": "Selon le problème : retard → r11_late | perte → r12_missing | vol → r13_theft | dommage → r14_damage",
-      "booqable_action": "add_tag",
-      "parameters": {
-        "tags_add": ["r11_late OU r12_missing OU r13_theft OU r14_damage"]
-      }
+      "title": "Choisir le tag du problème (Parent)",
+      "description": "Affiche les 4 boutons de choix : Retard / Perte / Vol / Dommage. L''opérateur clique pour sélectionner le tag.",
+      "booqable_action": "choose_problem_tag"
     },
     {
       "id": "12",
@@ -152,12 +150,9 @@ VALUES (
     {
       "id": "21",
       "type": "action",
-      "title": "Ajouter le tag du problème (Child)",
-      "description": "Selon le problème : retard → r11_late | perte → r12_missing | vol → r13_theft | dommage → r14_damage",
-      "booqable_action": "add_tag",
-      "parameters": {
-        "tags_add": ["r11_late OU r12_missing OU r13_theft OU r14_damage"]
-      }
+      "title": "Choisir le tag du problème (Child)",
+      "description": "Affiche les 4 boutons de choix : Retard / Perte / Vol / Dommage. L''opérateur clique pour sélectionner le tag.",
+      "booqable_action": "choose_problem_tag"
     },
     {
       "id": "22",
