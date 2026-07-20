@@ -579,14 +579,51 @@ export default function WorkflowsPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Slug <span className="text-gray-400 font-normal">(doit correspondre au scénario chat : late · late_returned · late_partial · missing · damage)</span>
+                  Slug <span className="text-gray-400 font-normal">(doit correspondre au scénario sélectionné dans le chat)</span>
                 </label>
                 <input
                   value={editSlug}
                   onChange={e => { setEditSlug(e.target.value); setEditing(true) }}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gray-300"
-                  placeholder="ex: late"
+                  placeholder="ex: r11_21_late_open"
                 />
+                <select
+                  value={editSlug}
+                  onChange={e => { if (e.target.value) { setEditSlug(e.target.value); setEditing(true) } }}
+                  className="mt-1.5 w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+                >
+                  <option value="">— choisir un slug prédéfini —</option>
+                  <optgroup label="R00 – Retour">
+                    <option value="r00_return_ok">r00_return_ok</option>
+                  </optgroup>
+                  <optgroup label="R11 – Retard">
+                    <option value="r11_21_late_open">r11_21_late_open</option>
+                    <option value="r11_22_late_waived">r11_22_late_waived</option>
+                    <option value="r11_23_late_deposit">r11_23_late_deposit</option>
+                    <option value="r11_24_late_billed">r11_24_late_billed</option>
+                  </optgroup>
+                  <optgroup label="R12 – Perte">
+                    <option value="r12_21_missing_open">r12_21_missing_open</option>
+                    <option value="r12_22_missing_waived">r12_22_missing_waived</option>
+                    <option value="r12_23_missing_deposit">r12_23_missing_deposit</option>
+                    <option value="r12_24_missing_billed">r12_24_missing_billed</option>
+                  </optgroup>
+                  <optgroup label="R13 – Vol">
+                    <option value="r13_21_theft_open">r13_21_theft_open</option>
+                    <option value="r13_22_theft_waived">r13_22_theft_waived</option>
+                    <option value="r13_23_theft_deposit">r13_23_theft_deposit</option>
+                    <option value="r13_24_theft_billed">r13_24_theft_billed</option>
+                  </optgroup>
+                  <optgroup label="R14 – Dommage">
+                    <option value="r14_21_damage_open">r14_21_damage_open</option>
+                    <option value="r14_22_damage_waived">r14_22_damage_waived</option>
+                    <option value="r14_23_damage_deposit">r14_23_damage_deposit</option>
+                    <option value="r14_24_damage_billed">r14_24_damage_billed</option>
+                  </optgroup>
+                  <optgroup label="U – Utilitaires">
+                    <option value="u01_split_return_order">u01_split_return_order</option>
+                  </optgroup>
+                </select>
               </div>
             </div>
 
