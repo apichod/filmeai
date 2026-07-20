@@ -67,6 +67,17 @@ function ParametersEditor({
   const [raw, setRaw] = useState(value ? JSON.stringify(value, null, 2) : '')
   const [error, setError] = useState(false)
 
+  // Resynchronise quand la valeur externe change (ex: changement de workflow)
+  const prevValueRef = useRef<string>('')
+  useEffect(() => {
+    const serialized = value !== undefined ? JSON.stringify(value) : ''
+    if (serialized !== prevValueRef.current) {
+      prevValueRef.current = serialized
+      setRaw(value ? JSON.stringify(value, null, 2) : '')
+      setError(false)
+    }
+  }, [value])
+
   function handleChange(text: string) {
     setRaw(text)
     if (text.trim() === '') {
