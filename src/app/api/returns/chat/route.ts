@@ -492,7 +492,9 @@ async function executeTool(
       }
 
       case 'clear_tags': {
-        await clearTags(String(args.order_id))
+        const clearOrderId = await resolveOrderId(String(args.order_id))
+        if (!clearOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
+        await clearTags(clearOrderId)
         return { result: `✓ Tous les tags supprimés sur la commande ${args.order_id}` }
       }
 
@@ -504,7 +506,9 @@ async function executeTool(
       }
 
       case 'cancel_order': {
-        await cancelOrder(String(args.order_id))
+        const cancelOrderId = await resolveOrderId(String(args.order_id))
+        if (!cancelOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
+        await cancelOrder(cancelOrderId)
         return { result: `✓ Commande ${args.order_id} annulée` }
       }
 
@@ -514,12 +518,16 @@ async function executeTool(
       }
 
       case 'reserve_order': {
-        await reserveOrder(String(args.order_id))
+        const reserveOrderId = await resolveOrderId(String(args.order_id))
+        if (!reserveOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
+        await reserveOrder(reserveOrderId)
         return { result: `✓ Commande ${args.order_id} réservée (concept → reserved)` }
       }
 
       case 'start_order': {
-        const { error } = await startSAVOrder(String(args.order_id))
+        const startOrderId = await resolveOrderId(String(args.order_id))
+        if (!startOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
+        const { error } = await startSAVOrder(startOrderId)
         if (error) return { result: `⚠️ start_order non bloquant : ${error}` }
         return { result: `✓ Commande ${args.order_id} démarrée (started)` }
       }
@@ -539,8 +547,10 @@ async function executeTool(
       }
 
       case 'add_sav_comment': {
+        const savOrderId = await resolveOrderId(String(args.order_id))
+        if (!savOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
         await addSAVComment(
-          String(args.order_id),
+          savOrderId,
           String(args.origin_order_number),
           String(args.comment)
         )
