@@ -580,19 +580,24 @@ function ChatPanel() {
   // ── Sélecteur niveau 1 ────────────────────────────────────────────────────
   if (!scenario && !level1) return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex items-center px-5 py-3 border-b border-gray-100">
-        <h2 className="text-sm font-semibold text-gray-900">Comment puis-je t&apos;aider aujourd&apos;hui ?</h2>
-      </div>
-      <div className="flex-1 p-5 flex flex-col gap-2 overflow-y-auto justify-center">
-        {LEVEL1_ITEMS.map(item => (
-          <button
-            key={item.key}
-            onClick={() => selectLevel1(item.key)}
-            className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-900 hover:bg-gray-900 hover:text-white transition-all group"
-          >
-            <span className="text-sm font-medium">{item.label}</span>
-          </button>
-        ))}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 gap-6">
+        <div className="w-14 h-14 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </div>
+        <p className="text-base font-bold text-gray-900 text-center">Comment puis-je t&apos;aider&nbsp;?</p>
+        <div className="flex flex-wrap gap-2 justify-center">
+          {LEVEL1_ITEMS.map(item => (
+            <button
+              key={item.key}
+              onClick={() => selectLevel1(item.key)}
+              className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -603,24 +608,30 @@ function ChatPanel() {
     const subOptions = LEVEL2_MAP[level1 as Exclude<Level1Key, 'split'>]
     return (
       <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100">
-          <button onClick={() => setLevel1(null)} className="text-gray-400 hover:text-gray-700 transition-colors text-xs">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 gap-6">
+          <div className="w-14 h-14 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <div className="text-center">
+            <p className="text-base font-bold text-gray-900">Quelle tâche veux-tu exécuter&nbsp;?</p>
+            <p className="text-xs text-gray-400 mt-1">{l1Label}</p>
+          </div>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {subOptions.map(opt => (
+              <button
+                key={opt.label}
+                onClick={() => selectSubOption(opt, `${l1Label} — ${opt.label}`)}
+                className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setLevel1(null)} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
             ← Retour
           </button>
-          <span className="text-xs text-gray-300">|</span>
-          <h2 className="text-sm font-semibold text-gray-900">Quelle tâche veux-tu exécuter ?</h2>
-          <span className="ml-auto text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{l1Label}</span>
-        </div>
-        <div className="flex-1 p-5 flex flex-col gap-2 overflow-y-auto justify-center">
-          {subOptions.map(opt => (
-            <button
-              key={opt.label}
-              onClick={() => selectSubOption(opt, `${l1Label} — ${opt.label}`)}
-              className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-900 hover:bg-gray-900 hover:text-white transition-all"
-            >
-              <span className="text-sm font-medium">{opt.label}</span>
-            </button>
-          ))}
         </div>
       </div>
     )
