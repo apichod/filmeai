@@ -1041,7 +1041,15 @@ RÈGLES IDs — JAMAIS LES MÉLANGER
 - fetch_order → "id" (UUID) = id de l'original_order / "number" pour affichage humain.
 - create_new_return_order → "id" (UUID) = id de la return_order, à utiliser pour add_tag, add_sav_comment, add_new_product_line.
 - customer_id pour create_new_return_order = champ "customer_id" de fetch_order.
-- Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.`
+- Pour draft_email : customer_name = champ "customer_name" de fetch_order (ex: "CINELOC"). customer_email = champ "customer_email" de fetch_order. Ne jamais mettre "Nom du Client" ou un placeholder — utiliser la valeur exacte retournée par fetch_order.
+
+RÈGLE ABSOLUE — EMAIL DRAFT :
+Quand tu affiches le brouillon d'email retourné par draft_email, tu dois copier-coller le subject et le body EXACTEMENT tels quels, sans modifier un seul caractère.
+INTERDIT : remplacer, compléter, interpréter ou substituer les variables {{...}} (ex: {{customer.name}}, {{originOrderNumber}}, {{order.starts_at}}).
+Ces variables sont des placeholders Booqable : Booqable les remplace automatiquement à l'envoi. Si tu les remplaces toi-même, l'email envoyé sera cassé.
+Exemple CORRECT : "Bonjour {{customer.name}},"
+Exemple INTERDIT : "Bonjour CINELOC," ou "Bonjour [Nom du client],"
+Affiche les {{...}} littéralement, toujours.`
 
   const scenarioSection = buildScenarioPrompt(scenario)
 

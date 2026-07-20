@@ -1134,27 +1134,39 @@ export async function updateOrderReturnDate(orderId: string): Promise<void> {
 }
 
 // ── stopOrder ────────────────────────────────────────────────────────────────
-// Passe la commande de "started" à "stopped" (retour du matériel).
+// Passe la commande en "stopped" (retour du matériel).
+// Essaie started→stopped, puis reserved→stopped si la 1ère échoue.
 export async function stopOrder(orderId: string): Promise<void> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
-  const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({
-      data: {
-        type: 'order_transitions',
-        attributes: {
-          order_id: orderId,
-          transition_from: 'started',
-          transition_to:   'stopped',
-          confirm_shortage: false,
+
+  const tryTransition = async (from: string): Promise<{ ok: boolean; status: number; text: string }> => {
+    const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          type: 'order_transitions',
+          attributes: {
+            order_id:         orderId,
+            transition_from:  from,
+            transition_to:    'stopped',
+            confirm_shortage: false,
+          },
         },
-      },
-    }),
-    signal: AbortSignal.timeout(10000),
-  })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Booqable stopOrder error ${res.status}: ${text}`)
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    const text = res.ok ? '' : await res.text()
+    return { ok: res.ok, status: res.status, text }
   }
+
+  // 1. started → stopped
+  const r1 = await tryTransition('started')
+  if (r1.ok) return
+
+  // 2. reserved → stopped (fallback si pas encore démarré)
+  const r2 = await tryTransition('reserved')
+  if (r2.ok) return
+
+  throw new Error(`Booqable stopOrder error ${r2.status}: ${r2.text}`)
 }
