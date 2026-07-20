@@ -33,9 +33,10 @@ export type BooqableOrderLine = {
   product_id: string
   product_name: string
   quantity: number
-  product_group_id?: string   // UUID Booqable du product_group (disponible via boomerang)
-  stock_item_id?: string      // UUID de l'exemplaire assigné (disponible via boomerang stock_item_plannings)
+  product_group_id?: string      // UUID Booqable du product_group (disponible via boomerang)
+  stock_item_id?: string         // UUID de l'exemplaire assigné
   stock_item_identifier?: string // ex: "camera-sony-fx3-nue-id-2"
+  planning_id?: string           // UUID du planning — pour matching stock_item_plannings
 }
 
 export type BooqableOrder = {
@@ -211,8 +212,9 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
       const stockItemRel = rels?.stock_item?.data
       const stockItemId  = stockItemRel?.id || undefined
       const stockItemIdentifier = stockItemId ? stockItemMap.get(stockItemId) : undefined
+      const planningId = String(attrs.planning_id || '') || undefined
 
-      return { id: r.id, product_id: itemRelId, product_name: productName, quantity: displayQty, product_group_id: productGroupId, stock_item_id: stockItemId, stock_item_identifier: stockItemIdentifier }
+      return { id: r.id, product_id: itemRelId, product_name: productName, quantity: displayQty, product_group_id: productGroupId, stock_item_id: stockItemId, stock_item_identifier: stockItemIdentifier, planning_id: planningId }
     }
 
     const lines: BooqableOrderLine[] = []
@@ -230,63 +232,58 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     console.warn('fetchOrderByNumber: boomerang enrichment failed, lines may be empty:', e)
   }
 
-  // ── Passe 3 : stock_item_identifier via stock_item_plannings ─────────────────
-  // Les stock items ne sont pas liés directement aux lines — ils passent par les plannings.
-  // On enrichit les lignes qui ont un product_group_id mais pas encore de stock_item_identifier.
+  // ── Passe 3 : stock_item_identifier via /api/4/stock_item_plannings ──────────
+  // planning_id et stock_item_id sont des ATTRIBUTS directs (pas des relationships).
+  // On match en priorité par planning_id (exact), sinon par product_group_id (fallback).
   if ((order.lines || []).some(l => l.product_group_id && !l.stock_item_identifier)) {
     try {
-      const BASE_BOOM3 = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
-      type SIPNode = {
-        id: string; type: string
-        attributes: Record<string, unknown>
-        relationships?: Record<string, { data?: { id: string; type: string } | null }>
-      }
+      const BASE4 = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/4`
+      type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
       const sipRes = await fetch(
-        `${BASE_BOOM3}/stock_item_plannings?filter[order_id]=${order.id}&include=stock_item,planning&page[size]=200`,
+        `${BASE4}/stock_item_plannings?filter[order_id]=${order.id}&include=stock_item&page[size]=200`,
         { headers: headers(), signal: AbortSignal.timeout(10000) }
       )
       if (sipRes.ok) {
         const sipData = await sipRes.json() as { data?: SIPNode[]; included?: SIPNode[] }
 
-        // Index included resources by id
-        const incMap = new Map<string, SIPNode>()
-        for (const r of sipData.included || []) incMap.set(r.id, r)
-
-        // Build: product_group_id → [stock_item_identifier, ...]
-        const pgToIdents = new Map<string, string[]>()
-        for (const sip of sipData.data || []) {
-          const planningId   = sip.relationships?.planning?.data?.id
-          const stockItemId  = sip.relationships?.stock_item?.data?.id
-          if (!planningId || !stockItemId) continue
-          const planning  = incMap.get(planningId)
-          const stockItem = incMap.get(stockItemId)
-          if (!planning || !stockItem) continue
-          const pgId = String(planning.attributes.product_group_id || '')
-          const ident = String(stockItem.attributes.identifier || '')
-          if (!pgId || !ident) continue
-          if (!pgToIdents.has(pgId)) pgToIdents.set(pgId, [])
-          if (!pgToIdents.get(pgId)!.includes(ident)) pgToIdents.get(pgId)!.push(ident)
+        // Index stock_items from included: id → node
+        const siMap = new Map<string, SIPNode>()
+        for (const r of sipData.included || []) {
+          if (r.type === 'stock_items') siMap.set(r.id, r)
         }
 
-        // Enrich lines
+        // Build two maps from sips (using attributes, not relationships):
+        //   planning_id → { ident, siId }   (exact match)
+        //   product_group_id → [{ ident, siId }]  (fallback)
+        type SIInfo = { ident: string; siId: string }
+        const planToSI = new Map<string, SIInfo>()
+        const pgToSI   = new Map<string, SIInfo[]>()
+
+        for (const sip of sipData.data || []) {
+          const planId = String(sip.attributes.planning_id   || '')
+          const siId   = String(sip.attributes.stock_item_id || '')
+          if (!siId) continue
+          const si = siMap.get(siId)
+          if (!si) continue
+          const ident = String(si.attributes.identifier || '')
+          const pgId  = String(si.attributes.product_group_id || '')
+          if (planId && !planToSI.has(planId)) planToSI.set(planId, { ident, siId })
+          if (pgId) {
+            const list = pgToSI.get(pgId) || []
+            if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+            pgToSI.set(pgId, list)
+          }
+        }
+
+        // Enrich lines — planning_id match first, then product_group_id fallback
         for (const line of order.lines || []) {
-          if (!line.stock_item_identifier && line.product_group_id) {
-            const idents = pgToIdents.get(line.product_group_id)
-            if (idents && idents.length > 0) {
-              line.stock_item_identifier = idents[0]
-              if (!line.stock_item_id) {
-                // Retrouver l'UUID du stock_item depuis l'identifier
-                for (const sip of sipData.data || []) {
-                  const siId = sip.relationships?.stock_item?.data?.id
-                  if (!siId) continue
-                  const si = incMap.get(siId)
-                  if (si && String(si.attributes.identifier || '') === idents[0]) {
-                    line.stock_item_id = siId
-                    break
-                  }
-                }
-              }
-            }
+          if (line.stock_item_identifier) continue
+          let info: SIInfo | undefined
+          if (line.planning_id) info = planToSI.get(line.planning_id)
+          if (!info && line.product_group_id) info = pgToSI.get(line.product_group_id)?.[0]
+          if (info && info.ident) {
+            line.stock_item_identifier = info.ident
+            if (!line.stock_item_id) line.stock_item_id = info.siId
           }
         }
       }
