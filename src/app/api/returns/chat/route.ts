@@ -385,6 +385,16 @@ function buildTools(
 }
 
 
+// ── Résolution UUID : accepte un UUID ou un numéro de commande ─────────────────
+// Certains outils sont appelés avant fetch_order et reçoivent un numéro de commande.
+// Cette fonction retourne l'UUID Booqable dans tous les cas.
+async function resolveOrderId(orderIdOrNumber: string): Promise<string | null> {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (UUID_RE.test(orderIdOrNumber)) return orderIdOrNumber
+  const order = await fetchOrderByNumber(orderIdOrNumber)
+  return order?.id ?? null
+}
+
 // ── Exécution des outils ──────────────────────────────────────────────────────
 
 type ToolContext = {
@@ -517,12 +527,16 @@ async function executeTool(
       }
 
       case 'update_return_date': {
-        await updateOrderReturnDate(String(args.order_id))
+        const resolvedId = await resolveOrderId(String(args.order_id))
+        if (!resolvedId) return { result: `Erreur : commande "${args.order_id}" introuvable dans Booqable` }
+        await updateOrderReturnDate(resolvedId)
         return { result: `✓ Date de retour mise à jour à aujourd'hui pour la commande ${args.order_id}` }
       }
 
       case 'stop_order': {
-        await stopOrder(String(args.order_id))
+        const resolvedId = await resolveOrderId(String(args.order_id))
+        if (!resolvedId) return { result: `Erreur : commande "${args.order_id}" introuvable dans Booqable` }
+        await stopOrder(resolvedId)
         return { result: `✓ Commande ${args.order_id} passée en "stopped" (matériel retourné)` }
       }
 
