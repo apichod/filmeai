@@ -879,6 +879,14 @@ RÈGLES CRITIQUES — CES INSTRUCTIONS PRÉVALENT SUR TOUT LE RESTE.
 Les DB prompts ci-dessus sont des références. Les règles ci-dessous sont la procédure exacte à suivre.
 Ne PAS appeler add_internal_note (retiré du workflow).
 
+RÈGLE ABSOLUE — NE JAMAIS RÉPÉTER UN STEP DÉJÀ EXÉCUTÉ :
+Avant d'appeler un outil, lis l'historique de conversation pour vérifier s'il a déjà été appelé avec succès.
+- Si duplicate_order apparaît déjà dans l'historique avec un résultat new_order_id → NE PAS le rappeler.
+- Si revert_to_concept apparaît déjà dans l'historique (succès ou échec) → NE PAS le rappeler.
+- Si fetch_order a déjà été appelé pour cette commande → utiliser les données mémorisées, NE PAS refaire l'appel sauf si explicitement demandé.
+- En général : si un tool_call est visible dans l'historique pour cette session → considérer que ce step est fait, passer au step suivant.
+Quand l'utilisateur répond à une [QUESTION], continuer depuis la [ACTION] qui SUIT cette question, pas depuis le début du workflow.
+
 ═══════════════════════════════════════════════════
 DÉTERMINATION DU TYPE DE CAS
 ═══════════════════════════════════════════════════
