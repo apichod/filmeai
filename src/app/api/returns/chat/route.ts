@@ -1188,9 +1188,12 @@ Affiche les {{...}} littéralement, toujours.`
           const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
             messages: currentMessages,
-            // Ne pas passer tools quand tool_choice='none' (question step)
-            ...(forcedToolChoice === 'none' ? {} : { tools }),
-            tool_choice: forcedToolChoice,
+            // Question step → ni tools ni tool_choice (texte libre uniquement)
+            // Sinon → tools + tool_choice forcé
+            ...(forcedToolChoice === 'none'
+              ? {}
+              : { tools, tool_choice: forcedToolChoice }
+            ),
             parallel_tool_calls: false,
             stream: true,
             temperature: 0.3,
