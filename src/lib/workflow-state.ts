@@ -203,7 +203,6 @@ export function extractVarsFromResult(
   toolName:  string,
   result:    string,
   step:      WorkflowStep,
-  _vars:     WorkflowVars,
 ): Partial<WorkflowVars> {
   try {
     const data = JSON.parse(result) as Record<string, unknown>

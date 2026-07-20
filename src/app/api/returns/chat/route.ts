@@ -2,8 +2,6 @@ import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import {
-  loadWorkflowState,
-  saveWorkflowState,
   buildStepInstruction,
   extractVarsFromResult,
   advanceStep,
@@ -1169,7 +1167,7 @@ Affiche les {{...}} littéralement, toujours.`
             if (activeSteps.length > 0) {
               const stepAtExecution = activeSteps[wfState.step_index] as WorkflowStep | undefined
               // Extraire les variables du résultat (fetch_order → order_id, duplicate_order → child_order_id…)
-              const newVars = extractVarsFromResult(entry.name, result, stepAtExecution ?? { id: '', type: 'action', title: '' }, wfState.vars)
+              const newVars = extractVarsFromResult(entry.name, result, stepAtExecution ?? { id: '', type: 'action', title: '' })
               if (Object.keys(newVars).length > 0) {
                 wfState = { ...wfState, vars: { ...wfState.vars, ...newVars } }
               }
