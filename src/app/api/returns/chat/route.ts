@@ -397,8 +397,7 @@ type ToolContext = {
 
 async function executeTool(
   name: string,
-  args: Record<string, unknown>,
-  _ctx: ToolContext = {}
+  args: Record<string, unknown>
 ): Promise<{ result: string; caseId?: string }> {
   try {
     switch (name) {
@@ -1126,10 +1125,7 @@ Affiche les {{...}} littéralement, toujours.`
               }
             }
 
-            const { result, caseId: newCaseId } = await executeTool(entry.name, args, {
-              customerName: bodyCustomerName,
-              customerEmail: bodyCustomerEmail,
-            })
+            const { result, caseId: newCaseId } = await executeTool(entry.name, args)
             if (newCaseId) currentCaseId = newCaseId
 
             // Émettre un event SSE 'choices' si le tool retourne un marqueur spécial
