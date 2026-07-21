@@ -385,91 +385,49 @@ export async function executeCodeStep(
       }
 
       case 'add_new_product_line': {
-        // Ajoute les articles sélectionnés (texte libre depuis choose_article AI mode)
-        // à la commande de retour (order_context: 'return').
-        //
-        // original.chosen_tag = texte libre tapé par l'opérateur, ex:
-        //   "1x Carte CFexpress Type A Sony 160 Go ID-10\n1x Batterie Sony NP-FZ100 ID-2"
-        //
-        // Matching :
-        //   1. Par label ID-X (stock_item_label) — fiable pour les articles trackables
-        //   2. Par nom (includes) — fallback pour les articles bulk sans ID
-        //
-        // return order id = vars[order_context.id] (ex: return.id)
-        const srcCtx    = 'original'
-        const dstCtx    = step.order_context ?? 'return'
-        const chosenStr = vars[`${srcCtx}.chosen_tag`] ?? ''
-        const linesRaw  = vars[`${srcCtx}.lines`]
-        const returnId  = vars[`${dstCtx}.id`] ?? orderId   // order_context pointe la return order
+        // Lit original.chosen_lines (JSON structuré construit par choose_article)
+        // → UUIDs déjà résolus, pas de matching texte ici.
+        const srcCtx       = 'original'
+        const dstCtx       = step.order_context ?? 'return'
+        const chosenLinesRaw = vars[`${srcCtx}.chosen_lines`]
+        const returnId     = vars[`${dstCtx}.id`] ?? orderId
 
-        if (!returnId)  return err('add_new_product_line : return order id manquant dans les variables')
-        if (!linesRaw)  return err('add_new_product_line : original.lines manquant (fetch_order requis avant)')
-        if (!chosenStr) return err('add_new_product_line : original.chosen_tag manquant (choose_article requis avant)')
+        if (!returnId)       return err('add_new_product_line : return order id manquant dans les variables')
+        if (!chosenLinesRaw) return err('add_new_product_line : original.chosen_lines manquant (choose_article requis avant)')
 
-        type OrigLine = {
+        type ChosenLine = {
           id: string; product_name?: string; quantity?: number
           product_group_id?: string | null; stock_item_id?: string | null
-          stock_item_label?: string | null
         }
-        const allLines = JSON.parse(linesRaw) as OrigLine[]
+        const chosenLines = JSON.parse(chosenLinesRaw) as ChosenLine[]
+        if (!chosenLines.length) return err('add_new_product_line : aucun article dans chosen_lines')
 
-        // Divise le texte par lignes/virgules
-        const chosenItems = chosenStr.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
-
-        const added:   string[] = []
-        const missing: string[] = []
-
-        for (const item of chosenItems) {
-          // 1. Matching par ID-X (ex: "ID-10")
-          const idMatch = item.match(/\bID-?(\d+)\b/i)
-          let line: OrigLine | undefined
-
-          if (idMatch) {
-            const idLabel = `ID-${idMatch[1]}`
-            line = allLines.find(l => l.stock_item_label === idLabel)
-          }
-
-          // 2. Fallback : matching par nom (l'item contient le nom ou le nom contient l'item)
-          if (!line) {
-            const itemLow = item.toLowerCase().replace(/^\d+x?\s*/i, '').trim()
-            line = allLines.find(l => {
-              const nameLow = (l.product_name ?? '').toLowerCase()
-              return nameLow.includes(itemLow) || itemLow.includes(nameLow)
-            })
-          }
-
-          if (!line) { missing.push(item); continue }
-
+        const added: string[] = []
+        for (const line of chosenLines) {
           if (line.product_group_id) {
             await addSAVLine({
-              type: 'product',
-              orderId: returnId,
+              type:           'product',
+              orderId:        returnId,
               productGroupId: line.product_group_id,
-              quantity: 1,
-              stockItemId: line.stock_item_id ?? undefined,
+              quantity:       line.quantity ?? 1,
+              stockItemId:    line.stock_item_id ?? undefined,
             })
           } else {
             await addSAVLine({
-              type: 'custom',
-              orderId: returnId,
-              title: line.product_name || 'Article',
-              quantity: 1,
+              type:     'custom',
+              orderId:  returnId,
+              title:    line.product_name || 'Article',
+              quantity: line.quantity ?? 1,
             })
           }
-          added.push(`1 x ${line.product_name || 'Article'}`)
+          added.push(`${line.quantity ?? 1} x ${line.product_name || 'Article'}`)
         }
 
-        if (missing.length > 0 && added.length === 0) {
-          return err(`add_new_product_line : aucun article trouvé pour "${missing.join(', ')}" — vérifier original.lines`)
-        }
-
-        const keptNames = added.join('\n')
         return ok({
           success:            true,
-          kept_product_names: keptNames,
-          chosen_tag:         'r11_late',  // préfixe pour add_sav_comment
-          not_found:          missing,
-          message: `✓ ${added.length} article(s) ajouté(s)${missing.length > 0 ? ` — non trouvés : ${missing.join(', ')}` : ''}`,
+          kept_product_names: added.join('\n'),
+          chosen_tag:         'r11_late',
+          message:            `✓ ${added.length} article(s) ajouté(s) à la commande de retour`,
         })
       }
 

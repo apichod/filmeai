@@ -1103,6 +1103,62 @@ Affiche les {{...}} littéralement, toujours.`
       if (chosenTag) {
         const ctx = leavingStep!.output_context ?? leavingStep!.order_context ?? 'parent'
         wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.chosen_tag`]: chosenTag } }
+
+        // ── Pour choose_article : construire chosen_lines (lignes structurées avec UUIDs) ──
+        // Évite tout matching texte dans les steps suivants — add_new_product_line lit directement.
+        if (leavingStep?.booqable_action === 'choose_article') {
+          const srcCtx   = leavingStep.order_context ?? 'original'
+          const linesRaw = wfState.vars[`${srcCtx}.lines`]
+          if (linesRaw) {
+            try {
+              type RawLine = {
+                id: string; product_name?: string; quantity?: number
+                product_group_id?: string | null; stock_item_id?: string | null
+                stock_item_label?: string | null; stock_item_identifier?: string | null
+              }
+              const allLines = JSON.parse(linesRaw) as RawLine[]
+              let chosenLines: RawLine[] = []
+
+              if (leavingStep.execution === 'code') {
+                // MODE BOUTONS : chosen_tag = UUIDs de ligne séparés par virgule
+                const ids = chosenTag.split(',').map(s => s.trim()).filter(Boolean)
+                chosenLines = allLines.filter(l => {
+                  const realId = l.id.includes('__') ? l.id.split('__')[0] : l.id
+                  return ids.includes(l.id) || ids.includes(realId)
+                })
+              } else {
+                // MODE TEXTE IA : chosen_tag = texte libre (ex: "Carte CFexpress ID-10\nBatterie ID-2")
+                const items = chosenTag.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+                for (const item of items) {
+                  // 1. Match par ID-X (ex: "ID-10")
+                  const idMatch = item.match(/\bID-?(\d+)\b/i)
+                  let line: RawLine | undefined
+                  if (idMatch) {
+                    const idLabel = `ID-${idMatch[1]}`
+                    line = allLines.find(l => l.stock_item_label === idLabel
+                      || l.stock_item_identifier?.endsWith(`-${idMatch[1]}`))
+                  }
+                  // 2. Fallback : match par nom
+                  if (!line) {
+                    const itemLow = item.toLowerCase().replace(/^\d+x?\s*/i, '').trim()
+                    if (itemLow.length > 2) {
+                      line = allLines.find(l => {
+                        const nameLow = (l.product_name ?? '').toLowerCase()
+                        return nameLow.includes(itemLow) || itemLow.includes(nameLow)
+                      })
+                    }
+                  }
+                  if (line) chosenLines.push(line)
+                }
+              }
+
+              if (chosenLines.length > 0) {
+                wfState = { ...wfState, vars: { ...wfState.vars, [`${srcCtx}.chosen_lines`]: JSON.stringify(chosenLines) } }
+              }
+            } catch { /* ignore parse errors */ }
+          }
+        }
+        // ────────────────────────────────────────────────────────────────────────────────
       }
     }
     wfState = advanceStep(wfState, activeSteps.length)
@@ -1153,6 +1209,33 @@ Affiche les {{...}} littéralement, toujours.`
             if (chosenTag2) {
               const ctx2 = leavingStep2!.output_context ?? leavingStep2!.order_context ?? 'parent'
               wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.chosen_tag`]: chosenTag2 } }
+
+              // Construire chosen_lines pour choose_article (même logique que le bloc pre-stream)
+              if (leavingStep2?.booqable_action === 'choose_article') {
+                const srcCtx2   = leavingStep2.order_context ?? 'original'
+                const linesRaw2 = wfState.vars[`${srcCtx2}.lines`]
+                if (linesRaw2) {
+                  try {
+                    type RawLine2 = { id: string; product_name?: string; quantity?: number; product_group_id?: string | null; stock_item_id?: string | null; stock_item_label?: string | null; stock_item_identifier?: string | null }
+                    const allLines2 = JSON.parse(linesRaw2) as RawLine2[]
+                    let chosenLines2: RawLine2[] = []
+                    if (leavingStep2.execution === 'code') {
+                      const ids2 = chosenTag2.split(',').map(s => s.trim()).filter(Boolean)
+                      chosenLines2 = allLines2.filter(l => { const r = l.id.includes('__') ? l.id.split('__')[0] : l.id; return ids2.includes(l.id) || ids2.includes(r) })
+                    } else {
+                      const items2 = chosenTag2.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+                      for (const item2 of items2) {
+                        const idM = item2.match(/\bID-?(\d+)\b/i)
+                        let line2: RawLine2 | undefined
+                        if (idM) line2 = allLines2.find(l => l.stock_item_label === `ID-${idM[1]}` || l.stock_item_identifier?.endsWith(`-${idM[1]}`))
+                        if (!line2) { const iLow = item2.toLowerCase().replace(/^\d+x?\s*/i, '').trim(); if (iLow.length > 2) line2 = allLines2.find(l => { const nLow = (l.product_name ?? '').toLowerCase(); return nLow.includes(iLow) || iLow.includes(nLow) }) }
+                        if (line2) chosenLines2.push(line2)
+                      }
+                    }
+                    if (chosenLines2.length > 0) wfState = { ...wfState, vars: { ...wfState.vars, [`${srcCtx2}.chosen_lines`]: JSON.stringify(chosenLines2) } }
+                  } catch { /* ignore */ }
+                }
+              }
             }
           }
           wfState = advanceStep(wfState, activeSteps.length)
