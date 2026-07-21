@@ -499,12 +499,12 @@ function StepList({
                     )}
                     {compat === 'code' && activeMode === 'ai' && (
                       <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                        ⚠ Cet outil n'est pas prévu pour le mode IA
+                        ⚠ Cet outil n&apos;est pas prévu pour le mode IA
                       </span>
                     )}
                     {compat === 'ai' && activeMode === 'code' && (
                       <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                        ⚠ Cet outil n'est pas prévu pour le mode Code
+                        ⚠ Cet outil n&apos;est pas prévu pour le mode Code
                       </span>
                     )}
                     {desc && (
