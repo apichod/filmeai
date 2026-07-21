@@ -856,7 +856,7 @@ export async function POST(req: NextRequest) {
     workflowState?: WorkflowState | null   // état du workflow envoyé par le client
   }
 
-  const { messages, caseId = null, scenario = null, customerId: bodyCustomerId = null, workflowState: clientWorkflowState = null } = body
+  const { messages, caseId = null, scenario = null, workflowState: clientWorkflowState = null } = body
 
   // Charge le prompt du workflow correspondant au scénario (ou tous si pas de scénario)
   const supabase = getSupabaseAdmin()
