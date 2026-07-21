@@ -140,15 +140,20 @@ function toolLabel(name: string) {
   return labels[name] || name
 }
 
-function toolStatus(result: string | undefined): 'pending' | 'success' | 'error' {
+function toolStatus(result: string | undefined): 'pending' | 'success' | 'warning' | 'error' {
   if (!result) return 'pending'
   const lower = result.toLowerCase()
   // Erreur texte
   if (lower.startsWith('erreur') || lower.startsWith('impossible') || lower.startsWith('échec')) return 'error'
-  // Erreur JSON { error: "..." } ou { message: "...error..." }
+  // JSON : success:true = toujours OK (même avec un warning)
   try {
     const parsed = JSON.parse(result) as Record<string, unknown>
-    if (parsed.error || (typeof parsed.message === 'string' && parsed.message.toLowerCase().includes('error'))) return 'error'
+    if (parsed.success === true) {
+      // warning = succès non bloquant
+      return parsed.warning ? 'warning' : 'success'
+    }
+    if (parsed.error) return 'error'
+    if (typeof parsed.message === 'string' && parsed.message.toLowerCase().includes('error')) return 'error'
   } catch { /* pas du JSON */ }
   // Erreur Booqable dans le texte
   if (lower.includes('shortage') || lower.includes('booqable error') || lower.includes('failed')) return 'error'
@@ -160,6 +165,9 @@ function toolErrorMessage(result: string | undefined): string | null {
   try {
     const parsed = JSON.parse(result) as Record<string, unknown>
     if (typeof parsed.error === 'string') return parsed.error
+    // Pour les warnings non bloquants, afficher le warning (pas le message complet)
+    if (parsed.warning && typeof parsed.warning === 'string') return parsed.warning.slice(0, 120)
+    if (typeof parsed.message === 'string' && (parsed.message as string).startsWith('⚠')) return null // déjà dans le message principal
     if (typeof parsed.message === 'string') return parsed.message
   } catch { /* pas JSON */ }
   const lower = result.toLowerCase()
@@ -846,15 +854,24 @@ function ChatPanel() {
                           {status === 'success' && (
                             <span className="text-green-500 flex-shrink-0 font-medium">✓</span>
                           )}
+                          {status === 'warning' && (
+                            <span className="text-amber-400 flex-shrink-0 font-medium">⚠</span>
+                          )}
                           {status === 'error' && (
                             <span className="text-red-400 flex-shrink-0 font-medium">✗</span>
                           )}
-                          <span className={status === 'error' ? 'text-red-400' : 'text-gray-500'}>{toolLabel(tc.name)}</span>
+                          <span className={
+                            status === 'error' ? 'text-red-400' :
+                            status === 'warning' ? 'text-amber-500' : 'text-gray-500'
+                          }>{toolLabel(tc.name)}</span>
                         </div>
                         {status === 'error' && toolErrorMessage(tc.result) && (
                           <p className="mt-0.5 pl-5 text-red-400 text-xs">{toolErrorMessage(tc.result)}</p>
                         )}
-                        {status !== 'error' && summary && (
+                        {status === 'warning' && toolErrorMessage(tc.result) && (
+                          <p className="mt-0.5 pl-5 text-amber-400 text-xs">{toolErrorMessage(tc.result)}</p>
+                        )}
+                        {(status === 'success' || status === 'pending') && summary && (
                           <p className="mt-0.5 pl-5 text-gray-400 truncate">{summary}</p>
                         )}
                       </div>

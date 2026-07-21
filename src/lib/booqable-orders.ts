@@ -611,12 +611,64 @@ export async function zeroOutOrderLines(orderId: string): Promise<void> {
 
 /**
  * Passe la SAV order en statut "started" via order_transitions.
- * Essaie reserved→started, puis concept→reserved si nécessaire.
+ * Démarre une commande (pickup).
+ * Approche 1 : start_stock_items via order_fulfillments (items trackables).
+ * Approche 2 : order_transitions reserved→started (items bulk / fallback).
  * Non bloquant : retourne l'erreur sans throw.
  */
 export async function startSAVOrder(orderId: string): Promise<{ error?: string }> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
 
+  // ── Approche 1 : start_stock_items via order_fulfillments ──────────────────
+  try {
+    const sipRes = await fetch(
+      `${BASE4}/stock_item_plannings?filter[order_id]=${orderId}&include=stock_item&page[size]=200`,
+      { headers: headers(), signal: AbortSignal.timeout(10000) }
+    )
+    if (sipRes.ok) {
+      const sipData = await sipRes.json() as { data?: SIPNode[]; included?: SIPNode[] }
+
+      const siMap = new Map<string, SIPNode>()
+      for (const r of sipData.included || []) {
+        if (r.type === 'stock_items') siMap.set(r.id, r)
+      }
+
+      const actions: Array<Record<string, unknown>> = []
+      for (const sip of sipData.data || []) {
+        // Uniquement les items non encore démarrés
+        if (sip.attributes.started) continue
+        const planId    = String(sip.attributes.planning_id    || '')
+        const siId      = String(sip.attributes.stock_item_id  || '')
+        if (!planId || !siId) continue
+        const si        = siMap.get(siId)
+        const productId = String(si?.attributes.product_id     || '')
+        if (!productId) continue
+        actions.push({ action: 'start_stock_items', planning_id: planId, product_id: productId, stock_item_ids: [siId] })
+      }
+
+      if (actions.length > 0) {
+        const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            data: { type: 'order_fulfillments', attributes: { order_id: orderId, confirm_shortage: true, actions } },
+          }),
+          signal: AbortSignal.timeout(15000),
+        })
+        if (fulfillRes.ok) {
+          console.log(`startSAVOrder: order ${orderId} started via start_stock_items ✓`)
+          return {}
+        }
+        const errText = await fulfillRes.text()
+        console.warn('[startSAVOrder] start_stock_items failed:', fulfillRes.status, errText.slice(0, 300))
+      }
+    }
+  } catch (e) {
+    console.warn('[startSAVOrder] fulfillments approach error:', e)
+  }
+
+  // ── Approche 2 : order_transitions ─────────────────────────────────────────
   const tryTransition = async (from: string, to: string): Promise<boolean> => {
     const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
       method: 'POST',
@@ -625,11 +677,11 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
         data: {
           type: 'order_transitions',
           attributes: {
-            order_id:          orderId,
-            transition_from:   from,
-            transition_to:     to,
-            confirm_shortage:  false,
-            revert_until:      null,
+            order_id:         orderId,
+            transition_from:  from,
+            transition_to:    to,
+            confirm_shortage: true,
+            revert_until:     null,
           },
         },
       }),
@@ -637,27 +689,40 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
     })
     if (res.ok) return true
     const text = await res.text()
-    console.warn(`startSAVOrder: ${from}→${to} failed (${res.status}): ${text}`)
+    console.warn(`[startSAVOrder] ${from}→${to} failed (${res.status}): ${text}`)
     return false
   }
 
   try {
-    // Tentative directe reserved → started
     if (await tryTransition('reserved', 'started')) {
-      console.log(`startSAVOrder: order ${orderId} started ✓`)
+      console.log(`startSAVOrder: order ${orderId} started via reserved→started ✓`)
       return {}
     }
-    // Fallback : concept → reserved → started
     if (await tryTransition('concept', 'reserved')) {
       if (await tryTransition('reserved', 'started')) {
         console.log(`startSAVOrder: order ${orderId} started via concept→reserved→started ✓`)
         return {}
       }
     }
-    return { error: 'Transition de statut échouée (non bloquant)' }
+
+    // Vérifier si déjà started
+    try {
+      const checkRes = await fetch(`${BASE4}/orders/${orderId}?fields[orders]=status`, {
+        headers: headers(), signal: AbortSignal.timeout(6000),
+      })
+      if (checkRes.ok) {
+        const d = await checkRes.json() as { data?: { attributes?: { status?: string } } }
+        if (d.data?.attributes?.status === 'started') {
+          console.log(`startSAVOrder: order ${orderId} déjà started`)
+          return {}
+        }
+      }
+    } catch { /* ignore */ }
+
+    return { error: 'Impossible de démarrer la commande (transitions échouées)' }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    console.warn('startSAVOrder error:', msg)
+    console.warn('[startSAVOrder] error:', msg)
     return { error: msg }
   }
 }
@@ -1242,60 +1307,79 @@ export async function revertToConcept(orderId: string): Promise<void> {
 }
 
 // ── reserveOrder ─────────────────────────────────────────────────────────────
-// Tente concept→reserved. Si la transition échoue, vérifie l'état courant :
-// si la commande est déjà reserved/started/stopped, on considère c'est bon.
+// Vérifie l'état courant d'abord. Si déjà reserved/started/stopped → no-op.
+// Si concept → tente concept→reserved via order_transitions.
 export async function reserveOrder(orderId: string): Promise<{ error?: string }> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
 
-  const tryTransition = async (from: string, to: string): Promise<boolean> => {
-    const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({
-        data: {
-          type: 'order_transitions',
-          attributes: {
-            order_id:         orderId,
-            transition_from:  from,
-            transition_to:    to,
-            confirm_shortage: true,
-            revert_until:     null,
-          },
-        },
-      }),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (res.ok) return true
-    const text = await res.text()
-    console.warn(`[reserveOrder] ${from}→${to} failed (${res.status}): ${text}`)
-    return false
-  }
-
-  // Essai 1 : concept → reserved
-  if (await tryTransition('concept', 'reserved')) return {}
-
-  // La transition a échoué — vérifier l'état actuel de la commande
+  // Étape 1 : récupérer l'état courant (utilise BASE4 comme stopOrder — plus fiable)
   try {
-    const checkRes = await fetch(
-      `${BASE_BOOMERANG}/orders?filter[id]=${encodeURIComponent(orderId)}&fields[orders]=status&per=1`,
-      { headers: headers(), signal: AbortSignal.timeout(8000) }
-    )
+    const checkRes = await fetch(`${BASE4}/orders/${orderId}?fields[orders]=status`, {
+      headers: headers(), signal: AbortSignal.timeout(8000),
+    })
     if (checkRes.ok) {
-      const checkData = await checkRes.json() as { data?: Array<{ attributes: { status?: string } }> }
-      const status = checkData.data?.[0]?.attributes?.status ?? ''
-      console.log(`[reserveOrder] statut actuel après échec : ${status}`)
-      // Déjà dans un état post-concept → pas d'erreur bloquante
+      const checkData = await checkRes.json() as { data?: { attributes?: { status?: string } } }
+      const status = checkData.data?.attributes?.status ?? ''
+      console.log(`[reserveOrder] statut actuel : ${status}`)
+
+      // Déjà dans un état post-concept → rien à faire
       if (['reserved', 'started', 'stopped'].includes(status)) {
-        console.log(`[reserveOrder] commande déjà en ${status}, on continue`)
+        console.log(`[reserveOrder] commande déjà en ${status}, skip`)
         return {}
       }
-      return { error: `Impossible de réserver la commande (état actuel : ${status || 'inconnu'})` }
+
+      // Pas en concept → on ne peut pas réserver
+      if (status && status !== 'concept') {
+        return { error: `Impossible de réserver la commande (état actuel : ${status})` }
+      }
     }
   } catch (e) {
-    console.warn('[reserveOrder] vérification état échouée :', e)
+    console.warn('[reserveOrder] vérification état initiale échouée :', e)
+    // On tente quand même la transition si la vérification échoue
   }
 
-  return { error: `Impossible de réserver la commande ${orderId} (transition concept→reserved refusée)` }
+  // Étape 2 : tenter concept → reserved
+  const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'order_transitions',
+        attributes: {
+          order_id:         orderId,
+          transition_from:  'concept',
+          transition_to:    'reserved',
+          confirm_shortage: true,
+          revert_until:     null,
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (res.ok) {
+    console.log(`[reserveOrder] commande ${orderId} réservée ✓`)
+    return {}
+  }
+
+  const errText = await res.text()
+  console.warn(`[reserveOrder] concept→reserved failed (${res.status}): ${errText}`)
+
+  // Vérification finale : peut-être que la transition a quand même abouti
+  try {
+    const recheck = await fetch(`${BASE4}/orders/${orderId}?fields[orders]=status`, {
+      headers: headers(), signal: AbortSignal.timeout(6000),
+    })
+    if (recheck.ok) {
+      const d = await recheck.json() as { data?: { attributes?: { status?: string } } }
+      const s = d.data?.attributes?.status ?? ''
+      if (['reserved', 'started', 'stopped'].includes(s)) {
+        console.log(`[reserveOrder] commande finalement en ${s} après réponse non-ok, ok`)
+        return {}
+      }
+    }
+  } catch { /* ignore */ }
+
+  return { error: `Impossible de réserver la commande (transition concept→reserved refusée, statut ${res.status})` }
 }
 
 // ── cancelOrder ──────────────────────────────────────────────────────────────
