@@ -1326,7 +1326,9 @@ Affiche les {{...}} littéralement, toujours.`
           // ai action step → forcer l'outil exact du step
           // sinon          → 'auto'
           const isQuestionStep = aiStep?.type === 'question'
-          const forcedToolChoice: OpenAI.Chat.ChatCompletionToolChoiceOption = isQuestionStep
+          // choose_article en mode AI = question (texte libre, pas boutons) → pas de tool call forcé
+          const isAiTextChooseArticle = aiStep?.booqable_action === 'choose_article' && aiStep?.execution === 'ai'
+          const forcedToolChoice: OpenAI.Chat.ChatCompletionToolChoiceOption = (isQuestionStep || isAiTextChooseArticle)
             ? 'none'
             : aiStep?.execution === 'ai' && aiStep?.type === 'action' && aiStep?.booqable_action
               ? { type: 'function', function: { name: aiStep.booqable_action } }
@@ -1531,10 +1533,11 @@ Affiche les {{...}} littéralement, toujours.`
           }
         }
 
-        // Si on a terminé sans tool call sur une étape QUESTION → passer en waiting_for_input
+        // Si on a terminé sans tool call sur une étape QUESTION (ou choose_article AI mode) → waiting_for_input
         if (activeSteps.length > 0) {
           const stepNow = activeSteps[wfState.step_index] as WorkflowStep | undefined
-          if (stepNow?.type === 'question' && wfState.status === 'running') {
+          const isTextChooseArticle = stepNow?.booqable_action === 'choose_article' && stepNow?.execution === 'ai'
+          if ((stepNow?.type === 'question' || isTextChooseArticle) && wfState.status === 'running') {
             wfState = { ...wfState, status: 'waiting_for_input' }
           }
         }
