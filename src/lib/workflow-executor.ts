@@ -167,7 +167,14 @@ export async function executeCodeStep(
       case 'choose_problem_tag': {
         // Envoie les options au frontend via l'événement SSE 'choices'
         // Le résultat __type__: 'choices' est intercepté dans route.ts
-        const options = (params.options as Array<{ label: string; tag: string }> | undefined) ?? []
+        const DEFAULT_PROBLEM_OPTIONS = [
+          { label: 'Retard de retour',      tag: 'r11_late'    },
+          { label: 'Perte du matériel',     tag: 'r12_missing' },
+          { label: 'Vol du matériel',       tag: 'r13_theft'   },
+          { label: 'Dommage sur matériel',  tag: 'r14_damage'  },
+        ]
+        const paramOptions = params.options as Array<{ label: string; tag: string }> | undefined
+        const options = (paramOptions && paramOptions.length > 0) ? paramOptions : DEFAULT_PROBLEM_OPTIONS
         return ok({
           __type__: 'choices',
           order_id: orderId ?? '',
