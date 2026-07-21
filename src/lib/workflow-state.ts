@@ -309,6 +309,51 @@ export function buildStepInstruction(
   const context = contextLines ? `\nCONTEXTE VARIABLES :\n${contextLines}` : ''
 
   if (step.type === 'action') {
+    // ── Cas spécial : add_new_product_line en mode AI → injecter les UUIDs réels ──
+    // original.lines est filtré du CONTEXTE VARIABLES (trop long), on l'injecte explicitement
+    if (step.booqable_action === 'add_new_product_line') {
+      const srcCtx = 'original'  // les articles viennent toujours de la commande d'origine
+      const dstCtx = step.order_context ?? 'return'
+      const linesRaw = vars[`${srcCtx}.lines`]
+      const chosenTag = vars[`${srcCtx}.chosen_tag`]
+      const returnOrderId = vars[`${dstCtx}.id`]
+
+      let linesSection = ''
+      if (linesRaw) {
+        try {
+          const lines = JSON.parse(linesRaw) as Array<{
+            product_name?: string; quantity?: number
+            product_group_id?: string | null; stock_item_id?: string | null; stock_item_label?: string | null
+          }>
+          linesSection = '\nLIGNES DE LA COMMANDE D\'ORIGINE (UUIDs réels à utiliser) :\n' +
+            lines.map(l => {
+              const pgId = l.product_group_id ?? 'null'
+              const siId = l.stock_item_id ?? 'null'
+              const label = l.stock_item_label ? ` ${l.stock_item_label}` : ''
+              return `  ${l.quantity ?? 1}x ${l.product_name ?? '?'}${label} → product_group_id: ${pgId} | stock_item_id: ${siId}`
+            }).join('\n')
+        } catch { /* pas JSON */ }
+      }
+
+      const chosenSection = chosenTag
+        ? `\nARTICLES SÉLECTIONNÉS PAR L'OPÉRATEUR : "${chosenTag}"`
+        : ''
+
+      const toolArgs = buildToolArgs(step, vars)
+
+      return `══════════════════════════════════════════
+ÉTAPE ${stepIndex + 1}/${totalSteps} — ACTION : ${step.title}
+order_id return order = ${returnOrderId ?? '?'}
+══════════════════════════════════════════
+Appelle add_new_product_line UNE FOIS par article sélectionné.
+Utilise les product_group_id et stock_item_id EXACTS de la liste ci-dessous.
+⚠ INTERDIT : utiliser "ID-X" comme product_group_id — c'est un label d'affichage, jamais un UUID.
+${linesSection}${chosenSection}
+
+Paramètres injectés par le système :
+${JSON.stringify(toolArgs, null, 2)}${context}`
+    }
+
     // ── Cas spécial : choose_article en mode AI = question (liste + saisie texte) ──
     if (step.booqable_action === 'choose_article' && step.execution === 'ai') {
       const ctx = step.order_context ?? 'original'
