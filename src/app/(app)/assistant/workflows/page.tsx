@@ -105,7 +105,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   search_products:         'ai',
   add_internal_note:       'ai',
   create_new_return_order: 'code',
-  add_new_product_line:    'ai',
+  add_new_product_line:    'both',
   set_original_order:      'code',
   clear_tags:              'code',
   revert_to_concept:       'code',
@@ -133,7 +133,8 @@ const TOOL_MODE_DESC: Record<string, { code: string; ai: string }> = {
   choose_article:     { code: 'Affiche des boutons multi-select', ai: 'Liste les articles, l\'opérateur saisit sa sélection par texte' },
   choose_problem_tag: { code: 'Affiche des boutons de choix', ai: 'L\'IA extrait le tag depuis la conversation' },
   add_tag:            { code: 'Tags définis dans les paramètres du step', ai: 'L\'IA détermine les tags selon le contexte' },
-  add_sav_comment:    { code: 'Commentaire défini dans les paramètres', ai: 'L\'IA rédige le commentaire' },
+  add_sav_comment:        { code: 'Commentaire défini dans les paramètres', ai: 'L\'IA rédige le commentaire' },
+  add_new_product_line:   { code: 'Match ID-X ou nom → UUIDs depuis original.lines (déterministe)', ai: 'L\'IA détermine les articles depuis la conversation' },
 }
 
 // Hint JSON par outil
