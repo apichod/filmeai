@@ -453,6 +453,7 @@ function ChatPanel() {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
               if (event.workflowState !== undefined) setWorkflowState(event.workflowState ?? null)
+              if (event.workflowState?.status === 'completed') break
             }
             if (event.type === 'error') {
               setMessages(prev => prev.map(m =>
@@ -583,6 +584,7 @@ function ChatPanel() {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
               if (event.workflowState !== undefined) setWorkflowState(event.workflowState ?? null)
+              if (event.workflowState?.status === 'completed') break
             }
           } catch { /* ignore */ }
         }

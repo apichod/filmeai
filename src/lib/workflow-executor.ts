@@ -186,14 +186,10 @@ export async function executeCodeStep(
 
         // Lignes formatées pour le Commentaire SAV automatique
         // Format : "1 x [Nom produit] [ID si]" par ligne conservée
-        const typedLines = lines as Array<{ id: string; product_name?: string; stock_item_identifier?: string }>
+        const typedLines = lines as Array<{ id: string; product_name?: string }>
         const keptFormatted = typedLines
           .filter(l => keepIds.includes(l.id))
-          .map(l => {
-            const name = l.product_name || 'Article'
-            const si   = l.stock_item_identifier ? ` ${l.stock_item_identifier}` : ''
-            return `1 x ${name}${si}`
-          })
+          .map(l => `1 x ${l.product_name || 'Article'}`)
         const keptProductsFormatted = keptFormatted.join('\n')
 
         return ok({
