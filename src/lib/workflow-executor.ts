@@ -137,8 +137,8 @@ export async function executeCodeStep(
               tag:   l.id,
             }
           })
-          return ok({ __type__: 'choices', order_id: orderId ?? '', items,
-            message: `Quel article souhaitez-vous conserver sur la commande ${label} ? Les autres seront supprimés automatiquement.` })
+          return ok({ __type__: 'choices', multiSelect: true, order_id: orderId ?? '', items,
+            message: `Quels articles souhaitez-vous conserver sur la commande ${label} ? Les autres seront supprimés automatiquement.` })
         } catch {
           return err('choose_article : impossible de parser les lignes')
         }
@@ -151,14 +151,15 @@ export async function executeCodeStep(
         const linesRaw   = vars[`${ctx}.lines`]
         if (!linesRaw)   return err('remove_other_lines : lignes manquantes (fetch_order requis avant)')
         if (!keepLineId) return err('remove_other_lines : chosen_tag manquant (choose_article requis avant)')
+        const keepIds = keepLineId.split(',').map(s => s.trim()).filter(Boolean)
         const lines = JSON.parse(linesRaw) as Array<{ id: string }>
-        const toRemove = lines.filter(l => l.id !== keepLineId)
+        const toRemove = lines.filter(l => !keepIds.includes(l.id))
         for (const line of toRemove) {
           await removeProductLine(line.id)
         }
         // Réinitialiser chosen_tag pour qu'il soit libre pour choose_problem_tag
         return ok({ success: true, removed: toRemove.length,
-          message: `✓ ${toRemove.length} ligne(s) supprimée(s) — ligne conservée : ${keepLineId}`,
+          message: `✓ ${toRemove.length} ligne(s) supprimée(s) — ${keepIds.length} conservée(s)`,
           chosen_tag: null,  // reset
         })
       }

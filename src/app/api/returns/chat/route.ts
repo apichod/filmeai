@@ -1154,12 +1154,12 @@ Affiche les {{...}} littéralement, toujours.`
             // Si le résultat est un choix (choose_problem_tag / choose_article) → SSE + waiting_for_input + pas d'avance
             let isChoicesResult = false
             try {
-              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string }
+              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean }
               if (choicesParsed.__type__ === 'choices') {
                 // Texte explicatif avant les boutons — description du step en priorité
                 const promptText = codeStep.description ?? choicesParsed.message ?? codeStep.title ?? ''
                 if (promptText) send(JSON.stringify({ type: 'text', content: promptText }))
-                send(JSON.stringify({ type: 'choices', order_id: choicesParsed.order_id, items: choicesParsed.items }))
+                send(JSON.stringify({ type: 'choices', order_id: choicesParsed.order_id, items: choicesParsed.items, multiSelect: choicesParsed.multiSelect ?? false }))
                 wfState = { ...wfState, status: 'waiting_for_input' }
                 isChoicesResult = true
               }
@@ -1363,9 +1363,9 @@ Affiche les {{...}} littéralement, toujours.`
 
             // Émettre un event SSE 'choices' si le tool retourne un marqueur spécial
             try {
-              const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string }
+              const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean }
               if (parsed.__type__ === 'choices') {
-                send(JSON.stringify({ type: 'choices', order_id: parsed.order_id, items: parsed.items }))
+                send(JSON.stringify({ type: 'choices', order_id: parsed.order_id, items: parsed.items, multiSelect: parsed.multiSelect ?? false }))
               }
             } catch { /* pas JSON, continuer */ }
 
@@ -1402,11 +1402,11 @@ Affiche les {{...}} littéralement, toujours.`
               // choices → SSE + waiting_for_input, pas d'avance
               let postIsChoices = false
               try {
-                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string }
+                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean }
                 if (postParsed.__type__ === 'choices') {
                   const postPrompt = postCodeStep.description ?? postParsed.message ?? postCodeStep.title ?? ''
                   if (postPrompt) send(JSON.stringify({ type: 'text', content: postPrompt }))
-                  send(JSON.stringify({ type: 'choices', order_id: postParsed.order_id, items: postParsed.items }))
+                  send(JSON.stringify({ type: 'choices', order_id: postParsed.order_id, items: postParsed.items, multiSelect: postParsed.multiSelect ?? false }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   postIsChoices = true
                 }

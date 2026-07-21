@@ -24,7 +24,7 @@ type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'tool_call'; name: string }
   | { type: 'tool_result'; name: string; result: string }
-  | { type: 'choices'; order_id: string; items: Array<{ label: string; tag: string }> }
+  | { type: 'choices'; order_id: string; items: Array<{ label: string; tag: string }>; multiSelect?: boolean }
   | { type: 'done'; caseId: string | null; workflowState?: WorkflowState | null }
   | { type: 'error'; message: string }
 
@@ -304,6 +304,8 @@ function ChatPanel() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [pendingChoices, setPendingChoices] = useState<Array<{ label: string; tag: string }> | null>(null)
+  const [pendingChoicesMulti, setPendingChoicesMulti] = useState(false)
+  const [selectedChoiceTags, setSelectedChoiceTags] = useState<Set<string>>(new Set())
   const [caseId, setCaseId] = useState<string | null>(null)
   const [scenario, setScenario] = useState<Scenario | null>(null)
   const [level1, setLevel1] = useState<Level1Key | null>(null)
@@ -422,6 +424,8 @@ function ChatPanel() {
             }
             if (event.type === 'choices') {
               setPendingChoices(event.items)
+              setPendingChoicesMulti(event.multiSelect ?? false)
+              setSelectedChoiceTags(new Set())
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -550,6 +554,8 @@ function ChatPanel() {
             }
             if (event.type === 'choices') {
               setPendingChoices(event.items)
+              setPendingChoicesMulti(event.multiSelect ?? false)
+              setSelectedChoiceTags(new Set())
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -592,7 +598,7 @@ function ChatPanel() {
     /faut[-\s]il/i, /dois[-\s]je/i, /le client a[-\s]t[-\s]il/i, /a[-\s]t[-\s]il/i,
     /confirmer l'envoi/i, /envoyer l'email/i, /procéder/i,
   ]
-  const isClosedQuestion = !sending && lastContent.includes('?') &&
+  const isClosedQuestion = !sending && !pendingChoices && lastContent.includes('?') &&
     CLOSED_QUESTION_PATTERNS.some(p => p.test(lastContent))
 
   const quickReplies: string[] = isClosedQuestion ? (() => {
@@ -864,8 +870,8 @@ function ChatPanel() {
       </div>
 
       <div className="p-3 border-t border-gray-100 space-y-2">
-        {/* Choix de tag problème (choose_problem_tag) */}
-        {pendingChoices && (
+        {/* Choix articles / tag problème */}
+        {pendingChoices && !pendingChoicesMulti && (
           <div className="flex flex-wrap gap-1.5 px-1">
             {pendingChoices.map(c => (
               <button
@@ -874,9 +880,51 @@ function ChatPanel() {
                 disabled={sending}
                 className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 bg-white hover:bg-gray-900 hover:text-white hover:border-gray-900 text-gray-800 transition-all disabled:opacity-40"
               >
-                {c.label} <span className="font-mono text-gray-400 text-[10px] ml-1">{c.tag}</span>
+                {c.label}
               </button>
             ))}
+          </div>
+        )}
+        {pendingChoices && pendingChoicesMulti && (
+          <div className="flex flex-col gap-2 px-1">
+            <div className="flex flex-wrap gap-1.5">
+              {pendingChoices.map(c => {
+                const selected = selectedChoiceTags.has(c.tag)
+                return (
+                  <button
+                    key={c.tag}
+                    onClick={() => setSelectedChoiceTags(prev => {
+                      const next = new Set(prev)
+                      if (next.has(c.tag)) next.delete(c.tag); else next.add(c.tag)
+                      return next
+                    })}
+                    disabled={sending}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all disabled:opacity-40 ${
+                      selected
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'border-gray-300 bg-white text-gray-800 hover:border-gray-500'
+                    }`}
+                  >
+                    {selected && <span className="mr-1">✓</span>}{c.label}
+                  </button>
+                )
+              })}
+            </div>
+            {selectedChoiceTags.size > 0 && (
+              <button
+                onClick={() => {
+                  const tags = Array.from(selectedChoiceTags).join(',')
+                  setPendingChoices(null)
+                  setPendingChoicesMulti(false)
+                  setSelectedChoiceTags(new Set())
+                  quickSend(tags)
+                }}
+                disabled={sending}
+                className="self-start px-4 py-1.5 text-xs font-semibold rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40"
+              >
+                Confirmer ({selectedChoiceTags.size} article{selectedChoiceTags.size > 1 ? 's' : ''})
+              </button>
+            )}
           </div>
         )}
         {/* Quick replies */}
