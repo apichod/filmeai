@@ -253,7 +253,9 @@ export function extractVarsFromResult(
       const sourceKey = tool.resultAlias?.[field] ?? field
       const value     = data[sourceKey]
       if (value !== undefined && value !== null) {
-        updates[`${writeCtx}.${field}`] = String(value)
+        updates[`${writeCtx}.${field}`] = typeof value === 'object'
+          ? JSON.stringify(value)
+          : String(value)
       }
     }
 
@@ -326,7 +328,7 @@ ${orderRef}
 ${step.description ?? step.title}${linesSection}
 
 RÈGLES STRICTES :
-- Affiche le contexte utile (articles listés ci-dessus si présents), puis pose la question.
+- Si des articles sont listés ci-dessus, affiche-les avec leur numéro, nom, quantité ET line_id avant de poser la question.
 - Ne mentionne PAS les étapes suivantes.
 - N'appelle aucun outil.
 - Attends la réponse avant de continuer.${context}`
