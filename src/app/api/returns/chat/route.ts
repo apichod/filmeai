@@ -1151,11 +1151,14 @@ Affiche les {{...}} littéralement, toujours.`
               wfState = { ...wfState, vars: { ...wfState.vars, ...newVars } }
             }
 
-            // Si le résultat est un choix (choose_problem_tag) → SSE + waiting_for_input + pas d'avance
+            // Si le résultat est un choix (choose_problem_tag / choose_article) → SSE + waiting_for_input + pas d'avance
             let isChoicesResult = false
             try {
-              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string }
+              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string }
               if (choicesParsed.__type__ === 'choices') {
+                // Texte explicatif avant les boutons — description du step en priorité
+                const promptText = codeStep.description ?? choicesParsed.message ?? codeStep.title ?? ''
+                if (promptText) send(JSON.stringify({ type: 'text', content: promptText }))
                 send(JSON.stringify({ type: 'choices', order_id: choicesParsed.order_id, items: choicesParsed.items }))
                 wfState = { ...wfState, status: 'waiting_for_input' }
                 isChoicesResult = true
@@ -1399,8 +1402,10 @@ Affiche les {{...}} littéralement, toujours.`
               // choices → SSE + waiting_for_input, pas d'avance
               let postIsChoices = false
               try {
-                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string }
+                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string }
                 if (postParsed.__type__ === 'choices') {
+                  const postPrompt = postCodeStep.description ?? postParsed.message ?? postCodeStep.title ?? ''
+                  if (postPrompt) send(JSON.stringify({ type: 'text', content: postPrompt }))
                   send(JSON.stringify({ type: 'choices', order_id: postParsed.order_id, items: postParsed.items }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   postIsChoices = true
