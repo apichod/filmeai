@@ -548,6 +548,9 @@ function ChatPanel() {
                 }
               }))
             }
+            if (event.type === 'choices') {
+              setPendingChoices(event.items)
+            }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)

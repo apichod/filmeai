@@ -137,7 +137,8 @@ export async function executeCodeStep(
               tag:   l.id,
             }
           })
-          return ok({ __type__: 'choices', order_id: orderId ?? '', items, message: 'En attente du choix de l\'article' })
+          return ok({ __type__: 'choices', order_id: orderId ?? '', items,
+            message: `Quel article souhaitez-vous conserver sur la commande ${label} ? Les autres seront supprimés automatiquement.` })
         } catch {
           return err('choose_article : impossible de parser les lignes')
         }
@@ -170,7 +171,7 @@ export async function executeCodeStep(
           __type__: 'choices',
           order_id: orderId ?? '',
           items:    options,
-          message:  `En attente du choix de l'opérateur`,
+          message:  `Quel est le type de problème pour la commande ${label} ?`,
         })
       }
 
