@@ -123,6 +123,45 @@ export async function executeCodeStep(
           message: `✓ Tags ajoutés sur ${label} : ${tagsAdd.join(', ')}` })
       }
 
+      case 'choose_article': {
+        // Présente les articles de la commande comme boutons — chosen_tag stockera le line_id choisi
+        const ctx      = step.order_context ?? 'parent'
+        const linesRaw = vars[`${ctx}.lines`]
+        if (!linesRaw) return err('choose_article : lignes manquantes dans les variables (fetch_order requis avant)')
+        try {
+          const lines = JSON.parse(linesRaw) as Array<{ id: string; product_name: string; quantity: number; stock_item_identifier?: string }>
+          const items = lines.map(l => {
+            const shortId = l.stock_item_identifier?.match(/(\d+)$/)?.[1] ?? ''
+            return {
+              label: `${l.quantity ?? 1}x ${l.product_name}${shortId ? ' ID ' + shortId : ''}`,
+              tag:   l.id,
+            }
+          })
+          return ok({ __type__: 'choices', order_id: orderId ?? '', items, message: 'En attente du choix de l\'article' })
+        } catch {
+          return err('choose_article : impossible de parser les lignes')
+        }
+      }
+
+      case 'remove_other_lines': {
+        // Supprime toutes les lignes SAUF celle dont l'id est dans vars[ctx.chosen_tag]
+        const ctx        = step.order_context ?? 'parent'
+        const keepLineId = vars[`${ctx}.chosen_tag`]
+        const linesRaw   = vars[`${ctx}.lines`]
+        if (!linesRaw)   return err('remove_other_lines : lignes manquantes (fetch_order requis avant)')
+        if (!keepLineId) return err('remove_other_lines : chosen_tag manquant (choose_article requis avant)')
+        const lines = JSON.parse(linesRaw) as Array<{ id: string }>
+        const toRemove = lines.filter(l => l.id !== keepLineId)
+        for (const line of toRemove) {
+          await removeProductLine(line.id)
+        }
+        // Réinitialiser chosen_tag pour qu'il soit libre pour choose_problem_tag
+        return ok({ success: true, removed: toRemove.length,
+          message: `✓ ${toRemove.length} ligne(s) supprimée(s) — ligne conservée : ${keepLineId}`,
+          chosen_tag: null,  // reset
+        })
+      }
+
       case 'choose_problem_tag': {
         // Envoie les options au frontend via l'événement SSE 'choices'
         // Le résultat __type__: 'choices' est intercepté dans route.ts

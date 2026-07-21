@@ -128,6 +128,16 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes:      ['id', 'number'],
     resultAlias: {},
   },
+  choose_article: {
+    label:  'Choisir un article (boutons)',
+    reads:  ['lines'],
+    writes: ['chosen_tag'],  // chosen_tag = line_id de l'article à conserver
+  },
+  remove_other_lines: {
+    label:  'Supprimer toutes les lignes sauf l\'article choisi',
+    reads:  ['lines', 'chosen_tag'],
+    writes: [],
+  },
   zero_out_order_lines: {
     label:  'Remettre les lignes à 0',
     reads:  ['id'],
