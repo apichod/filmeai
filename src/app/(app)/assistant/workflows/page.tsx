@@ -94,8 +94,46 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   create_new_return_order: 'code',
   zero_out_order_lines:    'code',
   set_original_order:      'code',
-  add_internal_note:       'code',
-  send_email:              'code',
+  add_internal_note:       'ai',
+  send_email:              'ai',
+}
+
+/** Compatibilité d'exécution par outil */
+type ToolCompat = 'code' | 'ai' | 'both'
+const TOOL_COMPAT: Record<string, ToolCompat> = {
+  fetch_order:             'both',
+  search_products:         'ai',
+  add_internal_note:       'ai',
+  create_new_return_order: 'code',
+  add_new_product_line:    'ai',
+  set_original_order:      'code',
+  clear_tags:              'code',
+  revert_to_concept:       'code',
+  cancel_order:            'code',
+  remove_product_line:     'code',
+  reserve_order:           'code',
+  start_order:             'code',
+  update_return_date:      'code',
+  stop_order:              'code',
+  add_tag:                 'both',
+  add_sav_comment:         'both',
+  duplicate_order:         'code',
+  choose_article:          'both',
+  remove_other_lines:      'code',
+  choose_problem_tag:      'both',
+  draft_email:             'ai',
+  zero_out_order_lines:    'code',
+  send_email:              'ai',
+  log_case:                'ai',
+}
+
+/** Description comportement par mode (pour les outils 'both') */
+const TOOL_MODE_DESC: Record<string, { code: string; ai: string }> = {
+  fetch_order:        { code: 'Exécution directe via UUID ou numéro depuis les vars', ai: 'L\'IA extrait le numéro depuis la conversation' },
+  choose_article:     { code: 'Affiche des boutons multi-select', ai: 'Liste les articles, l\'opérateur saisit sa sélection par texte' },
+  choose_problem_tag: { code: 'Affiche des boutons de choix', ai: 'L\'IA extrait le tag depuis la conversation' },
+  add_tag:            { code: 'Tags définis dans les paramètres du step', ai: 'L\'IA détermine les tags selon le contexte' },
+  add_sav_comment:    { code: 'Commentaire défini dans les paramètres', ai: 'L\'IA rédige le commentaire' },
 }
 
 // Hint JSON par outil
@@ -440,6 +478,41 @@ function StepList({
                   ))}
                 </select>
               </div>
+
+              {/* Badges compatibilité + description mode */}
+              {step.booqable_action && (() => {
+                const compat = TOOL_COMPAT[step.booqable_action] ?? 'both'
+                const modeDesc = TOOL_MODE_DESC[step.booqable_action]
+                const activeMode = step.execution ?? 'ai'
+                const desc = modeDesc?.[activeMode]
+                return (
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    {(compat === 'code' || compat === 'both') && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-700 border border-green-200">
+                        ⚡ Code
+                      </span>
+                    )}
+                    {(compat === 'ai' || compat === 'both') && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                        🤖 IA
+                      </span>
+                    )}
+                    {compat === 'code' && activeMode === 'ai' && (
+                      <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                        ⚠ Cet outil n'est pas prévu pour le mode IA
+                      </span>
+                    )}
+                    {compat === 'ai' && activeMode === 'code' && (
+                      <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                        ⚠ Cet outil n'est pas prévu pour le mode Code
+                      </span>
+                    )}
+                    {desc && (
+                      <span className="text-[10px] text-gray-400 italic">{desc}</span>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Paramètres structurés — visibles quand booqable_action est sélectionné */}
               {step.booqable_action && (
