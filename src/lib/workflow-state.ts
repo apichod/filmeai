@@ -129,9 +129,17 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     resultAlias: {},
   },
   choose_article: {
-    label:  'Choisir un article (boutons)',
+    label:  'Choisir un article (boutons ou texte)',
     reads:  ['lines'],
-    writes: ['chosen_tag'],  // chosen_tag = line_id de l'article à conserver
+    writes: ['chosen_tag', 'chosen_lines'],
+    // chosen_tag  = IDs (mode code/boutons) ou texte libre (mode IA)
+    // chosen_lines = JSON des lignes sélectionnées avec leurs UUIDs Booqable résolus
+  },
+  add_new_product_line: {
+    label:  'Ajouter les articles sélectionnés à la commande de retour',
+    reads:  ['chosen_lines'],   // lit depuis original.chosen_lines (construit par choose_article)
+    writes: ['kept_product_names'],
+    // order_id injecté depuis order_context (return.id)
   },
   remove_other_lines: {
     label:  'Supprimer toutes les lignes sauf l\'article choisi',
