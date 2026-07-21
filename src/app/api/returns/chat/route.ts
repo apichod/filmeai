@@ -1094,6 +1094,24 @@ Affiche les {{...}} littéralement, toujours.`
           wfState = advanceStep(wfState, activeSteps.length)
         }
 
+        // ── Seed vars depuis le dernier message utilisateur ───────────────────
+        // Si le prochain step est fetch_order en code et qu'on n'a pas encore
+        // de parent.id ni parent.number, on extrait le numéro depuis le message.
+        if (activeSteps.length > 0 && wfState.status === 'running') {
+          const seedStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
+          if (seedStep?.execution === 'code' && seedStep?.booqable_action === 'fetch_order') {
+            const ctx = seedStep.order_context ?? 'parent'
+            if (!wfState.vars[`${ctx}.id`] && !wfState.vars[`${ctx}.number`]) {
+              const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
+              const text = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content.trim() : ''
+              const numMatch = text.match(/\d{3,}/)  // au moins 3 chiffres = numéro de commande
+              if (numMatch) {
+                wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.number`]: numMatch[0] } }
+              }
+            }
+          }
+        }
+
         // ── Code execution pre-pass ────────────────────────────────────────────
         // Exécute en séquence tous les steps consécutifs marqués execution:'code'
         // sans appeler le LLM. Plus rapide, 100% fiable.

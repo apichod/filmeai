@@ -67,11 +67,14 @@ export async function executeCodeStep(
     switch (step.booqable_action) {
 
       case 'fetch_order': {
+        const ctx = step.order_context ?? 'parent'
         let order = null
         if (orderId) {
           order = await fetchOrderById(orderId)
-        } else if (params.order_number) {
-          order = await fetchOrderByNumber(String(params.order_number))
+        } else {
+          // Fallback : numéro depuis vars (ex: 'parent.number' seedé depuis le message user)
+          const fallbackNum = vars[`${ctx}.number`] ?? String(params.order_number ?? '')
+          if (fallbackNum) order = await fetchOrderByNumber(fallbackNum)
         }
         if (!order) return err(`fetch_order : commande ${label} introuvable`)
         return ok({
