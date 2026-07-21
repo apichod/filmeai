@@ -155,7 +155,7 @@ export async function executeCodeStep(
         if (!keepTagStr) return err('remove_other_lines : chosen_tag manquant (choose_article requis avant)')
 
         const keepIds = keepTagStr.split(',').map(s => s.trim()).filter(Boolean)
-        const lines   = JSON.parse(linesRaw) as Array<{ id: string }>
+        const lines   = JSON.parse(linesRaw) as Array<{ id: string; product_name?: string }>
 
         // Grouper les IDs synthétiques par real line ID
         // ID synthétique format : "realLineId__siId" ; ID normal : pas de "__"
@@ -184,13 +184,18 @@ export async function executeCodeStep(
           // Si toutes unités conservées → rien à faire
         }
 
-        // Réinitialiser chosen_tag pour qu'il soit libre pour choose_problem_tag
+        // Noms des produits conservés (pour le Commentaire SAV automatique)
+        const keptNames = lines
+          .filter(l => keepIds.includes(l.id))
+          .map(l => l.product_name || l.id)
+        const keptNamesStr = Array.from(new Set(keptNames)).filter(Boolean).join(', ')
+
         return ok({
-          success: true,
-          removed: removedCount,
-          reduced: reducedCount,
+          success:            true,
+          removed:            removedCount,
+          reduced:            reducedCount,
+          kept_product_names: keptNamesStr,
           message: `✓ ${removedCount} ligne(s) supprimée(s)${reducedCount > 0 ? `, ${reducedCount} réduite(s)` : ''}`,
-          chosen_tag: null,  // reset
         })
       }
 
@@ -256,11 +261,28 @@ export async function executeCodeStep(
 
       case 'add_sav_comment': {
         if (!orderId) return err('add_sav_comment : order_id manquant')
-        const originNum = orderNum ?? ''
-        const comment   = String(params.comment ?? '')
-        if (!comment) return err('add_sav_comment : paramètre "comment" manquant')
+        const originNum = String(params.origin_order_number ?? vars['parent.number'] ?? orderNum ?? '')
+
+        // Construction automatique du commentaire depuis le tag problème + produits conservés
+        let comment = String(params.comment ?? '')
+        if (!comment) {
+          const ctx = step.order_context ?? 'parent'
+          const tag       = vars[`${ctx}.chosen_tag`]  ?? ''
+          const products  = vars[`${ctx}.kept_product_names`] ?? ''
+          const prefixMap: Record<string, string> = {
+            r11_late:    'Manquant',
+            r12_missing: 'Perdu',
+            r13_theft:   'Volé',
+            r14_damage:  'Cassé',
+          }
+          const prefix = prefixMap[tag]
+          if (prefix && products) comment = `${prefix} : ${products}`
+          else if (prefix)        comment = prefix
+        }
+
+        if (!comment) return err('add_sav_comment : tag ou produits manquants (choose_problem_tag + remove_other_lines requis avant)')
         await addSAVComment(orderId, originNum, comment)
-        return ok({ success: true, message: `✓ Commentaire SAV ajouté sur ${label}` })
+        return ok({ success: true, message: `✓ Commentaire SAV : "${comment}"` })
       }
 
       case 'create_new_return_order': {

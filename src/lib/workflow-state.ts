@@ -136,7 +136,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   remove_other_lines: {
     label:  'Supprimer toutes les lignes sauf l\'article choisi',
     reads:  ['lines', 'chosen_tag'],
-    writes: [],
+    writes: ['kept_product_names'],
   },
   zero_out_order_lines: {
     label:  'Remettre les lignes à 0',
