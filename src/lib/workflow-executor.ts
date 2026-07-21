@@ -171,7 +171,7 @@ export async function executeCodeStep(
 
         let removedCount = 0
         let reducedCount = 0
-        for (const [realLineId, g] of groups) {
+        for (const [realLineId, g] of Array.from(groups.entries())) {
           if (g.keep === 0) {
             // Aucune unité à conserver → supprimer la ligne entière
             await removeProductLine(realLineId)
