@@ -1104,17 +1104,24 @@ Affiche les {{...}} littéralement, toujours.`
           wfState = advanceStep(wfState, activeSteps.length)
         }
 
-        // ── Seed vars depuis le dernier message utilisateur ───────────────────
+        // ── Seed vars depuis l'historique des messages utilisateur ─────────────
         // Si le prochain step est fetch_order en code et qu'on n'a pas encore
-        // de parent.id ni parent.number, on extrait le numéro depuis le message.
+        // de {ctx}.id ni {ctx}.number, on extrait le numéro en remontant TOUS les
+        // messages user (du plus récent au plus ancien) — pas juste le dernier,
+        // car l'utilisateur peut avoir tapé "9300" deux messages plus tôt et "ok" en dernier.
         if (activeSteps.length > 0 && wfState.status === 'running') {
           const seedStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
           if (seedStep?.execution === 'code' && seedStep?.booqable_action === 'fetch_order') {
             const ctx = seedStep.order_context ?? 'parent'
             if (!wfState.vars[`${ctx}.id`] && !wfState.vars[`${ctx}.number`]) {
-              const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
-              const text = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content.trim() : ''
-              const numMatch = text.match(/\d{3,}/)  // au moins 3 chiffres = numéro de commande
+              let numMatch: RegExpMatchArray | null = null
+              for (let i = messages.length - 1; i >= 0; i--) {
+                const msg = messages[i]
+                if (msg.role === 'user' && typeof msg.content === 'string') {
+                  const m = (msg.content as string).match(/\d{3,}/)
+                  if (m) { numMatch = m; break }
+                }
+              }
               if (numMatch) {
                 wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.number`]: numMatch[0] } }
               }
@@ -1146,10 +1153,21 @@ Affiche les {{...}} littéralement, toujours.`
 
             send(JSON.stringify({ type: 'tool_call', name: displayName }))
 
-            const { resultText, newVars } = await executeCodeStep(codeStep, wfState.vars)
+            const { resultText, success: codeSuccess, newVars } = await executeCodeStep(codeStep, wfState.vars)
 
             if (Object.keys(newVars).length > 0) {
               wfState = { ...wfState, vars: { ...wfState.vars, ...newVars } }
+            }
+
+            // Erreur bloquante → afficher l'erreur et sortir du pre-pass sans avancer
+            if (!codeSuccess) {
+              send(JSON.stringify({ type: 'tool_result', name: displayName, result: resultText }))
+              let errMsg = resultText
+              try { errMsg = (JSON.parse(resultText) as { error?: string }).error ?? resultText } catch { /* ignore */ }
+              send(JSON.stringify({ type: 'text', content: `❌ ${errMsg}` }))
+              send(JSON.stringify({ type: 'done', caseId: currentCaseId, workflowState: wfState }))
+              controller.close()
+              return
             }
 
             // Si le résultat est un choix (choose_problem_tag / choose_article) → SSE + waiting_for_input + pas d'avance

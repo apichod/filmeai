@@ -234,9 +234,9 @@ export function buildToolArgs(step: WorkflowStep, vars: WorkflowVars): Record<st
     if (orderId) args.order_id = orderId
   }
 
-  // 3. add_sav_comment : toujours référencer le numéro de la commande PARENT (origine)
+  // 3. add_sav_comment : référencer le numéro de la commande d'ORIGINE (original), pas de la return order (parent)
   if (step.booqable_action === 'add_sav_comment') {
-    args.origin_order_number = vars['parent.number'] ?? getOrderNumberForStep(step, vars) ?? ''
+    args.origin_order_number = vars['original.number'] ?? vars['parent.number'] ?? getOrderNumberForStep(step, vars) ?? ''
   }
 
   return args
