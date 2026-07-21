@@ -314,10 +314,10 @@ Le système orchestre automatiquement toutes les autres étapes — tu n'exécut
         const lines = JSON.parse(linesRaw) as Array<{ id?: string; product_name?: string; quantity?: number; stock_item_identifier?: string }>
         if (Array.isArray(lines) && lines.length > 0) {
           const formatted = lines.map(l => {
-            const shortId = l.stock_item_identifier?.match(/(\d+)$/)?.[1] ?? ''
-            const idPart   = shortId ? ` ID ${shortId}` : ''
+            const shortId   = l.stock_item_identifier?.match(/(\d+)$/)?.[1] ?? ''
+            const idPart    = shortId ? ` ID ${shortId}` : ''
             const identPart = l.stock_item_identifier ? ` (${l.stock_item_identifier})` : ''
-            return `  ${l.quantity ?? 1} x ${l.product_name ?? '?'}${idPart}${identPart}`
+            return `${l.quantity ?? 1} x ${l.product_name ?? '?'}${idPart}${identPart}`
           }).join('\n')
           linesSection = `\n\nARTICLES SUR LA COMMANDE (${ctx}) :\n${formatted}\n(Pour les suppressions, utilise les line_id du résultat fetch_order précédent.)`
         }
@@ -331,7 +331,7 @@ ${orderRef}
 ${step.description ?? step.title}${linesSection}
 
 RÈGLES STRICTES :
-- Si des articles sont listés ci-dessus, affiche-les avec leur numéro, nom, quantité ET line_id avant de poser la question.
+- Si des articles sont listés ci-dessus, affiche-les tels quels avant de poser la question.
 - Ne mentionne PAS les étapes suivantes.
 - N'appelle aucun outil.
 - Attends la réponse avant de continuer.${context}`
