@@ -261,7 +261,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
         // Build maps from sips :
         //   planToSIs : planning_id → [{ ident, siId }, ...]  (MULTI-value — pour expansion qty>1)
         //   pgToSI    : product_group_id → [{ ident, siId }]  (fallback si pgId disponible)
-        type SIInfo = { ident: string; siId: string }
+        type SIInfo = { ident: string; siId: string; pgId: string }
         const planToSIs = new Map<string, SIInfo[]>()
         const pgToSI    = new Map<string, SIInfo[]>()
 
@@ -273,15 +273,14 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           if (!si) continue
           const ident = String(si.attributes.identifier || '')
           const pgId  = String(si.attributes.product_group_id || '')
-          console.log(`[pass3] sip planId=${planId} siId=${siId} ident=${ident} pgId=${pgId}`)
           if (planId) {
             const list = planToSIs.get(planId) || []
-            if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+            if (!list.find(x => x.siId === siId)) list.push({ ident, siId, pgId })
             planToSIs.set(planId, list)
           }
           if (pgId) {
             const list = pgToSI.get(pgId) || []
-            if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+            if (!list.find(x => x.siId === siId)) list.push({ ident, siId, pgId })
             pgToSI.set(pgId, list)
           }
         }
@@ -292,10 +291,10 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           let info: SIInfo | undefined
           if (line.planning_id) info = (planToSIs.get(line.planning_id) || [])[0]
           if (!info && line.product_group_id) info = pgToSI.get(line.product_group_id)?.[0]
-          console.log(`[pass3] line ${line.id} planning_id=${line.planning_id} pgId=${line.product_group_id} → info=${JSON.stringify(info)}`)
           if (info && info.ident) {
             line.stock_item_identifier = info.ident
-            if (!line.stock_item_id) line.stock_item_id = info.siId
+            if (!line.stock_item_id)      line.stock_item_id      = info.siId
+            if (!line.product_group_id)   line.product_group_id   = info.pgId
           }
         }
 
@@ -431,7 +430,7 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
         for (const r of sipData2.included || []) {
           if (r.type === 'stock_items') siMap2.set(r.id, r)
         }
-        type SIInfo2 = { ident: string; siId: string }
+        type SIInfo2 = { ident: string; siId: string; pgId: string }
         const planToSIs2 = new Map<string, SIInfo2[]>()
         const pgToSI2    = new Map<string, SIInfo2[]>()
         for (const sip of sipData2.data || []) {
@@ -444,12 +443,12 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
           const pgId  = String(si.attributes.product_group_id || '')
           if (planId) {
             const list = planToSIs2.get(planId) || []
-            if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+            if (!list.find(x => x.siId === siId)) list.push({ ident, siId, pgId })
             planToSIs2.set(planId, list)
           }
           if (pgId) {
             const list = pgToSI2.get(pgId) || []
-            if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+            if (!list.find(x => x.siId === siId)) list.push({ ident, siId, pgId })
             pgToSI2.set(pgId, list)
           }
         }
@@ -461,7 +460,7 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
           if (siList.length !== line.quantity && line.product_group_id) siList = pgToSI2.get(line.product_group_id) || []
           if (siList.length !== line.quantity) { expandedLines2.push(line); continue }
           for (const si of siList) {
-            expandedLines2.push({ ...line, id: `${line.id}__${si.siId}`, quantity: 1, stock_item_id: si.siId, stock_item_identifier: si.ident })
+            expandedLines2.push({ ...line, id: `${line.id}__${si.siId}`, quantity: 1, stock_item_id: si.siId, stock_item_identifier: si.ident, product_group_id: si.pgId || line.product_group_id })
           }
         }
         order.lines = expandedLines2
