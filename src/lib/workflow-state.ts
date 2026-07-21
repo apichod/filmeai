@@ -229,9 +229,9 @@ export function buildToolArgs(step: WorkflowStep, vars: WorkflowVars): Record<st
     if (orderId) args.order_id = orderId
   }
 
-  // 3. add_sav_comment : numéro de commande en clair
+  // 3. add_sav_comment : toujours référencer le numéro de la commande PARENT (origine)
   if (step.booqable_action === 'add_sav_comment') {
-    args.origin_order_number = getOrderNumberForStep(step, vars) ?? ''
+    args.origin_order_number = vars['parent.number'] ?? getOrderNumberForStep(step, vars) ?? ''
   }
 
   return args
@@ -299,8 +299,14 @@ export function buildStepInstruction(
 
   if (step.type === 'action') {
     const toolArgs   = buildToolArgs(step, vars)
+    const ctx = step.order_context ?? 'parent'
+    const chosenTag = vars[`${ctx}.chosen_tag`]
+    const tagLabel: Record<string, string> = {
+      r11_late: 'Retard de retour', r12_missing: 'Perte du matériel',
+      r13_theft: 'Vol du matériel',  r14_damage: 'Dommage constaté sur le matériel',
+    }
     const commentNote = step.booqable_action === 'add_sav_comment'
-      ? '\nNOTE : le champ "comment" doit être construit à partir du dernier message de l\'opérateur.'
+      ? `\nNOTE : le champ "comment" doit être un court résumé en français du problème.${chosenTag ? ` Le tag choisi est "${chosenTag}" (${tagLabel[chosenTag] ?? chosenTag}) — utilise-le pour rédiger le commentaire.` : ''}`
       : ''
 
     return `══════════════════════════════════════════

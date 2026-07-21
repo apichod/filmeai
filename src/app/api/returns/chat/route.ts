@@ -1038,15 +1038,16 @@ Affiche les {{...}} littéralement, toujours.`
   // État courant : envoyé par le client, ou initialisation à l'étape 0
   let wfState: WorkflowState = clientWorkflowState ?? { step_index: 0, vars: {}, status: 'running' }
 
-  // Si l'étape courante est une QUESTION et qu'on attend une réponse → l'utilisateur vient de répondre → avancer
+  // Si on attendait une réponse (choose_problem_tag ou choose_article) → capturer le choix et avancer
   if (activeSteps.length > 0 && wfState.status === 'waiting_for_input') {
-    // Si l'étape qu'on quitte était choose_problem_tag → stocker le tag choisi
     const leavingStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
-    if (leavingStep?.booqable_action === 'choose_problem_tag') {
+    const isChoiceStep = leavingStep?.booqable_action === 'choose_problem_tag'
+                      || leavingStep?.booqable_action === 'choose_article'
+    if (isChoiceStep) {
       const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
       const chosenTag = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content.trim() : ''
       if (chosenTag) {
-        const ctx = leavingStep.output_context ?? leavingStep.order_context ?? 'parent'
+        const ctx = leavingStep!.output_context ?? leavingStep!.order_context ?? 'parent'
         wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.chosen_tag`]: chosenTag } }
       }
     }
@@ -1088,9 +1089,18 @@ Affiche les {{...}} littéralement, toujours.`
         let currentCaseId = caseId
 
         // ── waiting_for_input → avance automatiquement ────────────────────────
-        // Si le dernier tour s'est terminé sur une question (waiting_for_input),
-        // l'utilisateur vient de répondre → on passe à l'étape suivante.
         if (activeSteps.length > 0 && wfState.status === 'waiting_for_input') {
+          const leavingStep2 = activeSteps[wfState.step_index] as WorkflowStep | undefined
+          const isChoiceStep2 = leavingStep2?.booqable_action === 'choose_problem_tag'
+                             || leavingStep2?.booqable_action === 'choose_article'
+          if (isChoiceStep2) {
+            const lastUserMsg2 = [...messages].reverse().find(m => m.role === 'user')
+            const chosenTag2 = typeof lastUserMsg2?.content === 'string' ? lastUserMsg2.content.trim() : ''
+            if (chosenTag2) {
+              const ctx2 = leavingStep2!.output_context ?? leavingStep2!.order_context ?? 'parent'
+              wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.chosen_tag`]: chosenTag2 } }
+            }
+          }
           wfState = advanceStep(wfState, activeSteps.length)
         }
 
@@ -1169,6 +1179,13 @@ Affiche les {{...}} littéralement, toujours.`
 
           // Workflow terminé sans passer par le LLM
           if (wfState.status === 'completed') {
+            send(JSON.stringify({ type: 'done', caseId: currentCaseId, workflowState: wfState }))
+            controller.close()
+            return
+          }
+
+          // Boutons affichés (choose_article / choose_problem_tag) → attendre la réponse, ne pas déclencher le LLM
+          if (wfState.status === 'waiting_for_input') {
             send(JSON.stringify({ type: 'done', caseId: currentCaseId, workflowState: wfState }))
             controller.close()
             return
