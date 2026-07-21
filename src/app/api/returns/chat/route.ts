@@ -1219,8 +1219,12 @@ Affiche les {{...}} littéralement, toujours.`
         // Boucle agent (gère les tool_calls) — max 20 itérations pour éviter les boucles infinies
         let agentLoopCount = 0
         while (agentLoopCount++ < 20) {
-          // Sortie rapide si workflow terminé (double-check)
-          if (wfState.status === 'completed') {
+          // Sortie rapide si workflow terminé OU si step_index dépasse le nombre d'étapes
+          if (
+            wfState.status === 'completed' ||
+            (activeSteps.length > 0 && wfState.step_index >= activeSteps.length)
+          ) {
+            wfState = { ...wfState, status: 'completed' }
             send(JSON.stringify({ type: 'done', caseId: currentCaseId, workflowState: wfState }))
             controller.close()
             return
