@@ -18,6 +18,12 @@ import {
   startSAVOrder,
   removeProductLine,
   fetchOrderByNumber,
+  createSAVOrder,
+  zeroOutOrderLines,
+  setOriginalOrder,
+  addInternalNote,
+  sendEmailViaBooqable,
+  addSAVComment,
 } from './booqable-orders'
 
 import {
@@ -103,11 +109,27 @@ export async function executeCodeStep(
 
       case 'add_tag': {
         if (!orderId) return err('add_tag : order_id manquant')
-        const tagsAdd    = (params.tags_add    as string[] | undefined) ?? []
+        const ctx        = step.order_context ?? 'parent'
+        const tagsAdd    = [...((params.tags_add as string[] | undefined) ?? [])]
         const tagsRemove = (params.tags_remove as string[] | undefined) ?? []
+        // Ajouter automatiquement le tag choisi via choose_problem_tag si présent
+        const chosenTag  = vars[`${ctx}.chosen_tag`]
+        if (chosenTag && !tagsAdd.includes(chosenTag)) tagsAdd.push(chosenTag)
         await addTagToOrder(orderId, tagsAdd, tagsRemove.length > 0 ? tagsRemove : undefined)
         return ok({ success: true, tags_added: tagsAdd,
           message: `✓ Tags ajoutés sur ${label} : ${tagsAdd.join(', ')}` })
+      }
+
+      case 'choose_problem_tag': {
+        // Envoie les options au frontend via l'événement SSE 'choices'
+        // Le résultat __type__: 'choices' est intercepté dans route.ts
+        const options = (params.options as Array<{ label: string; tag: string }> | undefined) ?? []
+        return ok({
+          __type__: 'choices',
+          order_id: orderId ?? '',
+          items:    options,
+          message:  `En attente du choix de l'opérateur`,
+        })
       }
 
       case 'reserve_order': {
@@ -147,6 +169,62 @@ export async function executeCodeStep(
         if (!lineId) return err('remove_product_line : line_id manquant dans parameters')
         await removeProductLine(lineId)
         return ok({ success: true, message: `✓ Ligne ${lineId} supprimée` })
+      }
+
+      case 'add_sav_comment': {
+        if (!orderId) return err('add_sav_comment : order_id manquant')
+        const originNum = orderNum ?? ''
+        const comment   = String(params.comment ?? '')
+        if (!comment) return err('add_sav_comment : paramètre "comment" manquant')
+        await addSAVComment(orderId, originNum, comment)
+        return ok({ success: true, message: `✓ Commentaire SAV ajouté sur ${label}` })
+      }
+
+      case 'create_new_return_order': {
+        const ctx        = step.order_context ?? 'parent'
+        const customerId = vars[`${ctx}.customer_id`]
+        if (!customerId) return err('create_new_return_order : customer_id manquant dans les variables')
+        const newOrder = await createSAVOrder({ customerId })
+        if (!newOrder) return err('create_new_return_order : échec de création de la commande')
+        return ok({
+          success: true,
+          id:      newOrder.id,
+          number:  String(newOrder.number),
+          message: `✓ Nouvelle commande de retour créée : #${newOrder.number}`,
+        })
+      }
+
+      case 'zero_out_order_lines': {
+        if (!orderId) return err('zero_out_order_lines : order_id manquant')
+        await zeroOutOrderLines(orderId)
+        return ok({ success: true, message: `✓ Lignes remises à 0 sur ${label}` })
+      }
+
+      case 'set_original_order': {
+        // return.id = le step cible la commande de retour (order_context: 'return')
+        // original.number = le numéro de la commande d'origine
+        if (!orderId) return err('set_original_order : return order_id manquant')
+        const originalNumber = vars['original.number']
+        if (!originalNumber) return err('set_original_order : original.number manquant dans les variables')
+        await setOriginalOrder(orderId, originalNumber)
+        return ok({ success: true, message: `✓ Commande d'origine #${originalNumber} renseignée sur ${label}` })
+      }
+
+      case 'add_internal_note': {
+        if (!orderId) return err('add_internal_note : order_id manquant')
+        const note = String(params.note ?? '')
+        if (!note) return err('add_internal_note : paramètre "note" manquant')
+        await addInternalNote(orderId, note)
+        return ok({ success: true, message: `✓ Note interne ajoutée sur ${label}` })
+      }
+
+      case 'send_email': {
+        if (!orderId) return err('send_email : order_id manquant')
+        const subject = String(params.subject ?? '')
+        const body    = String(params.body ?? '')
+        if (!subject || !body) return err('send_email : paramètres "subject" et "body" requis')
+        await sendEmailViaBooqable(orderId, subject, body)
+        return ok({ success: true, message: `✓ Email envoyé pour ${label}` })
       }
 
       default:

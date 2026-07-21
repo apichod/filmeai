@@ -1040,6 +1040,16 @@ Affiche les {{...}} littéralement, toujours.`
 
   // Si l'étape courante est une QUESTION et qu'on attend une réponse → l'utilisateur vient de répondre → avancer
   if (activeSteps.length > 0 && wfState.status === 'waiting_for_input') {
+    // Si l'étape qu'on quitte était choose_problem_tag → stocker le tag choisi
+    const leavingStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
+    if (leavingStep?.booqable_action === 'choose_problem_tag') {
+      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
+      const chosenTag = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content.trim() : ''
+      if (chosenTag) {
+        const ctx = leavingStep.output_context ?? leavingStep.order_context ?? 'parent'
+        wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.chosen_tag`]: chosenTag } }
+      }
+    }
     wfState = advanceStep(wfState, activeSteps.length)
   }
 

@@ -22,6 +22,7 @@ const BOOQABLE_TOOLS = [
   { value: 'duplicate_order',     label: 'duplicate_order — dupliquer la commande' },
   { value: 'choose_problem_tag',  label: 'choose_problem_tag — afficher boutons choix de tag (retard/perte/vol/dommage)' },
   { value: 'draft_email',         label: 'draft_email — préparer l\'email client' },
+  { value: 'zero_out_order_lines', label: 'zero_out_order_lines — remettre les lignes à 0' },
   { value: 'send_email',          label: 'send_email — envoyer l\'email' },
   { value: 'log_case',            label: 'log_case — logger le cas FilmeAI' },
 ]
@@ -49,37 +50,69 @@ type WorkflowStep = {
 type ToolIO = { reads: string[]; writes: string[]; outputCtx?: string }
 
 const TOOL_IO: Record<string, ToolIO> = {
-  fetch_order:          { reads: ['id'],       writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'] },
-  duplicate_order:      { reads: ['id'],       writes: ['id', 'number'], outputCtx: 'child' },
-  revert_to_concept:    { reads: ['id'],       writes: [] },
-  clear_tags:           { reads: ['id'],       writes: [] },
-  add_tag:              { reads: ['id'],       writes: [] },
-  choose_problem_tag:   { reads: ['id'],       writes: [] },
-  reserve_order:        { reads: ['id'],       writes: [] },
-  start_order:          { reads: ['id'],       writes: [] },
-  stop_order:           { reads: ['id'],       writes: [] },
-  cancel_order:         { reads: ['id'],       writes: [] },
-  update_return_date:   { reads: ['id'],       writes: [] },
-  remove_product_line:  { reads: [],           writes: [] },
-  add_sav_comment:      { reads: ['id', 'number'], writes: [] },
-  create_new_return_order: { reads: [],        writes: ['id', 'number'], outputCtx: 'return' },
+  fetch_order:             { reads: ['id'],           writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'] },
+  duplicate_order:         { reads: ['id'],           writes: ['id', 'number'], outputCtx: 'child' },
+  revert_to_concept:       { reads: ['id'],           writes: [] },
+  clear_tags:              { reads: ['id'],           writes: [] },
+  add_tag:                 { reads: ['id'],           writes: [] },
+  choose_problem_tag:      { reads: ['id'],           writes: ['chosen_tag'] },
+  reserve_order:           { reads: ['id'],           writes: [] },
+  start_order:             { reads: ['id'],           writes: [] },
+  stop_order:              { reads: ['id'],           writes: [] },
+  cancel_order:            { reads: ['id'],           writes: [] },
+  update_return_date:      { reads: ['id'],           writes: [] },
+  remove_product_line:     { reads: [],               writes: [] },
+  add_sav_comment:         { reads: ['id', 'number'], writes: [] },
+  create_new_return_order: { reads: ['customer_id'],  writes: ['id', 'number'], outputCtx: 'return' },
+  zero_out_order_lines:    { reads: ['id'],           writes: [] },
+  set_original_order:      { reads: ['id'],           writes: [] },
+  add_internal_note:       { reads: ['id'],           writes: [] },
+  send_email:              { reads: ['id'],           writes: [] },
+}
+
+/** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
+const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
+  fetch_order:             'code',
+  duplicate_order:         'code',
+  revert_to_concept:       'code',
+  clear_tags:              'code',
+  add_tag:                 'code',
+  choose_problem_tag:      'code',
+  reserve_order:           'code',
+  start_order:             'code',
+  stop_order:              'code',
+  cancel_order:            'code',
+  update_return_date:      'code',
+  remove_product_line:     'code',
+  add_sav_comment:         'code',
+  create_new_return_order: 'code',
+  zero_out_order_lines:    'code',
+  set_original_order:      'code',
+  add_internal_note:       'code',
+  send_email:              'code',
 }
 
 // Hint JSON par outil
 const PARAMETERS_HINT: Record<string, string> = {
-  clear_tags:          '{}',
-  revert_to_concept:   '{}',
-  cancel_order:        '{}',
-  remove_product_line: '{}',
-  reserve_order:       '{}',
-  start_order:         '{}',
-  update_return_date:  '{}',
-  stop_order:          '{}',
-  add_tag:             '{"tags_add": ["R22_WAIVED"], "tags_remove": ["R21_OPEN"]}',
-  duplicate_order:     '{}',
-  choose_problem_tag:  '{}',
-  draft_email:         '{"template_id": "retour_ok"}',
-  log_case:            '{"problem_type": "manquant"}',
+  clear_tags:              '{}',
+  revert_to_concept:       '{}',
+  cancel_order:            '{}',
+  remove_product_line:     '{}',
+  reserve_order:           '{}',
+  start_order:             '{}',
+  update_return_date:      '{}',
+  stop_order:              '{}',
+  add_tag:                 '{"tags_add": ["R22_WAIVED"], "tags_remove": ["R21_OPEN"]}',
+  duplicate_order:         '{}',
+  choose_problem_tag:      '{"options": [{"label": "Retard", "tag": "r21_open"}, {"label": "Perte", "tag": "r22_waived"}, {"label": "Dommage", "tag": "r23_security"}, {"label": "Facturé", "tag": "r24_billed"}]}',
+  create_new_return_order: '{}',
+  zero_out_order_lines:    '{}',
+  set_original_order:      '{}',
+  add_internal_note:       '{"note": "Note interne à rédiger par l\'IA"}',
+  add_sav_comment:         '{"comment": "Commentaire SAV à rédiger par l\'IA"}',
+  send_email:              '{"subject": "Objet de l\'email", "body": "Corps de l\'email"}',
+  draft_email:             '{"template_id": "retour_ok"}',
+  log_case:                '{"problem_type": "manquant"}',
 }
 
 type Workflow = {
@@ -388,7 +421,11 @@ function StepList({
                 <label className="block text-xs text-gray-400 mb-1">Appel API Booqable</label>
                 <select
                   value={step.booqable_action || ''}
-                  onChange={e => updateStep(idx, { booqable_action: e.target.value || undefined })}
+                  onChange={e => {
+                    const action = e.target.value || undefined
+                    const defaultExec = action ? (TOOL_DEFAULT_EXECUTION[action] ?? 'ai') : undefined
+                    updateStep(idx, { booqable_action: action, execution: defaultExec })
+                  }}
                   className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
                 >
                   <option value="">— aucun —</option>

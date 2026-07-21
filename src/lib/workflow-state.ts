@@ -83,9 +83,9 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes: [],
   },
   choose_problem_tag: {
-    label:  'Choisir le tag problème',
+    label:  'Choisir le tag problème (boutons)',
     reads:  ['id'],
-    writes: [],
+    writes: ['chosen_tag'],   // stocke le tag sélectionné par l'utilisateur
   },
   reserve_order: {
     label:  'Réserver',
@@ -124,9 +124,29 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   },
   create_new_return_order: {
     label:       'Créer une return order',
-    reads:       [],
+    reads:       ['customer_id'],  // lit customer_id depuis le contexte parent/original
     writes:      ['id', 'number'],
     resultAlias: {},
+  },
+  zero_out_order_lines: {
+    label:  'Remettre les lignes à 0',
+    reads:  ['id'],
+    writes: [],
+  },
+  set_original_order: {
+    label:  'Renseigner la commande d\'origine',
+    reads:  ['id', 'number'],  // lit return.id + original.number
+    writes: [],
+  },
+  add_internal_note: {
+    label:  'Ajouter une note interne',
+    reads:  ['id'],
+    writes: [],
+  },
+  send_email: {
+    label:  'Envoyer un email (template fixe)',
+    reads:  ['id'],
+    writes: [],
   },
 }
 
