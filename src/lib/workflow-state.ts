@@ -303,14 +303,30 @@ Le système orchestre automatiquement toutes les autres étapes — tu n'exécut
   }
 
   if (step.type === 'question') {
+    // Extraire les lignes du contexte actif pour les afficher dans la question
+    const ctx = step.order_context ?? 'parent'
+    const linesRaw = vars[`${ctx}.lines`]
+    let linesSection = ''
+    if (linesRaw) {
+      try {
+        const lines = JSON.parse(linesRaw) as Array<{ id?: string; product_name?: string; quantity?: number; stock_item_identifier?: string }>
+        if (Array.isArray(lines) && lines.length > 0) {
+          const formatted = lines.map((l, i) =>
+            `  ${i + 1}. ${l.product_name ?? '?'} (x${l.quantity ?? 1})${l.stock_item_identifier ? ' — ' + l.stock_item_identifier : ''} [line_id: ${l.id ?? '?'}]`
+          ).join('\n')
+          linesSection = `\n\nARTICLES SUR LA COMMANDE (${ctx}) :\n${formatted}`
+        }
+      } catch { /* pas JSON */ }
+    }
+
     return `══════════════════════════════════════════
 ÉTAPE ${stepIndex + 1}/${totalSteps} — QUESTION : ${step.title}
 ${orderRef}
 ══════════════════════════════════════════
-${step.description ?? step.title}
+${step.description ?? step.title}${linesSection}
 
 RÈGLES STRICTES :
-- Pose UNIQUEMENT cette question, rien d'autre.
+- Affiche le contexte utile (articles listés ci-dessus si présents), puis pose la question.
 - Ne mentionne PAS les étapes suivantes.
 - N'appelle aucun outil.
 - Attends la réponse avant de continuer.${context}`
