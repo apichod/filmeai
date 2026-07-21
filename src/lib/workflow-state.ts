@@ -138,7 +138,8 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   add_new_product_line: {
     label:  'Ajouter les articles sélectionnés à la commande de retour',
     reads:  ['chosen_lines'],   // lit depuis original.chosen_lines (construit par choose_article)
-    writes: ['kept_product_names'],
+    writes: ['kept_product_names', 'chosen_tag'],
+    // chosen_tag = 'r11_late' (préfixe pour add_sav_comment)
     // order_id injecté depuis order_context (return.id)
   },
   remove_other_lines: {

@@ -58,7 +58,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   clear_tags:              { reads: ['id'],           writes: [] },
   add_tag:                 { reads: ['id'],           writes: [] },
   choose_article:          { reads: ['lines'],         writes: ['chosen_tag', 'chosen_lines'] },
-  add_new_product_line:    { reads: ['chosen_lines'],  writes: ['kept_product_names'] },
+  add_new_product_line:    { reads: ['chosen_lines'],  writes: ['kept_product_names', 'chosen_tag'] },
   remove_other_lines:      { reads: ['lines', 'chosen_tag'], writes: [] },
   choose_problem_tag:      { reads: ['id'],           writes: ['chosen_tag'] },
   reserve_order:           { reads: ['id'],           writes: [] },
