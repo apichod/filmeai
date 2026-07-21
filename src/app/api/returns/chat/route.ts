@@ -1140,7 +1140,21 @@ Affiche les {{...}} littéralement, toujours.`
             if (Object.keys(newVars).length > 0) {
               wfState = { ...wfState, vars: { ...wfState.vars, ...newVars } }
             }
-            wfState = advanceStep(wfState, activeSteps.length)
+
+            // Si le résultat est un choix (choose_problem_tag) → SSE + waiting_for_input + pas d'avance
+            let isChoicesResult = false
+            try {
+              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string }
+              if (choicesParsed.__type__ === 'choices') {
+                send(JSON.stringify({ type: 'choices', order_id: choicesParsed.order_id, items: choicesParsed.items }))
+                wfState = { ...wfState, status: 'waiting_for_input' }
+                isChoicesResult = true
+              }
+            } catch { /* pas JSON */ }
+
+            if (!isChoicesResult) {
+              wfState = advanceStep(wfState, activeSteps.length)
+            }
 
             send(JSON.stringify({ type: 'tool_result', name: toolName, result: resultText }))
 
@@ -1364,7 +1378,21 @@ Affiche les {{...}} littéralement, toujours.`
               if (Object.keys(codeRes.newVars).length > 0) {
                 wfState = { ...wfState, vars: { ...wfState.vars, ...codeRes.newVars } }
               }
-              wfState = advanceStep(wfState, activeSteps.length)
+
+              // choices → SSE + waiting_for_input, pas d'avance
+              let postIsChoices = false
+              try {
+                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string }
+                if (postParsed.__type__ === 'choices') {
+                  send(JSON.stringify({ type: 'choices', order_id: postParsed.order_id, items: postParsed.items }))
+                  wfState = { ...wfState, status: 'waiting_for_input' }
+                  postIsChoices = true
+                }
+              } catch { /* pas JSON */ }
+
+              if (!postIsChoices) {
+                wfState = advanceStep(wfState, activeSteps.length)
+              }
               send(JSON.stringify({ type: 'tool_result', name: postCodeStep.booqable_action ?? 'code_step', result: codeRes.resultText }))
               currentMessages = [
                 ...currentMessages,
