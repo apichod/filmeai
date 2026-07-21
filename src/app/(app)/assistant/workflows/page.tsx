@@ -101,7 +101,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
 /** Compatibilité d'exécution par outil */
 type ToolCompat = 'code' | 'ai' | 'both'
 const TOOL_COMPAT: Record<string, ToolCompat> = {
-  fetch_order:             'both',
+  fetch_order:             'code',
   search_products:         'ai',
   add_internal_note:       'ai',
   create_new_return_order: 'code',
