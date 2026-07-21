@@ -184,17 +184,23 @@ export async function executeCodeStep(
           // Si toutes unités conservées → rien à faire
         }
 
-        // Noms des produits conservés (pour le Commentaire SAV automatique)
-        const keptNames = lines
+        // Lignes formatées pour le Commentaire SAV automatique
+        // Format : "1 x [Nom produit] [ID si]" par ligne conservée
+        const typedLines = lines as Array<{ id: string; product_name?: string; stock_item_identifier?: string }>
+        const keptFormatted = typedLines
           .filter(l => keepIds.includes(l.id))
-          .map(l => l.product_name || l.id)
-        const keptNamesStr = Array.from(new Set(keptNames)).filter(Boolean).join(', ')
+          .map(l => {
+            const name = l.product_name || 'Article'
+            const si   = l.stock_item_identifier ? ` ${l.stock_item_identifier}` : ''
+            return `1 x ${name}${si}`
+          })
+        const keptProductsFormatted = keptFormatted.join('\n')
 
         return ok({
           success:            true,
           removed:            removedCount,
           reduced:            reducedCount,
-          kept_product_names: keptNamesStr,
+          kept_product_names: keptProductsFormatted,
           message: `✓ ${removedCount} ligne(s) supprimée(s)${reducedCount > 0 ? `, ${reducedCount} réduite(s)` : ''}`,
         })
       }
@@ -276,7 +282,7 @@ export async function executeCodeStep(
             r14_damage:  'Cassé',
           }
           const prefix = prefixMap[tag]
-          if (prefix && products) comment = `${prefix} : ${products}`
+          if (prefix && products) comment = `${prefix}\n${products}`
           else if (prefix)        comment = prefix
         }
 
