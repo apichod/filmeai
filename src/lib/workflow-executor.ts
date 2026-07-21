@@ -25,6 +25,7 @@ import {
   addInternalNote,
   sendEmailViaBooqable,
   addSAVComment,
+  addSAVLine,
 } from './booqable-orders'
 
 import {
@@ -323,6 +324,64 @@ export async function executeCodeStep(
         if (!note) return err('add_internal_note : paramètre "note" manquant')
         await addInternalNote(orderId, note)
         return ok({ success: true, message: `✓ Note interne ajoutée sur ${label}` })
+      }
+
+      case 'add_missing_lines': {
+        // Lit les articles choisis (MANQUANTS) depuis original.chosen_tag + original.lines
+        // Les ajoute à la return order (parent.id)
+        // Stocke kept_product_names + chosen_tag="r11_late" → parent context (pour add_sav_comment)
+        const ctx = step.order_context ?? 'original'
+        const chosenStr    = vars[`${ctx}.chosen_tag`] ?? ''
+        const linesRaw     = vars[`${ctx}.lines`]
+        const returnOrderId = vars['parent.id']
+
+        if (!returnOrderId) return err('add_missing_lines : parent.id manquant (create_new_return_order requis avant)')
+        if (!linesRaw)      return err('add_missing_lines : lignes manquantes (fetch_order requis avant)')
+        if (!chosenStr)     return err('add_missing_lines : aucun article sélectionné (choose_article requis avant)')
+
+        const chosenIds = chosenStr.split(',').map(s => s.trim()).filter(Boolean)
+        const allLines  = JSON.parse(linesRaw) as Array<{
+          id: string
+          product_name?: string
+          product_group_id?: string
+          stock_item_id?: string
+        }>
+
+        // Supporte les IDs synthétiques (format: realId__siId)
+        const chosenLines = allLines.filter(l => {
+          const realId = l.id.includes('__') ? l.id.split('__')[0] : l.id
+          return chosenIds.includes(l.id) || chosenIds.includes(realId)
+        })
+
+        let addedCount = 0
+        for (const line of chosenLines) {
+          if (line.product_group_id) {
+            await addSAVLine({
+              type: 'product',
+              orderId: returnOrderId,
+              productGroupId: line.product_group_id,
+              quantity: 1,
+              stockItemId: line.stock_item_id ?? undefined,
+            })
+          } else {
+            await addSAVLine({
+              type: 'custom',
+              orderId: returnOrderId,
+              title: line.product_name || 'Article',
+              quantity: 1,
+            })
+          }
+          addedCount++
+        }
+
+        const formatted = chosenLines.map(l => `1 x ${l.product_name || 'Article'}`).join('\n')
+
+        return ok({
+          success:            true,
+          kept_product_names: formatted,   // → parent.kept_product_names (pour add_sav_comment)
+          chosen_tag:         'r11_late',  // → parent.chosen_tag (pour le préfixe "Manquant")
+          message: `✓ ${addedCount} article(s) manquant(s) ajouté(s) à la commande de retour`,
+        })
       }
 
       case 'send_email': {

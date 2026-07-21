@@ -158,6 +158,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: [],
   },
+  add_missing_lines: {
+    label:  'Ajouter les articles manquants à la return order',
+    reads:  ['chosen_tag', 'lines'],
+    writes: ['kept_product_names', 'chosen_tag'],
+  },
 }
 
 // ── Supabase CRUD ─────────────────────────────────────────────────────────────
