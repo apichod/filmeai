@@ -258,12 +258,12 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           if (r.type === 'stock_items') siMap.set(r.id, r)
         }
 
-        // Build two maps from sips (using attributes, not relationships):
-        //   planning_id → { ident, siId }   (exact match)
-        //   product_group_id → [{ ident, siId }]  (fallback)
+        // Build maps from sips :
+        //   planToSIs : planning_id → [{ ident, siId }, ...]  (MULTI-value — pour expansion qty>1)
+        //   pgToSI    : product_group_id → [{ ident, siId }]  (fallback si pgId disponible)
         type SIInfo = { ident: string; siId: string }
-        const planToSI = new Map<string, SIInfo>()
-        const pgToSI   = new Map<string, SIInfo[]>()
+        const planToSIs = new Map<string, SIInfo[]>()
+        const pgToSI    = new Map<string, SIInfo[]>()
 
         for (const sip of sipData.data || []) {
           const planId = String(sip.attributes.planning_id   || '')
@@ -274,7 +274,11 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           const ident = String(si.attributes.identifier || '')
           const pgId  = String(si.attributes.product_group_id || '')
           console.log(`[pass3] sip planId=${planId} siId=${siId} ident=${ident} pgId=${pgId}`)
-          if (planId && !planToSI.has(planId)) planToSI.set(planId, { ident, siId })
+          if (planId) {
+            const list = planToSIs.get(planId) || []
+            if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+            planToSIs.set(planId, list)
+          }
           if (pgId) {
             const list = pgToSI.get(pgId) || []
             if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
@@ -282,11 +286,11 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           }
         }
 
-        // Enrich lines — planning_id match first, then product_group_id fallback
+        // Enrich lines qty=1 sans stock_item_identifier
         for (const line of order.lines || []) {
           if (line.stock_item_identifier) continue
           let info: SIInfo | undefined
-          if (line.planning_id) info = planToSI.get(line.planning_id)
+          if (line.planning_id) info = (planToSIs.get(line.planning_id) || [])[0]
           if (!info && line.product_group_id) info = pgToSI.get(line.product_group_id)?.[0]
           console.log(`[pass3] line ${line.id} planning_id=${line.planning_id} pgId=${line.product_group_id} → info=${JSON.stringify(info)}`)
           if (info && info.ident) {
@@ -295,16 +299,18 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
           }
         }
 
-        // Expansion des lignes qty>1 en entrées individuelles (IDs synthétiques: realLineId__siId)
+        // Expansion des lignes qty>1 — priorité planning_id, fallback pgId
         const expandedLines: BooqableOrderLine[] = []
         for (const line of order.lines || []) {
-          if (line.quantity <= 1 || !line.product_group_id) {
-            expandedLines.push(line)
-            continue
+          if (line.quantity <= 1) { expandedLines.push(line); continue }
+          // Récupérer la liste de SIs disponibles pour cette ligne
+          let siList: SIInfo[] = []
+          if (line.planning_id) siList = planToSIs.get(line.planning_id) || []
+          if (siList.length !== line.quantity && line.product_group_id) {
+            siList = pgToSI.get(line.product_group_id) || []
           }
-          const siList = pgToSI.get(line.product_group_id) || []
+          console.log(`[pass3-expand] line ${line.id} qty=${line.quantity} siList.length=${siList.length}`)
           if (siList.length !== line.quantity) {
-            // Ne pas éclater si le nb de SIs ne correspond pas exactement à la qty
             expandedLines.push(line)
             continue
           }
@@ -411,7 +417,7 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
   }
 
   // Pass 3 : stock_item_plannings → expansion des lignes qty>1
-  if ((order.lines || []).some(l => l.quantity > 1 && l.product_group_id)) {
+  if ((order.lines || []).some(l => l.quantity > 1)) {
     try {
       type SIPNode2 = { id: string; type: string; attributes: Record<string, unknown> }
       const sipRes2 = await fetch(
@@ -425,23 +431,33 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
           if (r.type === 'stock_items') siMap2.set(r.id, r)
         }
         type SIInfo2 = { ident: string; siId: string }
-        const pgToSI2 = new Map<string, SIInfo2[]>()
+        const planToSIs2 = new Map<string, SIInfo2[]>()
+        const pgToSI2    = new Map<string, SIInfo2[]>()
         for (const sip of sipData2.data || []) {
-          const siId = String(sip.attributes.stock_item_id || '')
+          const planId = String(sip.attributes.planning_id   || '')
+          const siId   = String(sip.attributes.stock_item_id || '')
           if (!siId) continue
           const si = siMap2.get(siId)
           if (!si) continue
           const ident = String(si.attributes.identifier || '')
           const pgId  = String(si.attributes.product_group_id || '')
-          if (!pgId) continue
-          const list = pgToSI2.get(pgId) || []
-          if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
-          pgToSI2.set(pgId, list)
+          if (planId) {
+            const list = planToSIs2.get(planId) || []
+            if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+            planToSIs2.set(planId, list)
+          }
+          if (pgId) {
+            const list = pgToSI2.get(pgId) || []
+            if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+            pgToSI2.set(pgId, list)
+          }
         }
         const expandedLines2: BooqableOrderLine[] = []
         for (const line of order.lines || []) {
-          if (line.quantity <= 1 || !line.product_group_id) { expandedLines2.push(line); continue }
-          const siList = pgToSI2.get(line.product_group_id) || []
+          if (line.quantity <= 1) { expandedLines2.push(line); continue }
+          let siList: SIInfo2[] = []
+          if (line.planning_id) siList = planToSIs2.get(line.planning_id) || []
+          if (siList.length !== line.quantity && line.product_group_id) siList = pgToSI2.get(line.product_group_id) || []
           if (siList.length !== line.quantity) { expandedLines2.push(line); continue }
           for (const si of siList) {
             expandedLines2.push({ ...line, id: `${line.id}__${si.siId}`, quantity: 1, stock_item_id: si.siId, stock_item_identifier: si.ident })
@@ -1226,32 +1242,60 @@ export async function revertToConcept(orderId: string): Promise<void> {
 }
 
 // ── reserveOrder ─────────────────────────────────────────────────────────────
-// Tente de passer la commande en "reserved" (concept→reserved).
-// Non-bloquant : retourne { error } si la transition échoue.
+// Tente concept→reserved. Si la transition échoue, vérifie l'état courant :
+// si la commande est déjà reserved/started/stopped, on considère c'est bon.
 export async function reserveOrder(orderId: string): Promise<{ error?: string }> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
-  const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({
-      data: {
-        type: 'order_transitions',
-        attributes: {
-          order_id:         orderId,
-          transition_from:  'concept',
-          transition_to:    'reserved',
-          confirm_shortage: true,
-          revert_until:     null,
+
+  const tryTransition = async (from: string, to: string): Promise<boolean> => {
+    const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          type: 'order_transitions',
+          attributes: {
+            order_id:         orderId,
+            transition_from:  from,
+            transition_to:    to,
+            confirm_shortage: true,
+            revert_until:     null,
+          },
         },
-      },
-    }),
-    signal: AbortSignal.timeout(10000),
-  })
-  if (!res.ok) {
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (res.ok) return true
     const text = await res.text()
-    return { error: `Booqable reserveOrder error ${res.status}: ${text}` }
+    console.warn(`[reserveOrder] ${from}→${to} failed (${res.status}): ${text}`)
+    return false
   }
-  return {}
+
+  // Essai 1 : concept → reserved
+  if (await tryTransition('concept', 'reserved')) return {}
+
+  // La transition a échoué — vérifier l'état actuel de la commande
+  try {
+    const checkRes = await fetch(
+      `${BASE_BOOMERANG}/orders?filter[id]=${encodeURIComponent(orderId)}&fields[orders]=status&per=1`,
+      { headers: headers(), signal: AbortSignal.timeout(8000) }
+    )
+    if (checkRes.ok) {
+      const checkData = await checkRes.json() as { data?: Array<{ attributes: { status?: string } }> }
+      const status = checkData.data?.[0]?.attributes?.status ?? ''
+      console.log(`[reserveOrder] statut actuel après échec : ${status}`)
+      // Déjà dans un état post-concept → pas d'erreur bloquante
+      if (['reserved', 'started', 'stopped'].includes(status)) {
+        console.log(`[reserveOrder] commande déjà en ${status}, on continue`)
+        return {}
+      }
+      return { error: `Impossible de réserver la commande (état actuel : ${status || 'inconnu'})` }
+    }
+  } catch (e) {
+    console.warn('[reserveOrder] vérification état échouée :', e)
+  }
+
+  return { error: `Impossible de réserver la commande ${orderId} (transition concept→reserved refusée)` }
 }
 
 // ── cancelOrder ──────────────────────────────────────────────────────────────
