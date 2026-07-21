@@ -391,6 +391,10 @@ export async function executeCodeStep(
         const dstCtx       = step.order_context ?? 'return'
         const chosenLinesRaw = vars[`${srcCtx}.chosen_lines`]
         const returnId     = vars[`${dstCtx}.id`] ?? orderId
+        console.log('[add_new_product_line] srcCtx:', srcCtx, 'dstCtx:', dstCtx)
+        console.log('[add_new_product_line] returnId:', returnId)
+        console.log('[add_new_product_line] chosen_lines raw:', chosenLinesRaw)
+        console.log('[add_new_product_line] vars keys:', Object.keys(vars))
 
         if (!returnId)       return err('add_new_product_line : return order id manquant dans les variables')
         if (!chosenLinesRaw) return err('add_new_product_line : original.chosen_lines manquant (choose_article requis avant)')
