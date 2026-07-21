@@ -17,6 +17,7 @@ import {
   addTagToOrder,
   startSAVOrder,
   removeProductLine,
+  setLineQuantity,
   fetchOrderByNumber,
   createSAVOrder,
   zeroOutOrderLines,
@@ -145,21 +146,50 @@ export async function executeCodeStep(
       }
 
       case 'remove_other_lines': {
-        // Supprime toutes les lignes SAUF celle dont l'id est dans vars[ctx.chosen_tag]
+        // Supprime / réduit toutes les lignes SAUF celles dans vars[ctx.chosen_tag]
+        // Supporte les IDs synthétiques (format: realLineId__siId) pour les lignes qty>1.
         const ctx        = step.order_context ?? 'parent'
-        const keepLineId = vars[`${ctx}.chosen_tag`]
+        const keepTagStr = vars[`${ctx}.chosen_tag`]
         const linesRaw   = vars[`${ctx}.lines`]
         if (!linesRaw)   return err('remove_other_lines : lignes manquantes (fetch_order requis avant)')
-        if (!keepLineId) return err('remove_other_lines : chosen_tag manquant (choose_article requis avant)')
-        const keepIds = keepLineId.split(',').map(s => s.trim()).filter(Boolean)
-        const lines = JSON.parse(linesRaw) as Array<{ id: string }>
-        const toRemove = lines.filter(l => !keepIds.includes(l.id))
-        for (const line of toRemove) {
-          await removeProductLine(line.id)
+        if (!keepTagStr) return err('remove_other_lines : chosen_tag manquant (choose_article requis avant)')
+
+        const keepIds = keepTagStr.split(',').map(s => s.trim()).filter(Boolean)
+        const lines   = JSON.parse(linesRaw) as Array<{ id: string }>
+
+        // Grouper les IDs synthétiques par real line ID
+        // ID synthétique format : "realLineId__siId" ; ID normal : pas de "__"
+        type LineGroup = { keep: number; total: number }
+        const groups = new Map<string, LineGroup>()
+        for (const line of lines) {
+          const realId = line.id.includes('__') ? line.id.split('__')[0] : line.id
+          const g = groups.get(realId) || { keep: 0, total: 0 }
+          g.total++
+          if (keepIds.includes(line.id)) g.keep++
+          groups.set(realId, g)
         }
+
+        let removedCount = 0
+        let reducedCount = 0
+        for (const [realLineId, g] of groups) {
+          if (g.keep === 0) {
+            // Aucune unité à conserver → supprimer la ligne entière
+            await removeProductLine(realLineId)
+            removedCount++
+          } else if (g.keep < g.total) {
+            // Certaines unités à conserver → réduire la quantité
+            await setLineQuantity(realLineId, g.keep)
+            reducedCount++
+          }
+          // Si toutes unités conservées → rien à faire
+        }
+
         // Réinitialiser chosen_tag pour qu'il soit libre pour choose_problem_tag
-        return ok({ success: true, removed: toRemove.length,
-          message: `✓ ${toRemove.length} ligne(s) supprimée(s) — ${keepIds.length} conservée(s)`,
+        return ok({
+          success: true,
+          removed: removedCount,
+          reduced: reducedCount,
+          message: `✓ ${removedCount} ligne(s) supprimée(s)${reducedCount > 0 ? `, ${reducedCount} réduite(s)` : ''}`,
           chosen_tag: null,  // reset
         })
       }

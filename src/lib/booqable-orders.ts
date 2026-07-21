@@ -238,7 +238,8 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
   for (const _l of (order.lines || [])) {
     console.log(`[pass3-pre] line id=${_l.id} pg=${_l.product_group_id ?? 'NULL'} si=${_l.stock_item_identifier ?? 'NULL'} plan=${_l.planning_id ?? 'NULL'}`)
   }
-  if ((order.lines || []).some(l => (l.product_group_id || l.planning_id) && !l.stock_item_identifier)) {
+  // Trigger pass3 si certaines lignes n'ont pas de stock_item_identifier OU si qty>1 (expansion)
+  if ((order.lines || []).some(l => (l.product_group_id || l.planning_id) && (!l.stock_item_identifier || l.quantity > 1))) {
     try {
       type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
       const sipUrl = `${BASE4}/stock_item_plannings?filter[order_id]=${order.id}&include=stock_item&page[size]=200`
@@ -293,6 +294,25 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
             if (!line.stock_item_id) line.stock_item_id = info.siId
           }
         }
+
+        // Expansion des lignes qty>1 en entrées individuelles (IDs synthétiques: realLineId__siId)
+        const expandedLines: BooqableOrderLine[] = []
+        for (const line of order.lines || []) {
+          if (line.quantity <= 1 || !line.product_group_id) {
+            expandedLines.push(line)
+            continue
+          }
+          const siList = pgToSI.get(line.product_group_id) || []
+          if (siList.length !== line.quantity) {
+            // Ne pas éclater si le nb de SIs ne correspond pas exactement à la qty
+            expandedLines.push(line)
+            continue
+          }
+          for (const si of siList) {
+            expandedLines.push({ ...line, id: `${line.id}__${si.siId}`, quantity: 1, stock_item_id: si.siId, stock_item_identifier: si.ident })
+          }
+        }
+        order.lines = expandedLines
       } else {
         const errText = await sipRes.text()
         console.warn('[pass3] error response:', errText.slice(0, 200))
@@ -389,6 +409,51 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
   } catch (e) {
     console.warn('fetchOrderById: lines fetch failed:', e)
   }
+
+  // Pass 3 : stock_item_plannings → expansion des lignes qty>1
+  if ((order.lines || []).some(l => l.quantity > 1 && l.product_group_id)) {
+    try {
+      type SIPNode2 = { id: string; type: string; attributes: Record<string, unknown> }
+      const sipRes2 = await fetch(
+        `${BASE4}/stock_item_plannings?filter[order_id]=${order.id}&include=stock_item&page[size]=200`,
+        { headers: headers(), signal: AbortSignal.timeout(10000) }
+      )
+      if (sipRes2.ok) {
+        const sipData2 = await sipRes2.json() as { data?: SIPNode2[]; included?: SIPNode2[] }
+        const siMap2 = new Map<string, SIPNode2>()
+        for (const r of sipData2.included || []) {
+          if (r.type === 'stock_items') siMap2.set(r.id, r)
+        }
+        type SIInfo2 = { ident: string; siId: string }
+        const pgToSI2 = new Map<string, SIInfo2[]>()
+        for (const sip of sipData2.data || []) {
+          const siId = String(sip.attributes.stock_item_id || '')
+          if (!siId) continue
+          const si = siMap2.get(siId)
+          if (!si) continue
+          const ident = String(si.attributes.identifier || '')
+          const pgId  = String(si.attributes.product_group_id || '')
+          if (!pgId) continue
+          const list = pgToSI2.get(pgId) || []
+          if (!list.find(x => x.siId === siId)) list.push({ ident, siId })
+          pgToSI2.set(pgId, list)
+        }
+        const expandedLines2: BooqableOrderLine[] = []
+        for (const line of order.lines || []) {
+          if (line.quantity <= 1 || !line.product_group_id) { expandedLines2.push(line); continue }
+          const siList = pgToSI2.get(line.product_group_id) || []
+          if (siList.length !== line.quantity) { expandedLines2.push(line); continue }
+          for (const si of siList) {
+            expandedLines2.push({ ...line, id: `${line.id}__${si.siId}`, quantity: 1, stock_item_id: si.siId, stock_item_identifier: si.ident })
+          }
+        }
+        order.lines = expandedLines2
+      }
+    } catch (e) {
+      console.warn('fetchOrderById: stock_item_plannings expansion failed:', e)
+    }
+  }
+
   return order
 }
 
@@ -1213,6 +1278,23 @@ export async function cancelOrder(orderId: string): Promise<void> {
   await tryTransition('stopped',  'concept')
   const ok = await tryTransition('concept',  'canceled')
   if (!ok) throw new Error(`Booqable cancelOrder: impossible d'annuler la commande ${orderId}`)
+}
+
+// ── setLineQuantity ───────────────────────────────────────────────────────────
+// Réduit la quantité d'une ligne existante (pour les lignes multi-unités partiellement conservées).
+export async function setLineQuantity(lineId: string, qty: number): Promise<void> {
+  const BASE = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
+  const key  = process.env.BOOQABLE_API_KEY!
+  const res = await fetch(`${BASE}/lines/${lineId}?api_key=${key}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ line: { quantity: qty } }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable setLineQuantity error ${res.status}: ${text}`)
+  }
 }
 
 // ── removeProductLine ─────────────────────────────────────────────────────────
