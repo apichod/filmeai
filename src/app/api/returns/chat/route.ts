@@ -703,18 +703,32 @@ async function executeTool(
       }
 
       case 'choose_article': {
-        const chooseOrderId = String(args.order_id || '')
-        if (!chooseOrderId) return { result: JSON.stringify({ error: 'choose_article : order_id manquant' }) }
-        const chooseOrder = await fetchOrderById(chooseOrderId)
-        if (!chooseOrder?.lines?.length) return { result: JSON.stringify({ error: 'choose_article : aucun article trouvé' }) }
-        const items = (chooseOrder.lines || []).map(l => {
-          const shortId = l.stock_item_identifier?.match(/(\d+)$/)?.[1] ?? ''
+        // Priorité : lignes injectées depuis original.lines (vars du workflow, déjà stockées par fetch_order)
+        // Fallback : re-fetch depuis Booqable via order_id
+        type LineItem = { id: string; product_name?: string; quantity?: number; stock_item_identifier?: string }
+        let caLines: LineItem[] = []
+
+        if (args.lines_json) {
+          try { caLines = JSON.parse(String(args.lines_json)) as LineItem[] } catch {}
+        }
+
+        if (!caLines.length) {
+          const chooseOrderId = String(args.order_id || '')
+          if (!chooseOrderId) return { result: JSON.stringify({ error: 'choose_article : order_id et lines_json manquants' }) }
+          const chooseOrder = await fetchOrderById(chooseOrderId)
+          caLines = (chooseOrder?.lines || []) as LineItem[]
+        }
+
+        if (!caLines.length) return { result: JSON.stringify({ error: 'choose_article : aucun article trouvé' }) }
+
+        const items = caLines.map(l => {
+          const shortId = (l.stock_item_identifier ?? '').match(/(\d+)$/)?.[1] ?? ''
           return {
-            label: `${l.quantity ?? 1}x ${l.product_name}${shortId ? ' ID ' + shortId : ''}`,
+            label: `${l.quantity ?? 1}x ${l.product_name ?? 'Article'}${shortId ? ' ID ' + shortId : ''}`,
             tag:   l.id,
           }
         })
-        return { result: JSON.stringify({ __type__: 'choices', order_id: chooseOrderId, items, multiSelect: true, message: 'Sélectionnez les articles qui n\'ont pas été retournés' }) }
+        return { result: JSON.stringify({ __type__: 'choices', order_id: String(args.order_id || ''), items, multiSelect: true }) }
       }
 
       default:
@@ -1377,6 +1391,17 @@ Affiche les {{...}} littéralement, toujours.`
 
             let args: Record<string, unknown> = {}
             try { args = JSON.parse(entry.arguments) } catch { /* ignore */ }
+
+            // Injection pour choose_article : passer les lignes depuis les vars du workflow
+            // (évite un appel Booqable redondant — fetch_order les a déjà stockées)
+            if (entry.name === 'choose_article' && activeSteps.length > 0) {
+              const caStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
+              const ctx = caStep?.order_context ?? 'original'
+              const linesFromVars = wfState.vars[`${ctx}.lines`]
+              if (linesFromVars && !args.lines_json) {
+                args = { ...args, lines_json: linesFromVars }
+              }
+            }
 
             // Fallback : si l'IA passe un placeholder pour customer_id, récupérer l'UUID réel
             if (entry.name === 'create_new_return_order') {
