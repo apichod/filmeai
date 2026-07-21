@@ -184,7 +184,11 @@ ${orderRef}
 ══════════════════════════════════════════
 ${step.description ?? step.title}
 
-INTERDIT : appeler des outils à cette étape. Pose la question et attends la réponse.${context}`
+RÈGLES STRICTES :
+- Pose UNIQUEMENT cette question, rien d'autre.
+- Ne mentionne PAS les étapes suivantes.
+- N'appelle aucun outil.
+- Attends la réponse avant de continuer.${context}`
   }
 
   // check
