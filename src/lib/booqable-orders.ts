@@ -635,20 +635,38 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
         if (r.type === 'stock_items') siMap.set(r.id, r)
       }
 
-      const actions: Array<Record<string, unknown>> = []
+      // Grouper par planning_id : un seul action par planning avec tous ses stock_item_ids
+      // (Booqable rejette 422 si plusieurs actions pour le même planning_id)
+      type PlanGroup = { productId: string; siIds: string[] }
+      const planGroups = new Map<string, PlanGroup>()
+      let allStarted = true
+
       for (const sip of sipData.data || []) {
-        // Uniquement les items non encore démarrés
-        if (sip.attributes.started) continue
-        const planId    = String(sip.attributes.planning_id    || '')
-        const siId      = String(sip.attributes.stock_item_id  || '')
+        if (sip.attributes.started) continue  // déjà started → skip
+        allStarted = false
+        const planId    = String(sip.attributes.planning_id   || '')
+        const siId      = String(sip.attributes.stock_item_id || '')
         if (!planId || !siId) continue
         const si        = siMap.get(siId)
-        const productId = String(si?.attributes.product_id     || '')
+        const productId = String(si?.attributes.product_id    || '')
         if (!productId) continue
-        actions.push({ action: 'start_stock_items', planning_id: planId, product_id: productId, stock_item_ids: [siId] })
+        const g = planGroups.get(planId) || { productId, siIds: [] }
+        g.siIds.push(siId)
+        planGroups.set(planId, g)
       }
 
+      // Tous les SIPs déjà started → succès silencieux
+      if (allStarted && (sipData.data || []).length > 0) {
+        console.log(`startSAVOrder: order ${orderId} — tous SIPs déjà started, ok`)
+        return {}
+      }
+
+      const actions: Array<Record<string, unknown>> = Array.from(planGroups.entries()).map(([planId, g]) => ({
+        action: 'start_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
+      }))
+
       if (actions.length > 0) {
+        console.log(`startSAVOrder: ${actions.length} action(s) pour ${orderId}:`, JSON.stringify(actions))
         const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
           method: 'POST',
           headers: headers(),
@@ -663,23 +681,6 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
         }
         const errText = await fulfillRes.text()
         console.warn('[startSAVOrder] start_stock_items failed:', fulfillRes.status, errText.slice(0, 300))
-
-        // 422 = planning_id partagé avec la commande parent (dupliqué) → tous les items déjà started
-        // Vérifier si la commande est déjà en statut started (les SIs du parent comptent)
-        if (fulfillRes.status === 422) {
-          const allAlreadyStarted = (sipData.data || []).every(s => s.attributes.started)
-          if (allAlreadyStarted) {
-            console.log(`startSAVOrder: order ${orderId} — tous items déjà started (shared plannings), ok`)
-            return {}
-          }
-        }
-      } else {
-        // Toutes les lignes sont déjà started → pas besoin de les démarrer
-        const allSips = sipData.data || []
-        if (allSips.length > 0 && allSips.every(s => s.attributes.started)) {
-          console.log(`startSAVOrder: order ${orderId} — tous SIPs déjà started, ok`)
-          return {}
-        }
       }
     }
   } catch (e) {
@@ -1515,17 +1516,24 @@ export async function stopOrder(orderId: string): Promise<void> {
         if (r.type === 'stock_items') siMap.set(r.id, r)
       }
 
-      const actions: Array<Record<string, unknown>> = []
+      // Grouper par planning_id (même fix que startSAVOrder — Booqable rejette 2 actions pour le même planning)
+      type StopGroup = { productId: string; siIds: string[] }
+      const stopGroups = new Map<string, StopGroup>()
       for (const sip of sipData.data || []) {
         if (!sip.attributes.started || sip.attributes.stopped) continue
-        const planId = String(sip.attributes.planning_id   || '')
-        const siId   = String(sip.attributes.stock_item_id || '')
+        const planId    = String(sip.attributes.planning_id   || '')
+        const siId      = String(sip.attributes.stock_item_id || '')
         if (!planId || !siId) continue
-        const si = siMap.get(siId)
-        const productId = String(si?.attributes.product_id || '')
+        const si        = siMap.get(siId)
+        const productId = String(si?.attributes.product_id    || '')
         if (!productId) continue
-        actions.push({ action: 'stop_stock_items', planning_id: planId, product_id: productId, stock_item_ids: [siId] })
+        const g = stopGroups.get(planId) || { productId, siIds: [] }
+        g.siIds.push(siId)
+        stopGroups.set(planId, g)
       }
+      const actions: Array<Record<string, unknown>> = Array.from(stopGroups.entries()).map(([planId, g]) => ({
+        action: 'stop_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
+      }))
 
       if (actions.length > 0) {
         const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
