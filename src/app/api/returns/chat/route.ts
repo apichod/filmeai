@@ -422,8 +422,16 @@ async function executeTool(
     switch (name) {
 
       case 'fetch_order': {
-        const order = await fetchOrderByNumber(String(args.order_number))
-        if (!order) return { result: `Aucune order trouvée avec le numéro ${args.order_number}` }
+        // Priorité : UUID depuis les vars (injecté par buildToolArgs → évite de re-saisir)
+        // Fallback : numéro de commande (saisi par l'utilisateur ou extrait du message)
+        let order = null
+        if (args.order_id) {
+          order = await fetchOrderById(String(args.order_id))
+        }
+        if (!order) {
+          order = await fetchOrderByNumber(String(args.order_number ?? ''))
+        }
+        if (!order) return { result: `Aucune order trouvée : ${args.order_id ?? args.order_number}` }
 
         // Lignes structurées : product_name + product_group_id + stock_item_id (si trackable assigné)
         const linesStructured = (order.lines || []).map(l => {
@@ -1151,13 +1159,13 @@ Affiche les {{...}} littéralement, toujours.`
         }
 
         // ── Seed vars depuis l'historique des messages utilisateur ─────────────
-        // Si le prochain step est fetch_order en code et qu'on n'a pas encore
+        // Si le prochain step est fetch_order (code OU ai) et qu'on n'a pas encore
         // de {ctx}.id ni {ctx}.number, on extrait le numéro en remontant TOUS les
         // messages user (du plus récent au plus ancien) — pas juste le dernier,
         // car l'utilisateur peut avoir tapé "9300" deux messages plus tôt et "ok" en dernier.
         if (activeSteps.length > 0 && wfState.status === 'running') {
           const seedStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
-          if (seedStep?.execution === 'code' && seedStep?.booqable_action === 'fetch_order') {
+          if (seedStep?.booqable_action === 'fetch_order') {
             const ctx = seedStep.order_context ?? 'parent'
             if (!wfState.vars[`${ctx}.id`] && !wfState.vars[`${ctx}.number`]) {
               let numMatch: RegExpMatchArray | null = null
@@ -1392,44 +1400,33 @@ Affiche les {{...}} littéralement, toujours.`
             let args: Record<string, unknown> = {}
             try { args = JSON.parse(entry.arguments) } catch { /* ignore */ }
 
-            // Injection pour choose_article : passer les lignes depuis les vars du workflow
-            // (évite un appel Booqable redondant — fetch_order les a déjà stockées)
-            if (entry.name === 'choose_article' && activeSteps.length > 0) {
-              const caStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
-              const ctx = caStep?.order_context ?? 'original'
-              const linesFromVars = wfState.vars[`${ctx}.lines`]
-              if (linesFromVars && !args.lines_json) {
-                args = { ...args, lines_json: linesFromVars }
-              }
-            }
+            // ── Injection des args depuis les vars du workflow ─────────────────────
+            // Que le step soit en mode AI ou CODE, il lit depuis les mêmes vars.
+            // buildToolArgs est la même fonction utilisée par le code executor :
+            // → order_id depuis order_context, paramètres fixes du step JSON.
+            // Les vars ont priorité sur ce que l'IA a déterminé (plus fiables).
+            if (activeSteps.length > 0 && workflowUsesStateMachine) {
+              const wfStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
+              if (wfStep?.booqable_action === entry.name) {
+                const varArgs = buildToolArgs(wfStep, wfState.vars)
+                args = { ...args, ...varArgs }
 
-            // Fallback : si l'IA passe un placeholder pour customer_id, récupérer l'UUID réel
-            if (entry.name === 'create_new_return_order') {
-              const providedId = String(args.customer_id || '')
-              const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-              const isValidUuid = UUID_RE.test(providedId)
-              if (!isValidUuid) {
-                // 1. Priorité : customer_id mémorisé côté client (envoyé dans le body)
-                if (bodyCustomerId && UUID_RE.test(bodyCustomerId)) {
-                  args = { ...args, customer_id: bodyCustomerId }
-                } else {
-                  // 2. Fallback : parcourir l'historique en mémoire (même session HTTP)
-                  for (let i = currentMessages.length - 1; i >= 0; i--) {
-                    const msg = currentMessages[i]
-                    if (msg.role === 'tool') {
-                      try {
-                        const parsed = JSON.parse(String(msg.content)) as Record<string, unknown>
-                        const cid = String(parsed.customer_id || '')
-                        if (UUID_RE.test(cid)) {
-                          args = { ...args, customer_id: cid }
-                          break
-                        }
-                      } catch { /* pas JSON, continuer */ }
-                    }
-                  }
+                // customer_id pour create_new_return_order
+                if (entry.name === 'create_new_return_order') {
+                  const ctx = wfStep.order_context ?? 'original'
+                  const cid = wfState.vars[`${ctx}.customer_id`]
+                  if (cid) args = { ...args, customer_id: cid }
+                }
+
+                // lines_json pour choose_article (évite un re-fetch Booqable)
+                if (entry.name === 'choose_article') {
+                  const ctx = wfStep.order_context ?? 'original'
+                  const linesFromVars = wfState.vars[`${ctx}.lines`]
+                  if (linesFromVars) args = { ...args, lines_json: linesFromVars }
                 }
               }
             }
+            // ─────────────────────────────────────────────────────────────────────
 
             const { result, caseId: newCaseId } = await executeTool(entry.name, args)
             if (newCaseId) currentCaseId = newCaseId

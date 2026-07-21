@@ -231,7 +231,13 @@ export function buildToolArgs(step: WorkflowStep, vars: WorkflowVars): Record<st
   // 2. order_id résolu depuis vars — tous les outils sauf remove_product_line
   if (step.booqable_action && step.booqable_action !== 'remove_product_line') {
     const orderId = getOrderIdForStep(step, vars)
-    if (orderId) args.order_id = orderId
+    if (orderId) {
+      args.order_id = orderId
+    } else if (step.booqable_action === 'fetch_order') {
+      // Pas encore d'UUID : on injecte order_number (seedé depuis les messages user)
+      const orderNum = getOrderNumberForStep(step, vars)
+      if (orderNum) args.order_number = orderNum
+    }
   }
 
   // 3. add_sav_comment : référencer le numéro de la commande d'ORIGINE (original), pas de la return order (parent)
