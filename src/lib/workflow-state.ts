@@ -1,14 +1,15 @@
 /**
  * Moteur d'état pour les workflows FilmeAI.
  *
- * Principe : au lieu de laisser l'IA décider quelle étape exécuter,
- * le serveur suit l'étape courante et injecte une instruction exacte.
+ * Convention de nommage des variables : "<context>.<champ_booqable>"
+ *   parent.id, parent.number, parent.lines
+ *   child.id,  child.number,  child.lines
+ *   original.id, original.number
+ *   return.id,   return.number, return.lines
  *
- * Variables supportées par contexte :
- *  - parent_order_id / parent_order_number / parent_lines   → commande parent (U01)
- *  - child_order_id  / child_order_number  / child_lines    → commande child  (U01)
- *  - original_order_id / original_order_number              → commande d'origine (workflows standard)
- *  - return_order_id   / return_order_number / return_lines → commande de retour  (workflows standard)
+ * order_context  = quelle commande ce step lit (input)
+ * output_context = quelle commande ce step écrit (output) — défaut: même que order_context
+ *                  Exception : duplicate_order lit parent, écrit child
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -17,26 +18,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type OrderContext = 'parent' | 'child' | 'original' | 'return'
 
-export type WorkflowVars = {
-  // U01 – split order
-  parent_order_id?:     string
-  parent_order_number?: string
-  parent_lines?:        string   // JSON encoded BooqableOrderLine[]
-  child_order_id?:      string
-  child_order_number?:  string
-  child_lines?:         string   // JSON encoded BooqableOrderLine[]
-  // Workflows standard (CASSE / MANQUANT)
-  original_order_id?:     string
-  original_order_number?: string
-  return_order_id?:       string
-  return_order_number?:   string
-  return_lines?:          string   // JSON encoded BooqableOrderLine[]
-  // Misc
-  [key: string]: string | undefined
-}
+/** Variables du workflow — clés dotted: "parent.id", "child.number", etc. */
+export type WorkflowVars = Record<string, string | undefined>
 
 export type WorkflowState = {
-  step_index: number          // index dans steps[] de l'étape courante
+  step_index: number
   vars:       WorkflowVars
   status:     'running' | 'waiting_for_input' | 'completed'
 }
@@ -47,9 +33,101 @@ export type WorkflowStep = {
   title:           string
   description?:    string
   booqable_action?: string
-  parameters?:     Record<string, unknown>   // params fixes (ex: tags_add: ["r21_open"])
-  order_context?:  OrderContext               // quel order_id injecter
-  execution?:      'code' | 'ai'             // 'code' = exécution directe sans LLM (défaut: 'ai')
+  parameters?:     Record<string, unknown>
+  order_context?:  OrderContext   // commande lue en input
+  output_context?: OrderContext   // commande écrite en output (défaut: order_context)
+  execution?:      'code' | 'ai'
+}
+
+// ── Registre des outils ───────────────────────────────────────────────────────
+
+export type ToolDefinition = {
+  label:  string
+  /** Champs lus depuis vars[order_context.*] */
+  reads:  string[]
+  /** Champs écrits dans vars[output_context.*] après exécution */
+  writes: string[]
+  /**
+   * Mapping entre le nom de champ dans le résultat JSON de l'API
+   * et le nom standard Booqable stocké dans les vars.
+   * Nécessaire quand l'API retourne "new_order_id" mais on veut stocker "id".
+   */
+  resultAlias?: Record<string, string>
+}
+
+export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
+  fetch_order: {
+    label:  'Récupérer une commande',
+    reads:  ['id'],
+    writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'],
+  },
+  duplicate_order: {
+    label:       'Dupliquer une commande',
+    reads:       ['id'],
+    writes:      ['id', 'number'],
+    resultAlias: { id: 'new_order_id', number: 'new_order_number' },
+  },
+  revert_to_concept: {
+    label:  'Repasser en draft',
+    reads:  ['id'],
+    writes: [],
+  },
+  clear_tags: {
+    label:  'Supprimer les tags',
+    reads:  ['id'],
+    writes: [],
+  },
+  add_tag: {
+    label:  'Ajouter un tag',
+    reads:  ['id'],
+    writes: [],
+  },
+  choose_problem_tag: {
+    label:  'Choisir le tag problème',
+    reads:  ['id'],
+    writes: [],
+  },
+  reserve_order: {
+    label:  'Réserver',
+    reads:  ['id'],
+    writes: [],
+  },
+  start_order: {
+    label:  'Démarrer (pick-up)',
+    reads:  ['id'],
+    writes: [],
+  },
+  stop_order: {
+    label:  'Stopper (retour matériel)',
+    reads:  ['id'],
+    writes: [],
+  },
+  cancel_order: {
+    label:  'Annuler',
+    reads:  ['id'],
+    writes: [],
+  },
+  update_return_date: {
+    label:  'Mettre à jour la date de retour',
+    reads:  ['id'],
+    writes: [],
+  },
+  remove_product_line: {
+    label:  'Supprimer une ligne produit',
+    reads:  [],   // prend line_id depuis parameters, pas order_id
+    writes: [],
+  },
+  add_sav_comment: {
+    label:  'Ajouter un commentaire SAV',
+    reads:  ['id', 'number'],
+    writes: [],
+  },
+  create_new_return_order: {
+    label:       'Créer une return order',
+    reads:       [],
+    writes:      ['id', 'number'],
+    resultAlias: {},
+  },
 }
 
 // ── Supabase CRUD ─────────────────────────────────────────────────────────────
@@ -82,59 +160,87 @@ export async function saveWorkflowState(
 
 // ── Résolution des variables ──────────────────────────────────────────────────
 
+/** Résout le contexte d'input : order_context ou fallback sur le premier disponible. */
+function resolveContext(step: WorkflowStep, vars: WorkflowVars): OrderContext {
+  if (step.order_context) return step.order_context
+  // fallback : premier contexte qui a un id
+  const contexts: OrderContext[] = ['parent', 'original', 'return', 'child']
+  return contexts.find(c => vars[`${c}.id`]) ?? 'parent'
+}
+
 /** Retourne l'UUID de la commande active pour ce step. */
 export function getOrderIdForStep(step: WorkflowStep, vars: WorkflowVars): string | undefined {
-  switch (step.order_context) {
-    case 'parent':   return vars.parent_order_id
-    case 'child':    return vars.child_order_id
-    case 'original': return vars.original_order_id
-    case 'return':   return vars.return_order_id
-    default:
-      // fallback : premier order_id disponible
-      return vars.parent_order_id
-        ?? vars.original_order_id
-        ?? vars.return_order_id
-        ?? vars.child_order_id
-  }
+  const ctx = resolveContext(step, vars)
+  return vars[`${ctx}.id`]
 }
 
 /** Retourne le numéro (human-readable) de la commande active pour ce step. */
 export function getOrderNumberForStep(step: WorkflowStep, vars: WorkflowVars): string | undefined {
-  switch (step.order_context) {
-    case 'parent':   return vars.parent_order_number
-    case 'child':    return vars.child_order_number
-    case 'original': return vars.original_order_number
-    case 'return':   return vars.return_order_number
-    default:
-      return vars.parent_order_number
-        ?? vars.original_order_number
-        ?? vars.return_order_number
-        ?? vars.child_order_number
-  }
+  const ctx = resolveContext(step, vars)
+  return vars[`${ctx}.number`]
+}
+
+/** Retourne les lignes encodées en JSON pour le contexte actif. */
+export function getOrderLinesForStep(step: WorkflowStep, vars: WorkflowVars): string | undefined {
+  const ctx = resolveContext(step, vars)
+  return vars[`${ctx}.lines`]
 }
 
 /** Construit les paramètres exacts à passer à l'outil pour ce step. */
 export function buildToolArgs(step: WorkflowStep, vars: WorkflowVars): Record<string, unknown> {
   const args: Record<string, unknown> = {}
 
-  // 1. Params fixes définis dans le step (ex: tags_add, template_id)
+  // 1. Params fixes définis dans le step
   if (step.parameters) Object.assign(args, step.parameters)
 
-  // 2. order_id résolu — tous les outils sauf remove_product_line (qui prend line_id)
+  // 2. order_id résolu depuis vars — tous les outils sauf remove_product_line
   if (step.booqable_action && step.booqable_action !== 'remove_product_line') {
     const orderId = getOrderIdForStep(step, vars)
     if (orderId) args.order_id = orderId
   }
 
-  // 3. Params spéciaux selon l'outil
+  // 3. add_sav_comment : numéro de commande en clair
   if (step.booqable_action === 'add_sav_comment') {
-    // origin_order_number = numéro de la commande active
     args.origin_order_number = getOrderNumberForStep(step, vars) ?? ''
-    // comment sera fourni par l'utilisateur (étape question précédente)
-    // → on le laisse vide, l'IA le complètera depuis la réponse user
   }
 
   return args
+}
+
+// ── Extraction générique des variables depuis les résultats ───────────────────
+
+/**
+ * Lit le résultat JSON d'un tool call et retourne les nouvelles variables
+ * à merger dans wfState.vars, en se basant sur TOOL_REGISTRY.
+ *
+ * Le contexte d'écriture est step.output_context ?? step.order_context ?? 'parent'.
+ */
+export function extractVarsFromResult(
+  toolName: string,
+  result:   string,
+  step:     WorkflowStep,
+): Partial<WorkflowVars> {
+  const tool = TOOL_REGISTRY[toolName]
+  if (!tool || tool.writes.length === 0) return {}
+
+  try {
+    const data    = JSON.parse(result) as Record<string, unknown>
+    const writeCtx = step.output_context ?? step.order_context ?? 'parent'
+    const updates: Partial<WorkflowVars> = {}
+
+    for (const field of tool.writes) {
+      // Si l'API retourne un nom différent (ex: new_order_id → id), on utilise l'alias
+      const sourceKey = tool.resultAlias?.[field] ?? field
+      const value     = data[sourceKey]
+      if (value !== undefined && value !== null) {
+        updates[`${writeCtx}.${field}`] = String(value)
+      }
+    }
+
+    return updates
+  } catch {
+    return {}
+  }
 }
 
 // ── Instruction IA par étape ──────────────────────────────────────────────────
@@ -152,16 +258,15 @@ export function buildStepInstruction(
     ? `commande #${orderNum ?? '?'} (UUID: ${orderId})`
     : 'commande non encore résolue'
 
-  const context = `\nCONTEXTE VARIABLES :\n` +
-    Object.entries(vars)
-      .filter(([, v]) => v !== undefined && !v.startsWith('['))  // skip long JSON
-      .map(([k, v]) => `  ${k} = ${v}`)
-      .join('\n')
+  // Affiche uniquement les vars non-longues (pas les lignes JSON)
+  const contextLines = Object.entries(vars)
+    .filter(([, v]) => v !== undefined && v.length < 200)
+    .map(([k, v]) => `  ${k} = ${v}`)
+    .join('\n')
+  const context = contextLines ? `\nCONTEXTE VARIABLES :\n${contextLines}` : ''
 
   if (step.type === 'action') {
-    const toolArgs = buildToolArgs(step, vars)
-    // Pour les outils qui ont besoin d'un "comment" (add_sav_comment), on note que
-    // le champ "comment" vient de la réponse précédente de l'utilisateur
+    const toolArgs   = buildToolArgs(step, vars)
     const commentNote = step.booqable_action === 'add_sav_comment'
       ? '\nNOTE : le champ "comment" doit être construit à partir du dernier message de l\'opérateur.'
       : ''
@@ -196,53 +301,6 @@ RÈGLES STRICTES :
 ÉTAPE ${stepIndex + 1}/${totalSteps} — VÉRIFICATION : ${step.title}
 ══════════════════════════════════════════
 ${step.description ?? step.title}${context}`
-}
-
-// ── Extraction des variables depuis les résultats ─────────────────────────────
-
-/**
- * Analyse le résultat JSON d'un tool call et retourne les nouvelles variables
- * à stocker dans l'état du workflow.
- */
-export function extractVarsFromResult(
-  toolName:  string,
-  result:    string,
-  step:      WorkflowStep,
-): Partial<WorkflowVars> {
-  try {
-    const data = JSON.parse(result) as Record<string, unknown>
-    const ctx = step.order_context ?? 'parent'
-
-    switch (toolName) {
-      case 'fetch_order': {
-        const updates: Partial<WorkflowVars> = {}
-        if (typeof data.id     === 'string') updates[`${ctx}_order_id`]     = data.id
-        if (data.number !== undefined)        updates[`${ctx}_order_number`] = String(data.number)
-        if (Array.isArray(data.lines))        updates[`${ctx}_lines`]        = JSON.stringify(data.lines)
-        return updates
-      }
-
-      case 'duplicate_order': {
-        // result = JSON.stringify({ success, new_order_id, new_order_number, message })
-        return {
-          child_order_id:     typeof data.new_order_id     === 'string' ? data.new_order_id     : undefined,
-          child_order_number: data.new_order_number !== undefined       ? String(data.new_order_number) : undefined,
-        }
-      }
-
-      case 'create_new_return_order': {
-        return {
-          return_order_id:     typeof data.id     === 'string' ? data.id     : undefined,
-          return_order_number: data.number !== undefined       ? String(data.number) : undefined,
-        }
-      }
-
-      default:
-        return {}
-    }
-  } catch {
-    return {}
-  }
 }
 
 // ── Avancement de l'étape ─────────────────────────────────────────────────────

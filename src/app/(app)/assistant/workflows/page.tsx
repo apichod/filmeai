@@ -35,9 +35,34 @@ type WorkflowStep = {
   description: string
   booqable_action?: string
   parameters?: Record<string, unknown>
-  order_context?: 'parent' | 'child' | 'original' | 'return'
-  execution?: 'code' | 'ai'   // 'code' = appel direct sans LLM (défaut: 'ai')
+  order_context?:  'parent' | 'child' | 'original' | 'return'
+  output_context?: 'parent' | 'child' | 'original' | 'return'
+  execution?: 'code' | 'ai'
   variable?: string
+}
+
+// ── Registre I/O des outils (pour affichage éditeur) ──────────────────────────
+// reads  : champs lus depuis vars[order_context.*]
+// writes : champs écrits dans vars[output_context.*]
+// outputCtx : contexte d'écriture fixe (si différent de order_context)
+
+type ToolIO = { reads: string[]; writes: string[]; outputCtx?: string }
+
+const TOOL_IO: Record<string, ToolIO> = {
+  fetch_order:          { reads: ['id'],       writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'] },
+  duplicate_order:      { reads: ['id'],       writes: ['id', 'number'], outputCtx: 'child' },
+  revert_to_concept:    { reads: ['id'],       writes: [] },
+  clear_tags:           { reads: ['id'],       writes: [] },
+  add_tag:              { reads: ['id'],       writes: [] },
+  choose_problem_tag:   { reads: ['id'],       writes: [] },
+  reserve_order:        { reads: ['id'],       writes: [] },
+  start_order:          { reads: ['id'],       writes: [] },
+  stop_order:           { reads: ['id'],       writes: [] },
+  cancel_order:         { reads: ['id'],       writes: [] },
+  update_return_date:   { reads: ['id'],       writes: [] },
+  remove_product_line:  { reads: [],           writes: [] },
+  add_sav_comment:      { reads: ['id', 'number'], writes: [] },
+  create_new_return_order: { reads: [],        writes: ['id', 'number'], outputCtx: 'return' },
 }
 
 // Hint JSON par outil
@@ -249,20 +274,77 @@ function StepList({
             />
           </div>
 
-          {/* order_context — affiché pour toutes les étapes */}
-          <div className="pl-7">
-            <label className="block text-xs text-gray-400 mb-1">order_context <span className="text-gray-300">(quelle commande cibler)</span></label>
-            <select
-              value={step.order_context || ''}
-              onChange={e => updateStep(idx, { order_context: (e.target.value as WorkflowStep['order_context']) || undefined })}
-              className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
-            >
-              <option value="">— non défini —</option>
-              <option value="parent">parent — commande parent (U01)</option>
-              <option value="child">child — commande child/dupliquée (U01)</option>
-              <option value="original">original — commande d&apos;origine</option>
-              <option value="return">return — commande de retour</option>
-            </select>
+          {/* order_context + output_context + reads/writes */}
+          <div className="pl-7 space-y-2">
+            <div className="flex gap-3 flex-wrap">
+              {/* order_context */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">
+                  order_context <span className="text-gray-300">(lit depuis)</span>
+                </label>
+                <select
+                  value={step.order_context || ''}
+                  onChange={e => updateStep(idx, { order_context: (e.target.value as WorkflowStep['order_context']) || undefined })}
+                  className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+                >
+                  <option value="">— non défini —</option>
+                  <option value="parent">parent</option>
+                  <option value="child">child</option>
+                  <option value="original">original</option>
+                  <option value="return">return</option>
+                </select>
+              </div>
+              {/* output_context — visible seulement si l'outil écrit des vars */}
+              {step.type === 'action' && step.booqable_action && (TOOL_IO[step.booqable_action]?.writes.length ?? 0) > 0 && (
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">
+                    output_context <span className="text-gray-300">(écrit dans)</span>
+                  </label>
+                  <select
+                    value={step.output_context || TOOL_IO[step.booqable_action]?.outputCtx || step.order_context || ''}
+                    onChange={e => updateStep(idx, { output_context: (e.target.value as WorkflowStep['output_context']) || undefined })}
+                    className="border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-300 bg-blue-50"
+                  >
+                    <option value="">— même que order_context —</option>
+                    <option value="parent">parent</option>
+                    <option value="child">child</option>
+                    <option value="original">original</option>
+                    <option value="return">return</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Reads / Writes badges */}
+            {step.type === 'action' && step.booqable_action && TOOL_IO[step.booqable_action] && (() => {
+              const io      = TOOL_IO[step.booqable_action!]!
+              const readCtx = step.order_context ?? '?'
+              const writeCtx = step.output_context ?? io.outputCtx ?? step.order_context ?? '?'
+              return (
+                <div className="flex gap-3 flex-wrap text-[10px]">
+                  {io.reads.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-400">📥 Lit :</span>
+                      {io.reads.map(f => (
+                        <span key={f} className="font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                          {readCtx}.{f}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {io.writes.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-400">📤 Stocke :</span>
+                      {io.writes.map(f => (
+                        <span key={f} className="font-mono bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+                          {writeCtx}.{f}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {/* execution — mode d'exécution */}
@@ -363,6 +445,7 @@ export default function WorkflowsPage() {
         execution:   s.execution ?? 'ai',
       }
       if (s.order_context)   step.order_context   = s.order_context
+      if (s.output_context)  step.output_context  = s.output_context
       if (s.booqable_action) step.booqable_action  = s.booqable_action
       if (s.parameters && Object.keys(s.parameters).length > 0) step.parameters = s.parameters
       return step
