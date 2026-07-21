@@ -663,6 +663,23 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
         }
         const errText = await fulfillRes.text()
         console.warn('[startSAVOrder] start_stock_items failed:', fulfillRes.status, errText.slice(0, 300))
+
+        // 422 = planning_id partagé avec la commande parent (dupliqué) → tous les items déjà started
+        // Vérifier si la commande est déjà en statut started (les SIs du parent comptent)
+        if (fulfillRes.status === 422) {
+          const allAlreadyStarted = (sipData.data || []).every(s => s.attributes.started)
+          if (allAlreadyStarted) {
+            console.log(`startSAVOrder: order ${orderId} — tous items déjà started (shared plannings), ok`)
+            return {}
+          }
+        }
+      } else {
+        // Toutes les lignes sont déjà started → pas besoin de les démarrer
+        const allSips = sipData.data || []
+        if (allSips.length > 0 && allSips.every(s => s.attributes.started)) {
+          console.log(`startSAVOrder: order ${orderId} — tous SIPs déjà started, ok`)
+          return {}
+        }
       }
     }
   } catch (e) {
@@ -1329,10 +1346,12 @@ export async function reserveOrder(orderId: string): Promise<{ error?: string }>
         return {}
       }
 
-      // Pas en concept → on ne peut pas réserver
-      if (status && status !== 'concept') {
+      // Booqable v4 API retourne "draft" pour l'état concept/draft → les deux sont OK pour la transition
+      const isConceptState = !status || status === 'concept' || status === 'draft'
+      if (!isConceptState) {
         return { error: `Impossible de réserver la commande (état actuel : ${status})` }
       }
+      console.log(`[reserveOrder] commande en ${status || 'inconnu'}, tentative concept→reserved`)
     }
   } catch (e) {
     console.warn('[reserveOrder] vérification état initiale échouée :', e)
