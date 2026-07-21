@@ -387,14 +387,11 @@ export async function executeCodeStep(
       case 'add_new_product_line': {
         // Lit original.chosen_lines (JSON structuré construit par choose_article)
         // → UUIDs déjà résolus, pas de matching texte ici.
-        const srcCtx       = 'original'
-        const dstCtx       = step.order_context ?? 'return'
+        const srcCtx         = 'original'
         const chosenLinesRaw = vars[`${srcCtx}.chosen_lines`]
-        const returnId     = vars[`${dstCtx}.id`] ?? orderId
-        console.log('[add_new_product_line] srcCtx:', srcCtx, 'dstCtx:', dstCtx)
-        console.log('[add_new_product_line] returnId:', returnId)
-        console.log('[add_new_product_line] chosen_lines raw:', chosenLinesRaw)
-        console.log('[add_new_product_line] vars keys:', Object.keys(vars))
+        // La return order est toujours dans return.id (écrit par create_new_return_order)
+        // On accepte aussi order_context si return.id absent (robustesse)
+        const returnId = vars['return.id'] ?? vars[`${step.order_context ?? 'return'}.id`] ?? orderId
 
         if (!returnId)       return err('add_new_product_line : return order id manquant dans les variables')
         if (!chosenLinesRaw) return err('add_new_product_line : original.chosen_lines manquant (choose_article requis avant)')
