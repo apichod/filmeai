@@ -12,6 +12,7 @@ import {
 import { executeCodeStep } from '@/lib/workflow-executor'
 import {
   fetchOrderByNumber,
+  fetchOrderById,
   createSAVOrder,
   addTagToOrder,
   addInternalNote,
@@ -382,6 +383,20 @@ function buildTools(
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'choose_article',
+      description: 'Présente les articles de la commande comme boutons multi-select pour que l\'opérateur choisisse les articles manquants (non retournés). Appeler après fetch_order avec le champ "id" retourné par fetch_order.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande d\'origine (champ "id" retourné par fetch_order)' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
   ] // fin buildTools
 }
 
@@ -419,12 +434,14 @@ async function executeTool(
               })()
             : null
           return {
-            product_name: l.product_name,
-            quantity: l.quantity,
-            line_id: l.id,
+            id:               l.id,          // champ 'id' pour le code executor (choose_article, add_missing_lines)
+            line_id:          l.id,          // alias conservé pour la compatibilité remove_product_line
+            product_name:     l.product_name,
+            quantity:         l.quantity,
             product_group_id: l.product_group_id || null,
-            stock_item_id: l.stock_item_id || null,
-            stock_item_label: stockLabel, // ex: "ID-2" — utile si l'exemplaire est déjà connu
+            stock_item_id:    l.stock_item_id || null,
+            stock_item_identifier: l.stock_item_identifier || null,
+            stock_item_label: stockLabel,    // ex: "ID-2" — utile si l'exemplaire est déjà connu
           }
         })
 
@@ -683,6 +700,21 @@ async function executeTool(
         const body    = String(args.body)
         await sendEmailViaBooqable(sendOrderId, subject, body)
         return { result: `✓ Email envoyé via Booqable pour la commande ${args.order_id}` }
+      }
+
+      case 'choose_article': {
+        const chooseOrderId = String(args.order_id || '')
+        if (!chooseOrderId) return { result: JSON.stringify({ error: 'choose_article : order_id manquant' }) }
+        const chooseOrder = await fetchOrderById(chooseOrderId)
+        if (!chooseOrder?.lines?.length) return { result: JSON.stringify({ error: 'choose_article : aucun article trouvé' }) }
+        const items = (chooseOrder.lines || []).map(l => {
+          const shortId = l.stock_item_identifier?.match(/(\d+)$/)?.[1] ?? ''
+          return {
+            label: `${l.quantity ?? 1}x ${l.product_name}${shortId ? ' ID ' + shortId : ''}`,
+            tag:   l.id,
+          }
+        })
+        return { result: JSON.stringify({ __type__: 'choices', order_id: chooseOrderId, items, multiSelect: true, message: 'Sélectionnez les articles qui n\'ont pas été retournés' }) }
       }
 
       default:
@@ -1385,20 +1417,25 @@ Affiche les {{...}} littéralement, toujours.`
               if (Object.keys(newVars).length > 0) {
                 wfState = { ...wfState, vars: { ...wfState.vars, ...newVars } }
               }
-              // Avancer l'étape si ACTION réussie
-              if (stepAtExecution?.type === 'action') {
+
+              // Émettre un event SSE 'choices' si le tool retourne __type__:'choices'
+              // → waiting_for_input, ne pas avancer l'étape
+              let isChoicesResultAI = false
+              try {
+                const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean }
+                if (parsed.__type__ === 'choices') {
+                  send(JSON.stringify({ type: 'choices', order_id: parsed.order_id, items: parsed.items, multiSelect: parsed.multiSelect ?? false }))
+                  wfState = { ...wfState, status: 'waiting_for_input' }
+                  isChoicesResultAI = true
+                }
+              } catch { /* pas JSON, continuer */ }
+
+              // Avancer l'étape si ACTION réussie et pas de boutons de choix
+              if (stepAtExecution?.type === 'action' && !isChoicesResultAI) {
                 wfState = advanceStep(wfState, activeSteps.length)
               }
             }
             // ───────────────────────────────────────────────────────────────
-
-            // Émettre un event SSE 'choices' si le tool retourne un marqueur spécial
-            try {
-              const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean }
-              if (parsed.__type__ === 'choices') {
-                send(JSON.stringify({ type: 'choices', order_id: parsed.order_id, items: parsed.items, multiSelect: parsed.multiSelect ?? false }))
-              }
-            } catch { /* pas JSON, continuer */ }
 
             send(JSON.stringify({ type: 'tool_result', name: entry.name, result }))
 
@@ -1411,6 +1448,9 @@ Affiche les {{...}} littéralement, toujours.`
               },
             ]
           }
+
+          // Si choose_article (ou autre tool) a mis waiting_for_input → sortir du loop agent
+          if (wfState.status === 'waiting_for_input') break
 
           // ── State machine : après UNE action AI ────────────────────────────
           // Exécute les steps code consécutifs qui suivent, puis :
