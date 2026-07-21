@@ -215,7 +215,9 @@ export async function executeCodeStep(
 
       case 'reserve_order': {
         if (!orderId) return err('reserve_order : order_id manquant')
-        await reserveOrder(orderId)
+        const { error: reserveErr } = await reserveOrder(orderId)
+        if (reserveErr) return ok({ success: true, warning: reserveErr,
+          message: `⚠️ Réservation non bloquante : ${reserveErr}` })
         return ok({ success: true, message: `✓ Commande ${label} réservée` })
       }
 

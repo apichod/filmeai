@@ -1139,11 +1139,12 @@ Affiche les {{...}} littéralement, toujours.`
             if (codeStep.execution !== 'code') break
 
             codeStepRan = true
-            const toolName = codeStep.booqable_action ?? 'code_step'
-            const callId   = `code_${ts}_${stepSeq++}`
-            const argsSnap = buildToolArgs(codeStep, wfState.vars)   // snapshot avant update vars
+            const toolName    = codeStep.booqable_action ?? 'code_step'
+            const displayName = codeStep.title ?? toolName
+            const callId      = `code_${ts}_${stepSeq++}`
+            const argsSnap    = buildToolArgs(codeStep, wfState.vars)   // snapshot avant update vars
 
-            send(JSON.stringify({ type: 'tool_call', name: toolName }))
+            send(JSON.stringify({ type: 'tool_call', name: displayName }))
 
             const { resultText, newVars } = await executeCodeStep(codeStep, wfState.vars)
 
@@ -1169,7 +1170,7 @@ Affiche les {{...}} littéralement, toujours.`
               wfState = advanceStep(wfState, activeSteps.length)
             }
 
-            send(JSON.stringify({ type: 'tool_result', name: toolName, result: resultText }))
+            send(JSON.stringify({ type: 'tool_result', name: displayName, result: resultText }))
 
             // Ghost messages — l'IA verra l'historique complet des appels code
             ghostMessages.push({
@@ -1393,7 +1394,8 @@ Affiche les {{...}} littéralement, toujours.`
               if (postCodeStep.execution !== 'code') break
               const codeId   = `code_post_${codeTs}_${codeSeq++}`
               const codeArgs = buildToolArgs(postCodeStep, wfState.vars)
-              send(JSON.stringify({ type: 'tool_call', name: postCodeStep.booqable_action ?? 'code_step' }))
+              const postDisplayName = postCodeStep.title ?? postCodeStep.booqable_action ?? 'code_step'
+              send(JSON.stringify({ type: 'tool_call', name: postDisplayName }))
               const codeRes = await executeCodeStep(postCodeStep, wfState.vars)
               if (Object.keys(codeRes.newVars).length > 0) {
                 wfState = { ...wfState, vars: { ...wfState.vars, ...codeRes.newVars } }
@@ -1415,7 +1417,7 @@ Affiche les {{...}} littéralement, toujours.`
               if (!postIsChoices) {
                 wfState = advanceStep(wfState, activeSteps.length)
               }
-              send(JSON.stringify({ type: 'tool_result', name: postCodeStep.booqable_action ?? 'code_step', result: codeRes.resultText }))
+              send(JSON.stringify({ type: 'tool_result', name: postDisplayName, result: codeRes.resultText }))
               currentMessages = [
                 ...currentMessages,
                 { role: 'assistant' as const, content: null, tool_calls: [{ id: codeId, type: 'function' as const, function: { name: postCodeStep.booqable_action ?? '', arguments: JSON.stringify(codeArgs) } }] },

@@ -107,21 +107,35 @@ function typeLabel(t: string) {
 }
 
 function toolLabel(name: string) {
+  // Les steps "code" envoient déjà step.title comme name — fallback pour les outils IA
   const labels: Record<string, string> = {
     fetch_order:            'Récupération de l\'order',
-    search_products:        'Recherche produit',
-    get_stock_items:        'Identification des unités',
-    add_internal_note:      'Note interne ajoutée',
-    create_sav_order:       'Création de la SAV order',
-    create_new_return_order:'Création commande de retour',
+    duplicate_order:        'Duplication de la commande',
+    revert_to_concept:      'Remise en brouillon',
+    reserve_order:          'Réservation',
+    start_order:            'Démarrage',
+    stop_order:             'Arrêt',
+    cancel_order:           'Annulation',
+    clear_tags:             'Suppression des tags',
     add_tag:                'Tags ajoutés',
     add_sav_comment:        'Commentaire SAV',
+    add_internal_note:      'Note interne',
+    create_new_return_order:'Création commande de retour',
+    zero_out_order_lines:   'Remise à zéro des lignes',
+    set_original_order:     'Commande d\'origine liée',
+    send_email:             'Envoi email',
+    choose_article:         'Choix de l\'article',
+    choose_problem_tag:     'Choix du type de problème',
+    remove_other_lines:     'Suppression des autres lignes',
+    search_products:        'Recherche produit',
+    get_stock_items:        'Identification des unités',
+    create_sav_order:       'Création de la SAV order',
     add_sav_line:           'Ajout ligne SAV',
     add_new_product_line:   'Ajout ligne produit',
-    set_original_order:     'Commande d\'origine liée',
     log_case:               'Cas enregistré',
     draft_email:            'Rédaction email',
-    send_email:             'Envoi email',
+    update_return_date:     'Mise à jour de la date de retour',
+    remove_product_line:    'Suppression ligne produit',
   }
   return labels[name] || name
 }

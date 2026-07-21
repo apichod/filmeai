@@ -1226,8 +1226,9 @@ export async function revertToConcept(orderId: string): Promise<void> {
 }
 
 // ── reserveOrder ─────────────────────────────────────────────────────────────
-// Passe la commande de "concept" à "reserved".
-export async function reserveOrder(orderId: string): Promise<void> {
+// Tente de passer la commande en "reserved" (concept→reserved).
+// Non-bloquant : retourne { error } si la transition échoue.
+export async function reserveOrder(orderId: string): Promise<{ error?: string }> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
   const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
     method: 'POST',
@@ -1239,7 +1240,7 @@ export async function reserveOrder(orderId: string): Promise<void> {
           order_id:         orderId,
           transition_from:  'concept',
           transition_to:    'reserved',
-          confirm_shortage: false,
+          confirm_shortage: true,
           revert_until:     null,
         },
       },
@@ -1248,8 +1249,9 @@ export async function reserveOrder(orderId: string): Promise<void> {
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Booqable reserveOrder error ${res.status}: ${text}`)
+    return { error: `Booqable reserveOrder error ${res.status}: ${text}` }
   }
+  return {}
 }
 
 // ── cancelOrder ──────────────────────────────────────────────────────────────
