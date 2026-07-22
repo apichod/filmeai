@@ -264,7 +264,7 @@ export async function executeCodeStep(
 
       case 'add_sav_comment': {
         if (!orderId) return err('add_sav_comment : order_id manquant')
-        const originNum = String(params.origin_order_number ?? vars['parent.number'] ?? orderNum ?? '')
+        const originNum = String(params.origin_order_number ?? vars['original.number'] ?? vars['parent.number'] ?? orderNum ?? '')
 
         // Construction automatique du commentaire depuis le tag problème + produits conservés
         let comment = String(params.comment ?? '')
