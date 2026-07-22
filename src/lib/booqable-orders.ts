@@ -1384,7 +1384,9 @@ export async function reserveOrder(orderId: string): Promise<{ error?: string }>
   const errText = await res.text()
   console.warn(`[reserveOrder] concept→reserved failed (${res.status}): ${errText}`)
 
-  // Vérification finale : peut-être que la transition a quand même abouti
+  // Vérification finale : Booqable peut retourner 404 même si la transition aboutit
+  // → on attend 1s pour laisser le temps à Booqable de mettre à jour le statut
+  await new Promise(resolve => setTimeout(resolve, 1000))
   try {
     const recheck = await fetch(`${BASE4}/orders/${orderId}?fields[orders]=status`, {
       headers: headers(), signal: AbortSignal.timeout(6000),
@@ -1392,8 +1394,8 @@ export async function reserveOrder(orderId: string): Promise<{ error?: string }>
     if (recheck.ok) {
       const d = await recheck.json() as { data?: { attributes?: { status?: string } } }
       const s = d.data?.attributes?.status ?? ''
-      if (['reserved', 'started', 'stopped'].includes(s)) {
-        console.log(`[reserveOrder] commande finalement en ${s} après réponse non-ok, ok`)
+      if (s && s !== 'concept' && s !== 'draft') {
+        console.log(`[reserveOrder] commande finalement en "${s}" après 404 Booqable — ok`)
         return {}
       }
     }
