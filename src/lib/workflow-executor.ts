@@ -398,12 +398,50 @@ export async function executeCodeStep(
       }
 
       case 'draft_email_booqable': {
-        // Affiche un aperçu non-éditable du template Booqable avant envoi
+        // Affiche un aperçu non-éditable du template Booqable, variables résolues via API
         const documentId = String(params.document_id ?? '')
         if (!documentId) return err('draft_email_booqable : document_id manquant dans les paramètres du step')
-        const doc = await fetchBooqableDocument(documentId)
+
+        // Fetch template + order en parallèle
+        const [doc, orderPreview] = await Promise.all([
+          fetchBooqableDocument(documentId),
+          orderId ? fetchOrderById(orderId) : Promise.resolve(null),
+        ])
         if (!doc) return err(`draft_email_booqable : template Booqable ${documentId} introuvable`)
-        return ok({ __type__: 'email_preview', document_id: documentId, subject: doc.subject, body: doc.body, name: doc.name })
+
+        // Formatage date FR (ex: "12 mars 2025")
+        const fmtDate = (iso: string) => {
+          if (!iso) return ''
+          try {
+            return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(iso))
+          } catch { return iso }
+        }
+
+        // Map de substitution {{variable}} → valeur réelle
+        const props = orderPreview?.properties_attributes ?? {}
+        const varMap: Record<string, string> = {
+          'company.name':                    'Filme',
+          'customer.name':                   orderPreview?.customer?.name ?? '',
+          'order.number':                    String(orderPreview?.number ?? ''),
+          'order.startsAt':                  fmtDate(orderPreview?.starts_at ?? ''),
+          'order.stopsAt':                   fmtDate(orderPreview?.stops_at ?? ''),
+          'order.custom_fields.order_sav':   props.order_sav   ?? '',
+          'order.custom_fields.notes_sav':   props.notes_sav   ?? '',
+          // Alias courants
+          'order.starts_at':                 fmtDate(orderPreview?.starts_at ?? ''),
+          'order.stops_at':                  fmtDate(orderPreview?.stops_at ?? ''),
+        }
+
+        const replaceVars = (text: string) =>
+          text.replace(/\{\{([^}]+)\}\}/g, (match, key: string) => varMap[key.trim()] ?? match)
+
+        return ok({
+          __type__:    'email_preview',
+          document_id: documentId,
+          name:        doc.name,
+          subject:     replaceVars(doc.subject),
+          body:        replaceVars(doc.body),
+        })
       }
 
       case 'send_email': {
