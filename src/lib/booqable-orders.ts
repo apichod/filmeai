@@ -1815,16 +1815,18 @@ export async function sendEmailViaBooqable(
   customerId?: string,
   emailTemplateId?: string,
 ): Promise<void> {
-  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  // Endpoint v4 (pas boomerang) — confirmé dans la doc Booqable API v4
+  // customer_id = attribut plat ; email_template_id = attribut plat pour lier le template
+  // document_ids = pièces jointes PDF (pas le template)
   const attributes: Record<string, unknown> = {
     order_id:   orderId,
     subject,
     body,
     recipients: recipientEmail,
   }
-  if (customerId)      attributes.customer_id  = customerId
-  if (emailTemplateId) attributes.document_ids = [emailTemplateId]
-  const res = await fetch(`${BASE_BOOMERANG}/emails`, {
+  if (customerId)      attributes.customer_id       = customerId
+  if (emailTemplateId) attributes.email_template_id = emailTemplateId
+  const res = await fetch(`${BASE4}/emails`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({ data: { type: 'emails', attributes } }),
