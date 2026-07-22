@@ -21,7 +21,7 @@ const BOOQABLE_TOOLS = [
   { value: 'add_tag',             label: 'add_tag — ajouter / supprimer des tags' },
   { value: 'add_sav_comment',     label: 'add_sav_comment — commentaire SAV' },
   { value: 'duplicate_order',     label: 'duplicate_order — dupliquer la commande' },
-  { value: 'choose_article',      label: 'choose_article — afficher boutons pour choisir un article à conserver' },
+  { value: 'choose_article',      label: 'choose_article — sélectionner les articles de la commande' },
   { value: 'remove_other_lines', label: 'remove_other_lines — supprimer toutes les lignes sauf l\'article choisi' },
   { value: 'choose_problem_tag',  label: 'choose_problem_tag — afficher boutons choix de tag (retard/perte/vol/dommage)' },
   { value: 'draft_email',         label: 'draft_email — préparer l\'email client' },
@@ -141,7 +141,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
 /** Description comportement par mode (pour les outils 'both') */
 const TOOL_MODE_DESC: Record<string, { code: string; ai: string }> = {
   fetch_order:        { code: 'Exécution directe via UUID ou numéro depuis les vars', ai: 'L\'IA extrait le numéro depuis la conversation' },
-  choose_article:     { code: 'Affiche des boutons multi-select', ai: 'Affiche des boutons multi-select (via appel outil)' },
+  choose_article:     { code: 'Affiche des boutons multi-select', ai: 'Liste les articles, l\'opérateur saisit sa sélection par texte' },
   choose_problem_tag: { code: 'Affiche des boutons de choix', ai: 'L\'IA extrait le tag depuis la conversation' },
   add_tag:            { code: 'Tags définis dans les paramètres du step', ai: 'L\'IA détermine les tags selon le contexte' },
   add_sav_comment:        { code: 'Commentaire défini dans les paramètres', ai: 'L\'IA rédige le commentaire' },
