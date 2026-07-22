@@ -184,6 +184,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'subject', 'body'],
     writes: [],
   },
+  draft_email_booqable: {
+    label:  'Aperçu template Booqable (lecture seule)',
+    reads:  ['id'],
+    writes: [],
+    // Paramètre requis : document_id (UUID du template Booqable)
+  },
   send_email_booqable: {
     label:  'Envoyer via template Booqable (document_id)',
     reads:  ['id', 'customer_id', 'customer_email'],

@@ -1709,6 +1709,27 @@ export async function stopOrder(orderId: string): Promise<void> {
   throw new Error(`Booqable stopOrder error ${r2.status}: ${r2.text}`)
 }
 
+// ── fetchBooqableDocument ─────────────────────────────────────────────────────
+// Récupère le contenu d'un template email Booqable (document) par son UUID.
+export async function fetchBooqableDocument(
+  documentId: string
+): Promise<{ name: string; subject: string; body: string } | null> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(`${BASE_BOOMERANG}/documents/${documentId}`, {
+    headers: headers(),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) return null
+  const data = await res.json() as { data?: { attributes?: { name?: string; subject?: string; body?: string } } }
+  const attrs = data.data?.attributes
+  if (!attrs) return null
+  return {
+    name:    String(attrs.name    ?? ''),
+    subject: String(attrs.subject ?? ''),
+    body:    String(attrs.body    ?? ''),
+  }
+}
+
 // ── sendEmailViaBooqable ──────────────────────────────────────────────────────
 // Envoie un email via Booqable (qui gère le destinataire depuis l'order et
 // remplace les {{variables}} Booqable au moment de l'envoi).

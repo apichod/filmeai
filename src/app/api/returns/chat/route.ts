@@ -1419,6 +1419,11 @@ Affiche les {{...}} littéralement, toujours.`
                 wfState = { ...wfState, status: 'waiting_for_input' }
                 isChoicesResult = true
               }
+              if (choicesParsed.__type__ === 'email_preview') {
+                send(JSON.stringify({ type: 'email_preview', document_id: choicesParsed.document_id ?? '', subject: choicesParsed.subject ?? '', body: choicesParsed.body ?? '', name: choicesParsed.name ?? '' }))
+                wfState = { ...wfState, status: 'waiting_for_input' }
+                isChoicesResult = true
+              }
             } catch { /* pas JSON */ }
 
             if (!isChoicesResult) {

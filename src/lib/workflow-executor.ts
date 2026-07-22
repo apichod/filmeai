@@ -25,6 +25,7 @@ import {
   setOriginalOrder,
   addInternalNote,
   sendEmailViaBooqable,
+  fetchBooqableDocument,
   addSAVComment,
   addSAVLine,
 } from './booqable-orders'
@@ -394,6 +395,15 @@ export async function executeCodeStep(
 
         // __type__: 'email_editor' → déclenche l'éditeur inline côté client
         return ok({ __type__: 'email_editor', subject: best.subject, body: best.body })
+      }
+
+      case 'draft_email_booqable': {
+        // Affiche un aperçu non-éditable du template Booqable avant envoi
+        const documentId = String(params.document_id ?? '')
+        if (!documentId) return err('draft_email_booqable : document_id manquant dans les paramètres du step')
+        const doc = await fetchBooqableDocument(documentId)
+        if (!doc) return err(`draft_email_booqable : template Booqable ${documentId} introuvable`)
+        return ok({ __type__: 'email_preview', document_id: documentId, subject: doc.subject, body: doc.body, name: doc.name })
       }
 
       case 'send_email': {

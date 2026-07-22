@@ -26,6 +26,7 @@ type StreamEvent =
   | { type: 'tool_result'; name: string; result: string }
   | { type: 'choices'; order_id: string; items: Array<{ label: string; tag: string }>; multiSelect?: boolean }
   | { type: 'email_editor'; subject: string; body: string }
+  | { type: 'email_preview'; document_id: string; subject: string; body: string; name: string }
   | { type: 'done'; caseId: string | null; workflowState?: WorkflowState | null }
   | { type: 'error'; message: string }
 
@@ -35,6 +36,7 @@ type ChatMessage = {
   content: string
   toolCalls?: { name: string; result?: string }[]
   emailEditor?: { subject: string; body: string }
+  emailPreview?: { document_id: string; subject: string; body: string; name: string }
 }
 
 type ReturnCase = {
@@ -611,6 +613,13 @@ function ChatPanel() {
                   : m
               ))
             }
+            if (event.type === 'email_preview') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, emailPreview: { document_id: event.document_id, subject: event.subject, body: event.body, name: event.name } }
+                  : m
+              ))
+            }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
@@ -984,6 +993,38 @@ function ChatPanel() {
                       className="w-full py-2 text-xs font-semibold rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40"
                     >
                       Envoyer cet email ✓
+                    </button>
+                  </div>
+                </div>
+              )}
+              {/* Aperçu template Booqable — lecture seule + bouton confirmation */}
+              {msg.emailPreview && (
+                <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm w-full max-w-lg">
+                  <div className="flex items-center px-3 py-2 border-b border-gray-100 bg-gray-50">
+                    <span className="text-xs font-semibold text-gray-600">📋 Template Booqable — {msg.emailPreview.name || msg.emailPreview.document_id}</span>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    {msg.emailPreview.subject && (
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Objet</label>
+                        <div className="w-full text-xs border border-gray-100 rounded-lg px-3 py-1.5 bg-gray-50 text-gray-600">{msg.emailPreview.subject}</div>
+                      </div>
+                    )}
+                    {msg.emailPreview.body && (
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Corps</label>
+                        <div className="w-full text-xs border border-gray-100 rounded-lg px-3 py-2 bg-gray-50 text-gray-600 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">{msg.emailPreview.body}</div>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, emailPreview: undefined } : m))
+                        quickSend('__booqable_confirm__')
+                      }}
+                      disabled={sending}
+                      className="w-full py-2 text-xs font-semibold rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40"
+                    >
+                      Envoyer cette template ✓
                     </button>
                   </div>
                 </div>
