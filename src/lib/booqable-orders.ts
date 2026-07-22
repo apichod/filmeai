@@ -663,12 +663,14 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
         if (r.type === 'stock_items') siMap.set(r.id, r)
       }
       for (const sip of sipData.data || []) {
+        const planId = String(sip.attributes.planning_id   || '')
+        const siId   = String(sip.attributes.stock_item_id || '')
+        if (!planId || !siId) continue
+        // Toujours marquer ce planning comme couvert (même si déjà started)
+        // pour éviter de le traiter comme un produit bulk dans la passe B
+        coveredPlanIds.add(planId)
         if (sip.attributes.started) continue
         sipAllStarted = false
-        const planId    = String(sip.attributes.planning_id   || '')
-        const siId      = String(sip.attributes.stock_item_id || '')
-        if (!planId || !siId) continue
-        coveredPlanIds.add(planId)
         const si        = siMap.get(siId)
         const productId = String(si?.attributes.product_id || '')
         if (!productId) continue
@@ -682,11 +684,10 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
       }
     }
 
-    // Passe B : plannings → actions start_products (bulk / no_tracking non couverts)
-    const bulkActions: Array<Record<string, unknown>> = []
+    // Passe B : plannings → PATCH started=true pour les produits bulk non couverts par un SIP
+    // "start_products" n'est pas une action valide dans order_fulfillments → on PATCH directement
+    let bulkPlanIds: string[] = []
     try {
-      // Toutes les plannings non couvertes par les SIPs → start_products (bulk, no_tracking, etc.)
-      // On ne filtre PAS par tracking type : `include=product` ne retourne pas cette info fiablement
       const planRes = await fetch(
         `${BASE4}/plannings?filter[order_id]=${orderId}&page[size]=200`,
         { headers: headers(), signal: AbortSignal.timeout(10000) }
@@ -695,17 +696,13 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
         const planData = await planRes.json() as { data?: SIPNode[] }
         console.log(`[startSAVOrder] plannings count: ${(planData.data || []).length}, coveredPlanIds: ${coveredPlanIds.size}`)
         for (const plan of planData.data || []) {
-          const planId    = plan.id
-          // Debug : afficher les attributs bruts pour comprendre la structure
-          const attrs = plan.attributes
-          // L'endpoint /plannings utilise "item_id" (pas "product_id")
+          const planId = plan.id
+          const attrs  = plan.attributes
           const itemId = String(attrs.item_id || '')
           if (!itemId || coveredPlanIds.has(planId)) continue
-          const qty = Number(attrs.quantity) || 1
-          console.log(`[startSAVOrder] bulk plan: planning_id=${planId} item_id=${itemId} qty=${qty}`)
-          bulkActions.push({
-            action: 'start_products', planning_id: planId, product_id: itemId, quantity: qty,
-          })
+          if (attrs.started) { console.log(`[startSAVOrder] bulk plan ${planId} déjà started, skip`); continue }
+          console.log(`[startSAVOrder] bulk plan à démarrer: planning_id=${planId} item_id=${itemId}`)
+          bulkPlanIds.push(planId)
         }
       } else {
         console.warn(`[startSAVOrder] plannings fetch failed: ${planRes.status}`)
@@ -714,27 +711,52 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
       console.warn('[startSAVOrder] plannings fetch error:', e)
     }
 
+    // Passe A : order_fulfillments pour les trackables non encore started
     const trackableActions: Array<Record<string, unknown>> = Array.from(planGroups.entries()).map(([planId, g]) => ({
       action: 'start_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
     }))
-    const actions = [...trackableActions, ...bulkActions]
 
-    if (actions.length > 0) {
-      console.log(`startSAVOrder: ${actions.length} action(s) pour ${orderId}:`, JSON.stringify(actions))
+    if (trackableActions.length > 0) {
+      console.log(`startSAVOrder: ${trackableActions.length} trackable action(s) pour ${orderId}`)
       const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({
-          data: { type: 'order_fulfillments', attributes: { order_id: orderId, confirm_shortage: true, actions } },
+          data: { type: 'order_fulfillments', attributes: { order_id: orderId, confirm_shortage: true, actions: trackableActions } },
         }),
         signal: AbortSignal.timeout(15000),
       })
-      if (fulfillRes.ok) {
-        console.log(`startSAVOrder: order ${orderId} started (trackable+bulk) ✓`)
-        return {}
+      if (!fulfillRes.ok) {
+        const errText = await fulfillRes.text()
+        console.warn('[startSAVOrder] start_stock_items failed:', fulfillRes.status, errText.slice(0, 300))
+      } else {
+        console.log(`startSAVOrder: trackable items started ✓`)
       }
-      const errText = await fulfillRes.text()
-      console.warn('[startSAVOrder] start_stock_items+start_products failed:', fulfillRes.status, errText.slice(0, 300))
+    }
+
+    // Passe B : PATCH planning started=true pour les produits bulk
+    if (bulkPlanIds.length > 0) {
+      console.log(`[startSAVOrder] patching ${bulkPlanIds.length} bulk planning(s) to started=true`)
+      await Promise.all(bulkPlanIds.map(async (planId) => {
+        const patchRes = await fetch(`${BASE4}/plannings/${planId}`, {
+          method: 'PATCH',
+          headers: headers(),
+          body: JSON.stringify({
+            data: { type: 'plannings', id: planId, attributes: { started: true } },
+          }),
+          signal: AbortSignal.timeout(10000),
+        })
+        if (patchRes.ok) {
+          console.log(`[startSAVOrder] planning ${planId} started ✓`)
+        } else {
+          const errText = await patchRes.text()
+          console.warn(`[startSAVOrder] PATCH planning ${planId} failed: ${patchRes.status} ${errText.slice(0, 200)}`)
+        }
+      }))
+    }
+
+    if (trackableActions.length > 0 || bulkPlanIds.length > 0) {
+      return {}
     } else if (sipAllStarted) {
       // Rien à démarrer
       return {}
