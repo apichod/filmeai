@@ -1473,7 +1473,7 @@ export async function updateOrderReturnDate(orderId: string): Promise<void> {
       data: {
         id:   orderId,
         type: 'orders',
-        attributes: { stops_at: new Date().toISOString() },
+        attributes: { stops_at: bqDate(new Date()) },
       },
     }),
     signal: AbortSignal.timeout(10000),
@@ -1503,7 +1503,9 @@ export async function stopOrder(orderId: string): Promise<void> {
     })
   } catch { /* non bloquant */ }
 
-  // ── Approche 1 : stop_stock_items via order_fulfillments ────────────────
+  // ── Approche 1 : stop via order_fulfillments (items trackables) ─────────────
+  // Phase A : start_stock_items pour les SIPs reserved-but-not-started
+  // Phase B : stop_stock_items pour tous les SIPs non-stopped
   try {
     const sipRes = await fetch(
       `${BASE4}/stock_item_plannings?filter[order_id]=${orderId}&include=stock_item&page[size]=200`,
@@ -1517,31 +1519,59 @@ export async function stopOrder(orderId: string): Promise<void> {
         if (r.type === 'stock_items') siMap.set(r.id, r)
       }
 
-      // Grouper par planning_id (même fix que startSAVOrder — Booqable rejette 2 actions pour le même planning)
-      type StopGroup = { productId: string; siIds: string[] }
-      const stopGroups = new Map<string, StopGroup>()
+      type Group = { productId: string; siIds: string[] }
+      const startGroups = new Map<string, Group>()  // SIPs reserved-not-started → à démarrer d'abord
+      const stopGroups  = new Map<string, Group>()  // tous SIPs non-stopped → à stopper
+
       for (const sip of sipData.data || []) {
-        if (!sip.attributes.started || sip.attributes.stopped) continue
+        if (sip.attributes.stopped) continue
         const planId    = String(sip.attributes.planning_id   || '')
         const siId      = String(sip.attributes.stock_item_id || '')
         if (!planId || !siId) continue
         const si        = siMap.get(siId)
         const productId = String(si?.attributes.product_id    || '')
         if (!productId) continue
-        const g = stopGroups.get(planId) || { productId, siIds: [] }
-        g.siIds.push(siId)
-        stopGroups.set(planId, g)
-      }
-      const actions: Array<Record<string, unknown>> = Array.from(stopGroups.entries()).map(([planId, g]) => ({
-        action: 'stop_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
-      }))
 
-      if (actions.length > 0) {
+        if (!sip.attributes.started) {
+          // Reserved mais pas started → à démarrer d'abord (Booqable rejette stop sans start)
+          const g = startGroups.get(planId) || { productId, siIds: [] }
+          g.siIds.push(siId)
+          startGroups.set(planId, g)
+        }
+        const g2 = stopGroups.get(planId) || { productId, siIds: [] }
+        if (!g2.siIds.includes(siId)) g2.siIds.push(siId)
+        stopGroups.set(planId, g2)
+      }
+
+      // Phase A : start_stock_items (non bloquant — continue même si échoue)
+      if (startGroups.size > 0) {
+        const startActions: Array<Record<string, unknown>> = Array.from(startGroups.entries()).map(([planId, g]) => ({
+          action: 'start_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
+        }))
+        const startRes = await fetch(`${BASE4}/order_fulfillments`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            data: { type: 'order_fulfillments', attributes: { order_id: orderId, confirm_shortage: true, actions: startActions } },
+          }),
+          signal: AbortSignal.timeout(15000),
+        }).catch(e => { console.warn('[stopOrder] start_stock_items error:', e); return null })
+        if (startRes && !startRes.ok) {
+          const errText = await startRes.text()
+          console.warn('[stopOrder] start_stock_items failed:', startRes.status, errText.slice(0, 200))
+        }
+      }
+
+      // Phase B : stop_stock_items
+      if (stopGroups.size > 0) {
+        const stopActions: Array<Record<string, unknown>> = Array.from(stopGroups.entries()).map(([planId, g]) => ({
+          action: 'stop_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
+        }))
         const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify({
-            data: { type: 'order_fulfillments', attributes: { order_id: orderId, actions } },
+            data: { type: 'order_fulfillments', attributes: { order_id: orderId, actions: stopActions } },
           }),
           signal: AbortSignal.timeout(15000),
         })
