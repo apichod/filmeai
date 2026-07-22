@@ -587,6 +587,7 @@ export default function WorkflowsPage() {
         description: s.description,
         execution:   s.execution ?? 'ai',
       }
+      if (s.input_context)   step.input_context   = s.input_context
       if (s.order_context)   step.order_context   = s.order_context
       if (s.output_context)  step.output_context  = s.output_context
       if (s.booqable_action) step.booqable_action  = s.booqable_action
