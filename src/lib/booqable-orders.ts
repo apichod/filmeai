@@ -685,32 +685,27 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
     // Passe B : plannings → actions start_products (bulk / no_tracking non couverts)
     const bulkActions: Array<Record<string, unknown>> = []
     try {
+      // Toutes les plannings non couvertes par les SIPs → start_products (bulk, no_tracking, etc.)
+      // On ne filtre PAS par tracking type : `include=product` ne retourne pas cette info fiablement
       const planRes = await fetch(
-        `${BASE4}/plannings?filter[order_id]=${orderId}&include=product&page[size]=200`,
+        `${BASE4}/plannings?filter[order_id]=${orderId}&page[size]=200`,
         { headers: headers(), signal: AbortSignal.timeout(10000) }
       )
       if (planRes.ok) {
-        const planData = await planRes.json() as { data?: SIPNode[]; included?: SIPNode[] }
-        const productMap = new Map<string, { tracking: string }>()
-        for (const inc of planData.included || []) {
-          if (inc.type === 'products') {
-            productMap.set(inc.id, { tracking: String(inc.attributes.tracking || '') })
-          }
-        }
+        const planData = await planRes.json() as { data?: SIPNode[] }
+        console.log(`[startSAVOrder] plannings count: ${(planData.data || []).length}, coveredPlanIds: ${coveredPlanIds.size}`)
         for (const plan of planData.data || []) {
           const planId    = plan.id
           const productId = String(plan.attributes.product_id || '')
-          if (!productId || coveredPlanIds.has(planId)) continue  // trackable déjà géré
-          const product   = productMap.get(productId)
-          if (!product) continue
-          const tracking  = product.tracking
-          if (tracking === 'bulk' || tracking === 'no_tracking') {
-            const qty = Number(plan.attributes.quantity) || 1
-            bulkActions.push({
-              action: 'start_products', planning_id: planId, product_id: productId, quantity: qty,
-            })
-          }
+          if (!productId || coveredPlanIds.has(planId)) continue
+          const qty = Number(plan.attributes.quantity) || 1
+          console.log(`[startSAVOrder] bulk plan: planning_id=${planId} product_id=${productId} qty=${qty}`)
+          bulkActions.push({
+            action: 'start_products', planning_id: planId, product_id: productId, quantity: qty,
+          })
         }
+      } else {
+        console.warn(`[startSAVOrder] plannings fetch failed: ${planRes.status}`)
       }
     } catch (e) {
       console.warn('[startSAVOrder] plannings fetch error:', e)
@@ -1753,6 +1748,7 @@ export async function renderBooqableEmailTemplate(
   orderId: string,
 ): Promise<{ subject: string; body: string } | null> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  console.log(`[renderBooqableEmailTemplate] POST rendered_emails template=${emailTemplateId} order=${orderId}`)
   const res = await fetch(`${BASE_BOOMERANG}/rendered_emails`, {
     method: 'POST',
     headers: headers(),
@@ -1767,13 +1763,15 @@ export async function renderBooqableEmailTemplate(
     }),
     signal: AbortSignal.timeout(15000),
   })
+  console.log(`[renderBooqableEmailTemplate] response status: ${res.status}`)
   if (!res.ok) {
     const text = await res.text()
-    console.error(`[renderBooqableEmailTemplate] ${res.status}: ${text}`)
+    console.error(`[renderBooqableEmailTemplate] error body: ${text}`)
     return null
   }
   const data = await res.json() as { data?: { attributes?: { subject?: string; body?: string } } }
   const attrs = data.data?.attributes
+  console.log(`[renderBooqableEmailTemplate] attrs found: ${!!attrs}, subject: ${attrs?.subject?.slice(0,50)}`)
   if (!attrs) return null
   return {
     subject: String(attrs.subject ?? ''),

@@ -472,6 +472,13 @@ function ChatPanel() {
                   : m
               ))
             }
+            if (event.type === 'email_preview') {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, emailPreview: { document_id: event.document_id, subject: event.subject, body: event.body, name: event.name } }
+                  : m
+              ))
+            }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
