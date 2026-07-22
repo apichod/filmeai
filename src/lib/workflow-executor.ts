@@ -26,6 +26,7 @@ import {
   addInternalNote,
   sendEmailViaBooqable,
   renderBooqableEmailTemplate,
+  searchProducts,
   addSAVComment,
   addSAVLine,
 } from './booqable-orders'
@@ -590,11 +591,29 @@ export async function executeCodeStep(
 
         const added: string[] = []
         for (const line of chosenLines) {
-          if (line.product_group_id) {
+          let productGroupId = line.product_group_id ?? null
+
+          // Pas de product_group_id (custom_ line du matching texte) → chercher dans Booqable par nom
+          if (!productGroupId && line.product_name) {
+            try {
+              const results = await searchProducts(line.product_name)
+              if (results.length > 0) {
+                // Prend le meilleur match (nom le plus proche)
+                const nameLow = line.product_name.toLowerCase()
+                const exact = results.find(r => r.name.toLowerCase() === nameLow)
+                const best  = exact ?? results.find(r =>
+                  r.name.toLowerCase().includes(nameLow) || nameLow.includes(r.name.toLowerCase())
+                )
+                if (best) productGroupId = best.id
+              }
+            } catch { /* ignore — fallback custom */ }
+          }
+
+          if (productGroupId) {
             await addSAVLine({
               type:           'product',
               orderId:        returnId,
-              productGroupId: line.product_group_id,
+              productGroupId,
               quantity:       line.quantity ?? 1,
               stockItemId:    line.stock_item_id ?? undefined,
             })
