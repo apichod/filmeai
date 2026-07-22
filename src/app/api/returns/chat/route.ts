@@ -1561,6 +1561,17 @@ Affiche les {{...}} littéralement, toujours.`
 
             send(JSON.stringify({ type: 'tool_result', name: entry.name, result }))
 
+            // draft_email → afficher le brouillon comme texte pour que l'opérateur puisse confirmer
+            if (entry.name === 'draft_email') {
+              try {
+                const emailData = JSON.parse(result) as { subject?: string; body?: string }
+                if (emailData.subject && emailData.body) {
+                  const preview = `Objet : ${emailData.subject}\n\n${emailData.body}\n\nConfirmez-vous l'envoi de cet email ?`
+                  send(JSON.stringify({ type: 'text', content: preview }))
+                }
+              } catch { /* pas JSON — erreur template, tool card affiche déjà l'erreur */ }
+            }
+
             currentMessages = [
               ...currentMessages,
               {
