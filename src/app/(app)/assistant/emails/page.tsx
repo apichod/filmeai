@@ -72,6 +72,11 @@ export default function EmailTemplatesPage() {
   const [savingTemplateId, setSavingTemplateId]   = useState(false)
   const [savedTemplateId, setSavedTemplateId]     = useState(false)
 
+  // Case key editing (per variant)
+  const [caseKeyDrafts, setCaseKeyDrafts]         = useState<Record<string, string>>({})
+  const [savingCaseKey, setSavingCaseKey]         = useState<string | null>(null)
+  const [savedCaseKey, setSavedCaseKey]           = useState<string | null>(null)
+
   // Nouveau template
   const [showNewTemplate, setShowNewTemplate] = useState(false)
   const [newTemplateLabel, setNewTemplateLabel] = useState('')
@@ -144,6 +149,31 @@ export default function EmailTemplatesPage() {
       setSaving(null)
     }
   }, [editing])
+
+  const handleSaveCaseKey = useCallback(async (templateId: string, oldCaseKey: string) => {
+    const k = `${templateId}__${oldCaseKey}`
+    const newCaseKey = (caseKeyDrafts[k] ?? oldCaseKey).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
+    if (!newCaseKey || newCaseKey === oldCaseKey) return
+    setSavingCaseKey(k)
+    try {
+      await fetch('/api/email-templates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_id: templateId, case_key: oldCaseKey, new_case_key: newCaseKey }),
+      })
+      setGroups(prev => prev.map(g =>
+        g.template_id !== templateId ? g : {
+          ...g,
+          cases: g.cases.map(c => c.case_key !== oldCaseKey ? c : { ...c, case_key: newCaseKey }),
+        }
+      ))
+      setCaseKeyDrafts(prev => { const n = { ...prev }; delete n[k]; n[`${templateId}__${newCaseKey}`] = newCaseKey; return n })
+      setSavedCaseKey(`${templateId}__${newCaseKey}`)
+      setTimeout(() => setSavedCaseKey(null), 2000)
+    } finally {
+      setSavingCaseKey(null)
+    }
+  }, [caseKeyDrafts])
 
   const handleSaveTemplateId = useCallback(async () => {
     if (!selectedGroup) return
@@ -436,16 +466,26 @@ export default function EmailTemplatesPage() {
                     </div>
                   )}
 
-                  {/* Slug éditable */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Identifiant (slug)</label>
+                  {/* Identifiant variante (case_key) */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-medium text-gray-500 shrink-0">Identifiant variante :</label>
                     <input
                       type="text"
-                      value={vals.slug}
-                      onChange={e => handleChange(c.template_id, c.case_key, 'slug', e.target.value)}
-                      className="w-full text-xs font-mono border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-black/10 text-gray-600 bg-gray-50"
-                      placeholder={`${c.template_id}_cas_1`}
+                      value={caseKeyDrafts[k] ?? c.case_key}
+                      onChange={e => setCaseKeyDrafts(prev => ({ ...prev, [k]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSaveCaseKey(c.template_id, c.case_key) }}
+                      className="font-mono text-xs border border-gray-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white text-gray-600 w-56"
                     />
+                    {savedCaseKey === `${c.template_id}__${caseKeyDrafts[k] ?? c.case_key}` && (
+                      <span className="text-xs text-green-600">✓</span>
+                    )}
+                    <button
+                      onClick={() => handleSaveCaseKey(c.template_id, c.case_key)}
+                      disabled={savingCaseKey === k || (caseKeyDrafts[k] ?? c.case_key) === c.case_key}
+                      className="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded disabled:opacity-30 transition-colors"
+                    >
+                      {savingCaseKey === k ? '…' : 'Renommer'}
+                    </button>
                   </div>
 
                   {/* Objet */}

@@ -218,6 +218,7 @@ function buildTools(
         type: 'object',
         properties: {
           template_id:      { type: 'string', enum: templateIds.length > 0 ? templateIds : ['retour_ok'], description: 'ID du template à utiliser' },
+          case_key:         { type: 'string', description: 'Identifiant de la variante exacte à utiliser (optionnel — si absent, sélection automatique par conditions)' },
           insurance:        { type: 'boolean', description: 'Le client a souscrit à l\'assurance (pour sélection de variante)' },
           caution:          { type: 'boolean', description: 'Une caution est active (pour sélection de variante)' },
           amount_above_500: { type: 'boolean', description: 'Montant > 500 € (pour sélection de variante)' },
@@ -668,25 +669,31 @@ async function executeTool(
 
       case 'draft_email': {
         const templateId = String(args.template_id || '')
+        const caseKeyArg = args.case_key ? String(args.case_key) : null
 
-        // Conditions pour sélection de variante (pas de données client ici)
-        const conditions: Record<string, boolean> = {
-          insurance:      Boolean(args.insurance),
-          caution:        Boolean(args.caution),
-          amountAbove500: Boolean(args.amount_above_500),
-          latePayment:    Boolean(args.late_payment),
-        }
-
-        // Charger le template depuis la DB
+        // Charger le(s) template(s) depuis la DB
         const sbDraft = getSupabaseAdmin()
-        const { data: rows } = await sbDraft
+        let query = sbDraft
           .from('email_templates')
           .select('case_key, subject, body, conditions, sort_order')
           .eq('template_id', templateId)
           .order('sort_order')
 
+        // Si case_key explicite → cibler la variante exacte
+        if (caseKeyArg) query = query.eq('case_key', caseKeyArg)
+
+        const { data: rows } = await query
+
         if (rows && rows.length > 0) {
-          const best = rows.reduce((prev, cur) => {
+          // Si case_key explicite → on prend la première (unique) ligne
+          // Sinon → sélection par score de conditions
+          const best = caseKeyArg ? rows[0] : rows.reduce((prev, cur) => {
+            const conditions: Record<string, boolean> = {
+              insurance:      Boolean(args.insurance),
+              caution:        Boolean(args.caution),
+              amountAbove500: Boolean(args.amount_above_500),
+              latePayment:    Boolean(args.late_payment),
+            }
             const score = (row: typeof rows[0]) => {
               const c = (row.conditions as Record<string, boolean>) || {}
               return Object.entries(c).filter(([k, v]) => conditions[k] === v).length
@@ -698,7 +705,8 @@ async function executeTool(
           return { result: JSON.stringify({ subject: best.subject, body: best.body }) }
         }
 
-        return { result: `Erreur : template "${templateId}" introuvable en DB.` }
+        const detail = caseKeyArg ? `template "${templateId}" variante "${caseKeyArg}"` : `template "${templateId}"`
+        return { result: `Erreur : ${detail} introuvable en DB.` }
       }
 
       case 'send_email': {

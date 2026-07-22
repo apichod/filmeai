@@ -212,6 +212,7 @@ export async function PATCH(req: NextRequest) {
     template_id: string
     new_template_id?: string
     case_key?: string
+    new_case_key?: string
     subject?: string
     body?: string
     label?: string
@@ -230,6 +231,17 @@ export async function PATCH(req: NextRequest) {
       .from('email_templates')
       .update({ template_id: body.new_template_id, updated_at: new Date().toISOString() })
       .eq('template_id', body.template_id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  // Renommage du case_key d'une variante
+  if (body.new_case_key !== undefined && body.case_key) {
+    const { error } = await supabase
+      .from('email_templates')
+      .update({ case_key: body.new_case_key, updated_at: new Date().toISOString() })
+      .eq('template_id', body.template_id)
+      .eq('case_key', body.case_key)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
