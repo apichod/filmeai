@@ -266,14 +266,7 @@ export function buildToolArgs(step: WorkflowStep, vars: WorkflowVars): Record<st
     }
   }
 
-  // 3. choose_article : injecter les lignes déjà disponibles dans les vars (évite un re-fetch)
-  if (step.booqable_action === 'choose_article') {
-    const ctx = step.order_context ?? 'original'
-    const linesRaw = vars[`${ctx}.lines`]
-    if (linesRaw) args.lines_json = linesRaw
-  }
-
-  // 4. add_sav_comment : référencer le numéro de la commande d'ORIGINE (original), pas de la return order (parent)
+  // 3. add_sav_comment : référencer le numéro de la commande d'ORIGINE (original), pas de la return order (parent)
   if (step.booqable_action === 'add_sav_comment') {
     args.origin_order_number = vars['original.number'] ?? vars['parent.number'] ?? getOrderNumberForStep(step, vars) ?? ''
   }
