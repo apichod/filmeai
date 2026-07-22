@@ -698,13 +698,13 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
           const planId    = plan.id
           // Debug : afficher les attributs bruts pour comprendre la structure
           const attrs = plan.attributes
-          const productId = String(attrs.product_id || attrs.product_group_id || '')
-          console.log(`[startSAVOrder] plan ${planId}: covered=${coveredPlanIds.has(planId)} productId="${productId}" attrs_keys=${Object.keys(attrs).join(',')}`)
-          if (!productId || coveredPlanIds.has(planId)) continue
+          // L'endpoint /plannings utilise "item_id" (pas "product_id")
+          const itemId = String(attrs.item_id || '')
+          if (!itemId || coveredPlanIds.has(planId)) continue
           const qty = Number(attrs.quantity) || 1
-          console.log(`[startSAVOrder] bulk plan: planning_id=${planId} product_id=${productId} qty=${qty}`)
+          console.log(`[startSAVOrder] bulk plan: planning_id=${planId} item_id=${itemId} qty=${qty}`)
           bulkActions.push({
-            action: 'start_products', planning_id: planId, product_id: productId, quantity: qty,
+            action: 'start_products', planning_id: planId, product_id: itemId, quantity: qty,
           })
         }
       } else {
