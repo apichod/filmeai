@@ -398,12 +398,17 @@ export async function executeCodeStep(
 
       case 'send_email': {
         if (!orderId) return err('send_email : order_id manquant')
-        const inputCtx       = step.input_context ?? step.order_context ?? 'parent'
-        const subject        = String(vars[`${inputCtx}.subject`] ?? params.subject ?? '')
-        const body           = String(vars[`${inputCtx}.body`]    ?? params.body    ?? '')
-        const recipientEmail = String(vars[`${inputCtx}.customer_email`] ?? params.recipient_email ?? '')
-        if (!subject || !body)     return err('send_email : subject/body manquants — draft_email requis avant')
-        if (!recipientEmail)       return err('send_email : customer_email manquant — fetch_order requis avant')
+        const inputCtx = step.input_context ?? step.order_context ?? 'parent'
+        const subject  = String(vars[`${inputCtx}.subject`] ?? params.subject ?? '')
+        const body     = String(vars[`${inputCtx}.body`]    ?? params.body    ?? '')
+        if (!subject || !body) return err('send_email : subject/body manquants — draft_email requis avant')
+        // Récupère customer_email depuis vars, sinon fallback fetch order
+        let recipientEmail = String(vars[`${inputCtx}.customer_email`] ?? params.recipient_email ?? '')
+        if (!recipientEmail) {
+          const fetchedOrder = await fetchOrderById(orderId)
+          recipientEmail = fetchedOrder?.customer?.email ?? ''
+        }
+        if (!recipientEmail) return err('send_email : email client introuvable sur la commande')
         await sendEmailViaBooqable(orderId, subject, body, recipientEmail)
         return ok({ success: true, message: `✓ Email envoyé pour ${label}` })
       }
