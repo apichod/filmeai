@@ -67,6 +67,11 @@ export default function EmailTemplatesPage() {
   const [savingLabel, setSavingLabel] = useState(false)
   const [savedLabel, setSavedLabel]   = useState(false)
 
+  // Template ID editing
+  const [templateIdDraft, setTemplateIdDraft]     = useState('')
+  const [savingTemplateId, setSavingTemplateId]   = useState(false)
+  const [savedTemplateId, setSavedTemplateId]     = useState(false)
+
   // Nouveau template
   const [showNewTemplate, setShowNewTemplate] = useState(false)
   const [newTemplateLabel, setNewTemplateLabel] = useState('')
@@ -101,9 +106,12 @@ export default function EmailTemplatesPage() {
 
   const selectedGroup = groups.find(g => g.template_id === selectedId)
 
-  // Sync labelDraft when selection changes
+  // Sync labelDraft + templateIdDraft when selection changes
   useEffect(() => {
-    if (selectedGroup) setLabelDraft(selectedGroup.label)
+    if (selectedGroup) {
+      setLabelDraft(selectedGroup.label)
+      setTemplateIdDraft(selectedGroup.template_id)
+    }
   }, [selectedId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers existants ──────────────────────────────────────────────────────
@@ -136,6 +144,29 @@ export default function EmailTemplatesPage() {
       setSaving(null)
     }
   }, [editing])
+
+  const handleSaveTemplateId = useCallback(async () => {
+    if (!selectedGroup) return
+    const newId = templateIdDraft.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
+    if (!newId || newId === selectedGroup.template_id) return
+    setSavingTemplateId(true)
+    try {
+      await fetch('/api/email-templates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_id: selectedGroup.template_id, new_template_id: newId }),
+      })
+      setGroups(prev => prev.map(g =>
+        g.template_id !== selectedGroup.template_id ? g : { ...g, template_id: newId }
+      ))
+      setSelectedId(newId)
+      setTemplateIdDraft(newId)
+      setSavedTemplateId(true)
+      setTimeout(() => setSavedTemplateId(false), 2000)
+    } finally {
+      setSavingTemplateId(false)
+    }
+  }, [selectedGroup, templateIdDraft])
 
   const handleSaveLabel = useCallback(async () => {
     if (!selectedGroup) return
@@ -346,6 +377,26 @@ export default function EmailTemplatesPage() {
                   {savingLabel ? 'Sauvegarde…' : 'Sauvegarder'}
                 </button>
               </div>
+            </div>
+
+            {/* Identifiant workflow (template_id) */}
+            <div className="flex items-center gap-2 -mt-3">
+              <label className="text-xs text-gray-400 shrink-0">Identifiant workflow :</label>
+              <input
+                type="text"
+                value={templateIdDraft}
+                onChange={e => setTemplateIdDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveTemplateId() }}
+                className="font-mono text-xs border border-gray-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white text-gray-600 w-64"
+              />
+              {savedTemplateId && <span className="text-xs text-green-600">✓</span>}
+              <button
+                onClick={handleSaveTemplateId}
+                disabled={savingTemplateId || templateIdDraft.trim() === selectedGroup.template_id}
+                className="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded disabled:opacity-30 transition-colors"
+              >
+                {savingTemplateId ? '…' : 'Renommer'}
+              </button>
             </div>
 
             <p className="text-xs text-gray-400 -mt-4">

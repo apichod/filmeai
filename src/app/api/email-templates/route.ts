@@ -206,10 +206,11 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, row: data })
 }
 
-// PATCH — met à jour label (toutes les variantes) ou subject/body/slug d'une variante
+// PATCH — met à jour label (toutes les variantes), renomme template_id, ou subject/body/slug d'une variante
 export async function PATCH(req: NextRequest) {
   const body = await req.json() as {
     template_id: string
+    new_template_id?: string
     case_key?: string
     subject?: string
     body?: string
@@ -222,6 +223,16 @@ export async function PATCH(req: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin()
+
+  // Renommage du template_id du groupe (toutes les variantes)
+  if (body.new_template_id !== undefined) {
+    const { error } = await supabase
+      .from('email_templates')
+      .update({ template_id: body.new_template_id, updated_at: new Date().toISOString() })
+      .eq('template_id', body.template_id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
 
   // Mise à jour du label du groupe (toutes les variantes)
   if (body.label !== undefined) {
