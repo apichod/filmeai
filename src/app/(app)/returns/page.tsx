@@ -476,7 +476,7 @@ function ChatPanel() {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
               if (event.workflowState !== undefined) setWorkflowState(event.workflowState ?? null)
-              if (event.workflowState?.status === 'completed') break streamLoop
+              if (event.workflowState?.status === 'completed' || event.workflowState?.status === 'waiting_for_input') break streamLoop
             }
             if (event.type === 'error') {
               setMessages(prev => prev.map(m =>
@@ -624,7 +624,7 @@ function ChatPanel() {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
               if (event.workflowState !== undefined) setWorkflowState(event.workflowState ?? null)
-              if (event.workflowState?.status === 'completed') break streamLoop
+              if (event.workflowState?.status === 'completed' || event.workflowState?.status === 'waiting_for_input') break streamLoop
             }
           } catch { /* ignore */ }
         }
@@ -1029,7 +1029,7 @@ function ChatPanel() {
                   </div>
                 </div>
               )}
-              {(msg.content || (msg.role === 'assistant' && !msg.emailEditor)) && (
+              {(msg.content || (msg.role === 'assistant' && !msg.emailEditor && !msg.emailPreview)) && (
                 <div className={`rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
                   msg.role === 'user'
                     ? 'bg-black text-white rounded-br-sm'
