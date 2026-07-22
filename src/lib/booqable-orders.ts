@@ -411,21 +411,29 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
         if (r.type === 'product_groups' || r.type === 'product_group') itemNameMap.set(r.id, name)
         if (r.type === 'stock_items' || r.type === 'stock_item') stockItemMap.set(r.id, String(r.attributes.identifier || ''))
       }
-      order.lines = (linesData.data || []).map(line => {
-        const itemRelId  = (line.relationships?.item         as { data?: { id?: string } })?.data?.id ?? ''
-        const stockRelId = (line.relationships?.stock_item   as { data?: { id?: string } })?.data?.id ?? ''
-        return {
-          id:               line.id,
-          product_id:       itemRelId,
-          product_name:     itemNameMap.get(itemRelId) || String(line.attributes.title || ''),
-          product_group_id: itemGroupMap.get(itemRelId) || '',
-          stock_item_id:    stockRelId || '',
-          stock_item_identifier: stockItemMap.get(stockRelId) || '',
-          quantity:         Number(line.attributes.quantity ?? 1),
-          price_in_cents:   Number(line.attributes.price_in_cents ?? 0),
-          planning_id:      String(line.attributes.planning_id || '') || undefined,
-        }
-      })
+      order.lines = (linesData.data || [])
+        .filter(line => {
+          // Exclure les bundle headers (conteneurs sans article physique)
+          const parentId  = line.attributes.parent_line_id
+          const extraInfo = String(line.attributes.extra_information || '')
+          if (parentId === null && extraInfo.includes('pack-includes')) return false
+          return true
+        })
+        .map(line => {
+          const itemRelId  = (line.relationships?.item         as { data?: { id?: string } })?.data?.id ?? ''
+          const stockRelId = (line.relationships?.stock_item   as { data?: { id?: string } })?.data?.id ?? ''
+          return {
+            id:               line.id,
+            product_id:       itemRelId,
+            product_name:     itemNameMap.get(itemRelId) || String(line.attributes.title || ''),
+            product_group_id: itemGroupMap.get(itemRelId) || '',
+            stock_item_id:    stockRelId || '',
+            stock_item_identifier: stockItemMap.get(stockRelId) || '',
+            quantity:         Number(line.attributes.quantity ?? 1),
+            price_in_cents:   Number(line.attributes.price_in_cents ?? 0),
+            planning_id:      String(line.attributes.planning_id || '') || undefined,
+          }
+        })
     }
   } catch (e) {
     console.warn('fetchOrderById: lines fetch failed:', e)
