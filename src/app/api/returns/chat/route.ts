@@ -714,7 +714,11 @@ async function executeTool(
         if (!sendOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
         const subject = String(args.subject)
         const body    = String(args.body)
-        await sendEmailViaBooqable(sendOrderId, subject, body)
+        // Récupère l'email du client depuis l'order (Booqable exige recipients)
+        const sendOrder = await fetchOrderById(sendOrderId)
+        const recipientEmail = sendOrder?.customer?.email ?? ''
+        if (!recipientEmail) return { result: `Erreur : email client introuvable pour la commande ${args.order_id}` }
+        await sendEmailViaBooqable(sendOrderId, subject, body, recipientEmail)
         return { result: `✓ Email envoyé via Booqable pour la commande ${args.order_id}` }
       }
 
