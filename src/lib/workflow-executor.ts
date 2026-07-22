@@ -150,8 +150,8 @@ export async function executeCodeStep(
         const ctx        = step.order_context ?? 'parent'
         const tagsAdd    = [...((params.tags_add as string[] | undefined) ?? [])]
         const tagsRemove = (params.tags_remove as string[] | undefined) ?? []
-        // Ajouter automatiquement le tag choisi via choose_problem_tag si présent
-        const chosenTag  = vars[`${ctx}.chosen_tag`]
+        // Ajouter automatiquement le sav_tag choisi via choose_problem_tag si présent
+        const chosenTag  = vars[`${ctx}.sav_tag`]
         if (chosenTag && !tagsAdd.includes(chosenTag)) tagsAdd.push(chosenTag)
         await addTagToOrder(orderId, tagsAdd, tagsRemove.length > 0 ? tagsRemove : undefined)
         return ok({ success: true, tags_added: tagsAdd,
@@ -183,7 +183,7 @@ export async function executeCodeStep(
         // Supprime / réduit toutes les lignes SAUF celles dans vars[ctx.chosen_tag]
         // Supporte les IDs synthétiques (format: realLineId__siId) pour les lignes qty>1.
         const ctx        = step.order_context ?? 'parent'
-        const keepTagStr = vars[`${ctx}.chosen_tag`]
+        const keepTagStr = vars[`${ctx}.selected_ids`]
         const linesRaw   = vars[`${ctx}.lines`]
         if (!linesRaw)   return err('remove_other_lines : lignes manquantes (fetch_order requis avant)')
         if (!keepTagStr) return err('remove_other_lines : chosen_tag manquant (choose_article requis avant)')
@@ -303,7 +303,7 @@ export async function executeCodeStep(
         let comment = String(params.comment ?? '')
         if (!comment) {
           const ctx = step.order_context ?? 'parent'
-          const tag       = vars[`${ctx}.chosen_tag`]  ?? ''
+          const tag       = vars[`${ctx}.sav_tag`]  ?? ''
           const products  = vars[`${ctx}.kept_product_names`] ?? ''
           const prefixMap: Record<string, string> = {
             r11_late:    'Manquant',
@@ -410,7 +410,7 @@ export async function executeCodeStep(
         // Les ajoute à la return order (parent.id)
         // Stocke kept_product_names + chosen_tag="r11_late" → parent context (pour add_sav_comment)
         const ctx = step.order_context ?? 'original'
-        const chosenStr    = vars[`${ctx}.chosen_tag`] ?? ''
+        const chosenStr    = vars[`${ctx}.selected_ids`] ?? ''
         const linesRaw     = vars[`${ctx}.lines`]
         const returnOrderId = vars['parent.id']
 
@@ -458,7 +458,7 @@ export async function executeCodeStep(
         return ok({
           success:            true,
           kept_product_names: formatted,   // → parent.kept_product_names (pour add_sav_comment)
-          chosen_tag:         'r11_late',  // → parent.chosen_tag (pour le préfixe "Manquant")
+          sav_tag:            'r11_late',  // → parent.chosen_tag (pour le préfixe "Manquant")
           message: `✓ ${addedCount} article(s) manquant(s) ajouté(s) à la commande de retour`,
         })
       }
@@ -467,7 +467,7 @@ export async function executeCodeStep(
         // Lit les articles choisis depuis ctx.chosen_tag (IDs) + ctx.lines (données complètes)
         // Si product_group_id → ligne produit ; sinon → ligne custom
         const ctx        = step.order_context ?? 'original'
-        const chosenStr  = vars[`${ctx}.chosen_tag`] ?? ''
+        const chosenStr  = vars[`${ctx}.selected_ids`] ?? ''
         const linesRaw   = vars[`${ctx}.lines`]
         const returnId   = vars['parent.id'] ?? vars[`${step.output_context ?? 'parent'}.id`]
 
@@ -505,7 +505,7 @@ export async function executeCodeStep(
         // OU fallback : reconstruit depuis chosen_tag (IDs) + lines (si choose_article code/boutons)
         const srcCtx         = step.input_context ?? 'original'
         const chosenLinesRaw = vars[`${srcCtx}.chosen_lines`]
-        const chosenTagRaw   = vars[`${srcCtx}.chosen_tag`]
+        const chosenTagRaw   = vars[`${srcCtx}.selected_ids`]
         const linesRaw       = vars[`${srcCtx}.lines`]
         // La return order est toujours dans return.id (écrit par create_new_return_order)
         // On accepte aussi order_context si return.id absent (robustesse)
@@ -559,7 +559,7 @@ export async function executeCodeStep(
         return ok({
           success:            true,
           kept_product_names: added.join('\n'),
-          chosen_tag:         'r11_late',
+          sav_tag:            'r11_late',
           message:            `✓ ${added.length} article(s) ajouté(s) à la commande de retour`,
         })
       }

@@ -87,7 +87,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   choose_problem_tag: {
     label:  'Choisir le tag problème (boutons)',
     reads:  ['id'],
-    writes: ['chosen_tag'],   // stocke le tag sélectionné par l'utilisateur
+    writes: ['sav_tag'],   // tag SAV sélectionné : r11_late, r12_missing, r13_theft, r14_damage
   },
   reserve_order: {
     label:  'Réserver',
@@ -138,25 +138,25 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   choose_article: {
     label:  'Choisir un article (boutons ou texte)',
     reads:  ['lines'],
-    writes: ['chosen_tag', 'chosen_lines'],
-    // chosen_tag  = IDs (mode code/boutons) ou texte libre (mode IA)
+    writes: ['selected_ids', 'chosen_lines'],
+    // selected_ids = IDs de lignes séparés par virgule (mode code/boutons)
     // chosen_lines = JSON des lignes sélectionnées avec leurs UUIDs Booqable résolus
   },
   add_new_product_line: {
     label:  'Ajouter les articles sélectionnés à la commande de retour',
-    reads:  ['chosen_lines'],   // lit depuis original.chosen_lines (construit par choose_article)
-    writes: ['kept_product_names', 'chosen_tag'],
-    // chosen_tag = 'r11_late' (préfixe pour add_sav_comment)
+    reads:  ['selected_ids', 'chosen_lines'],
+    writes: ['kept_product_names', 'sav_tag'],
+    // sav_tag = 'r11_late' (préfixe pour add_sav_comment)
     // order_id injecté depuis order_context (return.id)
   },
   add_new_product: {
     label:  'Ajouter les articles choisis à la commande (produit ou custom si sans ID)',
-    reads:  ['chosen_tag', 'lines'],
+    reads:  ['selected_ids', 'lines'],
     writes: ['kept_product_names'],
   },
   remove_other_lines: {
     label:  'Supprimer toutes les lignes sauf l\'article choisi',
-    reads:  ['lines', 'chosen_tag'],
+    reads:  ['lines', 'selected_ids'],
     writes: ['kept_product_names'],
   },
   zero_out_order_lines: {
@@ -186,8 +186,8 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   },
   add_missing_lines: {
     label:  'Ajouter les articles manquants à la return order',
-    reads:  ['chosen_tag', 'lines'],
-    writes: ['kept_product_names', 'chosen_tag'],
+    reads:  ['selected_ids', 'lines'],
+    writes: ['kept_product_names', 'sav_tag'],
   },
 }
 
@@ -341,7 +341,7 @@ export function buildStepInstruction(
       const srcCtx = 'original'  // les articles viennent toujours de la commande d'origine
       const dstCtx = step.order_context ?? 'return'
       const linesRaw = vars[`${srcCtx}.lines`]
-      const chosenTag = vars[`${srcCtx}.chosen_tag`]
+      const chosenTag = vars[`${srcCtx}.selected_ids`]
       const returnOrderId = vars[`${dstCtx}.id`]
 
       let linesSection = ''
@@ -413,7 +413,7 @@ N'appelle AUCUN outil. Attends la réponse tapée par l'opérateur.${context}`
 
     const toolArgs   = buildToolArgs(step, vars)
     const ctx = step.order_context ?? 'parent'
-    const chosenTag = vars[`${ctx}.chosen_tag`]
+    const chosenTag = vars[`${ctx}.sav_tag`]
     const tagLabel: Record<string, string> = {
       r11_late: 'Retard de retour', r12_missing: 'Perte du matériel',
       r13_theft: 'Vol du matériel',  r14_damage: 'Dommage constaté sur le matériel',

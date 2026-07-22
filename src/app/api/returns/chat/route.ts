@@ -1124,7 +1124,12 @@ Affiche les {{...}} littéralement, toujours.`
       const chosenTag = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content.trim() : ''
       if (chosenTag) {
         const ctx = leavingStep!.output_context ?? leavingStep!.order_context ?? 'parent'
-        wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.chosen_tag`]: chosenTag } }
+        // choose_problem_tag → sav_tag ; choose_article code → selected_ids ; choose_article AI → rien (chosen_lines ci-dessous)
+        if (leavingStep!.booqable_action === 'choose_problem_tag') {
+          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.sav_tag`]: chosenTag } }
+        } else if (leavingStep!.booqable_action === 'choose_article' && leavingStep!.execution === 'code') {
+          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.selected_ids`]: chosenTag } }
+        }
 
         // ── Pour choose_article : construire chosen_lines (lignes structurées avec UUIDs) ──
         // Évite tout matching texte dans les steps suivants — add_new_product_line lit directement.
@@ -1230,10 +1235,13 @@ Affiche les {{...}} littéralement, toujours.`
             const selectionText2 = typeof lastUserMsg2?.content === 'string' ? lastUserMsg2.content.trim() : ''
             if (selectionText2) {
               const ctx2 = leavingStep2!.output_context ?? leavingStep2!.order_context ?? 'parent'
-              // Mode boutons (code) : chosen_tag = IDs séparés par virgule
-              // Mode texte (AI)     : chosen_tag N'EST PAS écrasé avec le texte libre (inutilisable comme tag)
+              // choose_problem_tag → sav_tag ; choose_article code → selected_ids ; choose_article AI → rien
               if (leavingStep2?.execution === 'code') {
-                wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.chosen_tag`]: selectionText2 } }
+                if (leavingStep2.booqable_action === 'choose_problem_tag') {
+                  wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.sav_tag`]: selectionText2 } }
+                } else if (leavingStep2.booqable_action === 'choose_article') {
+                  wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.selected_ids`]: selectionText2 } }
+                }
               }
 
               // Construire chosen_lines pour choose_article (même logique que le bloc pre-stream)
