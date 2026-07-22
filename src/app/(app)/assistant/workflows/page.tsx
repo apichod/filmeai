@@ -27,6 +27,7 @@ const BOOQABLE_TOOLS = [
   { value: 'draft_email',         label: 'draft_email — préparer l\'email client' },
   { value: 'zero_out_order_lines', label: 'zero_out_order_lines — remettre les lignes à 0' },
   { value: 'send_email',          label: 'send_email — envoyer l\'email' },
+  { value: 'send_email_booqable', label: 'send_email_booqable — envoyer via template Booqable (document_id)' },
   { value: 'log_case',            label: 'log_case — logger le cas FilmeAI' },
 ]
 
@@ -80,6 +81,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   add_internal_note:       { reads: ['id'],           writes: [] },
   draft_email:             { reads: [],               writes: ['subject', 'body'] },
   send_email:              { reads: ['subject', 'body'], writes: [] },
+  send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email'], writes: [] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
@@ -135,6 +137,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   draft_email:             'both',
   zero_out_order_lines:    'code',
   send_email:              'both',
+  send_email_booqable:     'code',
   log_case:                'ai',
 }
 
@@ -167,6 +170,7 @@ const PARAMETERS_HINT: Record<string, string> = {
   add_internal_note:       '{"note": "Note interne à rédiger par l\'IA"}',
   add_sav_comment:         '{"comment": "Commentaire SAV à rédiger par l\'IA"}',
   send_email:              '{"subject": "Objet de l\'email", "body": "Corps de l\'email"}',
+  send_email_booqable:     '{"document_id": "5b83576b-a0bd-4be4-ad43-08cb2cbb26b8"}',
   draft_email:             '{"template_id": "retour_ok"}',
   log_case:                '{"problem_type": "manquant"}',
 }

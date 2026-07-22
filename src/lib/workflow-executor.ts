@@ -413,6 +413,49 @@ export async function executeCodeStep(
         return ok({ success: true, message: `✓ Email envoyé pour ${label}` })
       }
 
+      case 'send_email_booqable': {
+        // Envoie via template Booqable (document_id) — Booqable résout les {{variables}}
+        if (!orderId) return err('send_email_booqable : order_id manquant')
+        const inputCtx   = step.input_context ?? step.order_context ?? 'parent'
+        const documentId = String(params.document_id ?? '')
+        if (!documentId) return err('send_email_booqable : document_id manquant dans les paramètres du step')
+
+        // customer_id depuis vars, sinon fallback fetch
+        let customerId = String(vars[`${inputCtx}.customer_id`] ?? '')
+        // recipient email depuis vars, sinon fallback fetch
+        let recipientEmail = String(vars[`${inputCtx}.customer_email`] ?? '')
+        if (!customerId || !recipientEmail) {
+          const fetchedOrder = await fetchOrderById(orderId)
+          if (!customerId)     customerId    = fetchedOrder?.customer_id ?? ''
+          if (!recipientEmail) recipientEmail = fetchedOrder?.customer?.email ?? ''
+        }
+        if (!customerId)     return err('send_email_booqable : customer_id introuvable')
+        if (!recipientEmail) return err('send_email_booqable : email client introuvable')
+
+        const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+        const res = await fetch(`${BASE_BOOMERANG}/emails`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.BOOQABLE_API_KEY}` },
+          body: JSON.stringify({
+            data: {
+              type: 'emails',
+              attributes: {
+                order_id:     orderId,
+                customer_id:  customerId,
+                document_ids: [documentId],
+                recipients:   recipientEmail,
+              },
+            },
+          }),
+          signal: AbortSignal.timeout(15000),
+        })
+        if (!res.ok) {
+          const text = await res.text()
+          return err(`send_email_booqable : Booqable error ${res.status}: ${text}`)
+        }
+        return ok({ success: true, message: `✓ Email template envoyé pour ${label}` })
+      }
+
       case 'add_missing_lines': {
         // Lit les articles choisis (MANQUANTS) depuis original.chosen_tag + original.lines
         // Les ajoute à la return order (parent.id)

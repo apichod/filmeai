@@ -184,6 +184,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'subject', 'body'],
     writes: [],
   },
+  send_email_booqable: {
+    label:  'Envoyer via template Booqable (document_id)',
+    reads:  ['id', 'customer_id', 'customer_email'],
+    writes: [],
+    // Paramètre requis dans le step : document_id (UUID du template Booqable)
+  },
   add_missing_lines: {
     label:  'Ajouter les articles manquants à la return order',
     reads:  ['selected_ids', 'lines'],
