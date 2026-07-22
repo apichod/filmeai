@@ -684,9 +684,10 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
       }
     }
 
-    // Passe B : plannings → PATCH started=true pour les produits bulk non couverts par un SIP
-    // "start_products" n'est pas une action valide dans order_fulfillments → on PATCH directement
-    let bulkPlanIds: string[] = []
+    // Passe B : order_fulfillments start_product pour les produits bulk non couverts par un SIP
+    // action "start_product" (singulier) — confirmé dans la doc Booqable API v4
+    type BulkAction = { action: string; product_id: string; planning_id: string; quantity: number }
+    const bulkActions: BulkAction[] = []
     try {
       const planRes = await fetch(
         `${BASE4}/plannings?filter[order_id]=${orderId}&page[size]=200`,
@@ -701,8 +702,9 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
           const itemId = String(attrs.item_id || '')
           if (!itemId || coveredPlanIds.has(planId)) continue
           if (attrs.started) { console.log(`[startSAVOrder] bulk plan ${planId} déjà started, skip`); continue }
-          console.log(`[startSAVOrder] bulk plan à démarrer: planning_id=${planId} item_id=${itemId}`)
-          bulkPlanIds.push(planId)
+          const qty = Number(attrs.quantity) || 1
+          console.log(`[startSAVOrder] bulk plan à démarrer: planning_id=${planId} item_id=${itemId} qty=${qty}`)
+          bulkActions.push({ action: 'start_product', product_id: itemId, planning_id: planId, quantity: qty })
         }
       } else {
         console.warn(`[startSAVOrder] plannings fetch failed: ${planRes.status}`)
@@ -734,30 +736,28 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
       }
     }
 
-    // Passe B : PATCH planning started=true pour les produits bulk
-    if (bulkPlanIds.length > 0) {
-      console.log(`[startSAVOrder] patching ${bulkPlanIds.length} bulk planning(s) to started=true`)
-      await Promise.all(bulkPlanIds.map(async (planId) => {
-        const patchRes = await fetch(`${BASE4}/plannings/${planId}`, {
-          method: 'PATCH',
-          headers: headers(),
-          body: JSON.stringify({
-            data: { type: 'plannings', id: planId, attributes: { started: true } },
-          }),
-          signal: AbortSignal.timeout(10000),
-        })
-        if (patchRes.ok) {
-          console.log(`[startSAVOrder] planning ${planId} started ✓`)
-        } else {
-          const errText = await patchRes.text()
-          console.warn(`[startSAVOrder] PATCH planning ${planId} failed: ${patchRes.status} ${errText.slice(0, 200)}`)
-        }
-      }))
+    // Passe B : order_fulfillments start_product pour les produits bulk
+    if (bulkActions.length > 0) {
+      console.log(`[startSAVOrder] ${bulkActions.length} bulk start_product action(s)`)
+      const bulkRes = await fetch(`${BASE4}/order_fulfillments`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          data: { type: 'order_fulfillments', attributes: { order_id: orderId, confirm_shortage: true, actions: bulkActions } },
+        }),
+        signal: AbortSignal.timeout(15000),
+      })
+      if (bulkRes.ok) {
+        console.log(`[startSAVOrder] bulk products started ✓`)
+      } else {
+        const errText = await bulkRes.text()
+        console.warn(`[startSAVOrder] start_product failed: ${bulkRes.status} ${errText.slice(0, 300)}`)
+      }
     }
 
-    if (trackableActions.length > 0 || bulkPlanIds.length > 0) {
+    if (trackableActions.length > 0 || bulkActions.length > 0) {
       return {}
-    } else if (sipAllStarted) {
+    } else if (sipAllStarted && bulkActions.length === 0) {
       // Rien à démarrer
       return {}
     }
