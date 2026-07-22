@@ -1414,14 +1414,21 @@ Affiche les {{...}} littéralement, toujours.`
 
           // ── tool_choice ────────────────────────────────────────────────────
           // question step  → 'none' (texte uniquement, pas d'outil)
-          // ai action step → forcer l'outil exact du step
+          // ai action step → forcer l'outil exact du step, SAUF si l'order_id requis
+          //                  n'est pas encore en vars (le LLM demande d'abord, puis appelle)
           // sinon          → 'auto'
           const isQuestionStep = aiStep?.type === 'question'
           // choose_article en mode AI = question (texte libre, pas boutons) → pas de tool call forcé
           const isAiTextChooseArticle = aiStep?.booqable_action === 'choose_article' && aiStep?.execution === 'ai'
+          // Outils qui ne ciblent pas une commande existante → pas besoin de order_id en vars
+          const NO_ORDER_ID_NEEDED = new Set(['create_new_return_order', 'draft_email', 'send_email', 'search_products', 'get_stock_items'])
+          const _orderCtxForTool = aiStep?.order_context ?? 'parent'
+          const orderIdReady = !aiStep?.booqable_action
+            || NO_ORDER_ID_NEEDED.has(aiStep.booqable_action)
+            || !!wfState.vars[`${_orderCtxForTool}.id`]
           const forcedToolChoice: OpenAI.Chat.ChatCompletionToolChoiceOption = (isQuestionStep || isAiTextChooseArticle)
             ? 'none'
-            : aiStep?.execution === 'ai' && aiStep?.type === 'action' && aiStep?.booqable_action
+            : aiStep?.execution === 'ai' && aiStep?.type === 'action' && aiStep?.booqable_action && orderIdReady
               ? { type: 'function', function: { name: aiStep.booqable_action } }
               : 'auto'
 
