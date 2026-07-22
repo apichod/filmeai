@@ -385,9 +385,9 @@ export async function executeCodeStep(
       }
 
       case 'add_new_product_line': {
-        // Lit original.chosen_lines (JSON structuré construit par choose_article)
+        // Lit {input_context}.chosen_lines (JSON structuré construit par choose_article)
         // → UUIDs déjà résolus, pas de matching texte ici.
-        const srcCtx         = 'original'
+        const srcCtx         = step.input_context ?? 'original'
         const chosenLinesRaw = vars[`${srcCtx}.chosen_lines`]
         // La return order est toujours dans return.id (écrit par create_new_return_order)
         // On accepte aussi order_context si return.id absent (robustesse)

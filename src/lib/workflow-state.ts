@@ -7,8 +7,9 @@
  *   original.id, original.number
  *   return.id,   return.number, return.lines
  *
- * order_context  = quelle commande ce step lit (input)
- * output_context = quelle commande ce step écrit (output) — défaut: même que order_context
+ * input_context  = source    — préfixe des vars lues (données entrantes)
+ * order_context  = target order — quelle commande Booqable l'action cible (injecte l'order_id)
+ * output_context = destination — préfixe des vars écrites (résultats)
  *                  Exception : duplicate_order lit parent, écrit child
  */
 
@@ -34,8 +35,9 @@ export type WorkflowStep = {
   description?:    string
   booqable_action?: string
   parameters?:     Record<string, unknown>
-  order_context?:  OrderContext   // commande lue en input
-  output_context?: OrderContext   // commande écrite en output (défaut: order_context)
+  input_context?:  OrderContext   // source    : préfixe des vars lues
+  order_context?:  OrderContext   // target order : commande Booqable ciblée (injecte l'order_id)
+  output_context?: OrderContext   // destination  : préfixe des vars écrites (défaut: order_context)
   execution?:      'code' | 'ai'
 }
 

@@ -38,6 +38,7 @@ type WorkflowStep = {
   description: string
   booqable_action?: string
   parameters?: Record<string, unknown>
+  input_context?:  'parent' | 'child' | 'original' | 'return'
   order_context?:  'parent' | 'child' | 'original' | 'return'
   output_context?: 'parent' | 'child' | 'original' | 'return'
   execution?: 'code' | 'ai'
@@ -353,13 +354,32 @@ function StepList({
             />
           </div>
 
-          {/* order_context + output_context + reads/writes */}
+          {/* input_context + order_context + output_context + reads/writes */}
           <div className="pl-7 space-y-2">
             <div className="flex gap-3 flex-wrap">
+              {/* input_context — visible si l'outil a des reads */}
+              {step.type === 'action' && step.booqable_action && (TOOL_IO[step.booqable_action]?.reads.length ?? 0) > 0 && (
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">
+                    input_context <span className="text-gray-300">(source)</span>
+                  </label>
+                  <select
+                    value={step.input_context || step.order_context || ''}
+                    onChange={e => updateStep(idx, { input_context: (e.target.value as WorkflowStep['input_context']) || undefined })}
+                    className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+                  >
+                    <option value="">— même que target order —</option>
+                    <option value="parent">parent</option>
+                    <option value="child">child</option>
+                    <option value="original">original</option>
+                    <option value="return">return</option>
+                  </select>
+                </div>
+              )}
               {/* order_context */}
               <div>
                 <label className="block text-xs text-gray-400 mb-1">
-                  order_context <span className="text-gray-300">(lit depuis)</span>
+                  order_context <span className="text-gray-300">(target order)</span>
                 </label>
                 <select
                   value={step.order_context || ''}
@@ -377,14 +397,14 @@ function StepList({
               {step.type === 'action' && step.booqable_action && (TOOL_IO[step.booqable_action]?.writes.length ?? 0) > 0 && (
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">
-                    output_context <span className="text-gray-300">(écrit dans)</span>
+                    output_context <span className="text-gray-300">(destination)</span>
                   </label>
                   <select
                     value={step.output_context || TOOL_IO[step.booqable_action]?.outputCtx || step.order_context || ''}
                     onChange={e => updateStep(idx, { output_context: (e.target.value as WorkflowStep['output_context']) || undefined })}
                     className="border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-300 bg-blue-50"
                   >
-                    <option value="">— même que order_context —</option>
+                    <option value="">— même que target order —</option>
                     <option value="parent">parent</option>
                     <option value="child">child</option>
                     <option value="original">original</option>
@@ -394,16 +414,16 @@ function StepList({
               )}
             </div>
 
-            {/* Reads / Writes badges */}
+            {/* Read / Write badges */}
             {step.type === 'action' && step.booqable_action && TOOL_IO[step.booqable_action] && (() => {
-              const io      = TOOL_IO[step.booqable_action!]!
-              const readCtx = step.order_context ?? '?'
+              const io       = TOOL_IO[step.booqable_action!]!
+              const readCtx  = step.input_context ?? step.order_context ?? '?'
               const writeCtx = step.output_context ?? io.outputCtx ?? step.order_context ?? '?'
               return (
                 <div className="flex gap-3 flex-wrap text-[10px]">
                   {io.reads.length > 0 && (
                     <div className="flex items-center gap-1">
-                      <span className="text-gray-400">📥 Lit :</span>
+                      <span className="text-gray-400">📥 Read :</span>
                       {io.reads.map(f => (
                         <span key={f} className="font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
                           {readCtx}.{f}
@@ -413,7 +433,7 @@ function StepList({
                   )}
                   {io.writes.length > 0 && (
                     <div className="flex items-center gap-1">
-                      <span className="text-gray-400">📤 Stocke :</span>
+                      <span className="text-gray-400">📤 Write :</span>
                       {io.writes.map(f => (
                         <span key={f} className="font-mono bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
                           {writeCtx}.{f}
