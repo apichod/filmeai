@@ -289,7 +289,7 @@ export async function executeCodeStep(
       }
 
       case 'create_new_return_order': {
-        const ctx        = step.order_context ?? 'parent'
+        const ctx        = step.input_context ?? step.order_context ?? 'parent'
         const customerId = vars[`${ctx}.customer_id`]
         if (!customerId) return err('create_new_return_order : customer_id manquant dans les variables')
         const newOrder = await createSAVOrder({ customerId })

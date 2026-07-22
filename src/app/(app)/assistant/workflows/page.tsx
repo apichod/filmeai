@@ -52,6 +52,9 @@ type WorkflowStep = {
 
 type ToolIO = { reads: string[]; writes: string[]; outputCtx?: string }
 
+/** Outils qui ne ciblent pas une commande existante (pas de target order) */
+const NO_TARGET_ORDER = new Set(['create_new_return_order'])
+
 const TOOL_IO: Record<string, ToolIO> = {
   fetch_order:             { reads: ['id'],           writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'] },
   duplicate_order:         { reads: ['id'],           writes: ['id', 'number'], outputCtx: 'child' },
@@ -376,23 +379,25 @@ function StepList({
                   </select>
                 </div>
               )}
-              {/* order_context */}
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">
-                  order_context <span className="text-gray-300">(target order)</span>
-                </label>
-                <select
-                  value={step.order_context || ''}
-                  onChange={e => updateStep(idx, { order_context: (e.target.value as WorkflowStep['order_context']) || undefined })}
-                  className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
-                >
-                  <option value="">— non défini —</option>
-                  <option value="parent">parent</option>
-                  <option value="child">child</option>
-                  <option value="original">original</option>
-                  <option value="return">return</option>
-                </select>
-              </div>
+              {/* order_context — caché pour les tools qui ne ciblent pas une commande existante */}
+              {(!step.booqable_action || !NO_TARGET_ORDER.has(step.booqable_action)) && (
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">
+                    order_context <span className="text-gray-300">(target order)</span>
+                  </label>
+                  <select
+                    value={step.order_context || ''}
+                    onChange={e => updateStep(idx, { order_context: (e.target.value as WorkflowStep['order_context']) || undefined })}
+                    className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+                  >
+                    <option value="">— non défini —</option>
+                    <option value="parent">parent</option>
+                    <option value="child">child</option>
+                    <option value="original">original</option>
+                    <option value="return">return</option>
+                  </select>
+                </div>
+              )}
               {/* output_context — visible seulement si l'outil écrit des vars */}
               {step.type === 'action' && step.booqable_action && (TOOL_IO[step.booqable_action]?.writes.length ?? 0) > 0 && (
                 <div>
