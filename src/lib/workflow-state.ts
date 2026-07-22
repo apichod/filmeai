@@ -149,6 +149,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // chosen_tag = 'r11_late' (préfixe pour add_sav_comment)
     // order_id injecté depuis order_context (return.id)
   },
+  add_new_product: {
+    label:  'Ajouter les articles choisis à la commande (produit ou custom si sans ID)',
+    reads:  ['chosen_tag', 'lines'],
+    writes: ['kept_product_names'],
+  },
   remove_other_lines: {
     label:  'Supprimer toutes les lignes sauf l\'article choisi',
     reads:  ['lines', 'chosen_tag'],
@@ -261,7 +266,14 @@ export function buildToolArgs(step: WorkflowStep, vars: WorkflowVars): Record<st
     }
   }
 
-  // 3. add_sav_comment : référencer le numéro de la commande d'ORIGINE (original), pas de la return order (parent)
+  // 3. choose_article : injecter les lignes déjà disponibles dans les vars (évite un re-fetch)
+  if (step.booqable_action === 'choose_article') {
+    const ctx = step.order_context ?? 'original'
+    const linesRaw = vars[`${ctx}.lines`]
+    if (linesRaw) args.lines_json = linesRaw
+  }
+
+  // 4. add_sav_comment : référencer le numéro de la commande d'ORIGINE (original), pas de la return order (parent)
   if (step.booqable_action === 'add_sav_comment') {
     args.origin_order_number = vars['original.number'] ?? vars['parent.number'] ?? getOrderNumberForStep(step, vars) ?? ''
   }
@@ -375,36 +387,8 @@ Paramètres injectés par le système :
 ${JSON.stringify(toolArgs, null, 2)}${context}`
     }
 
-    // ── Cas spécial : choose_article en mode AI = question (liste + saisie texte) ──
-    if (step.booqable_action === 'choose_article' && step.execution === 'ai') {
-      const ctx = step.order_context ?? 'original'
-      const linesRaw = vars[`${ctx}.lines`]
-      let linesDisplay = '(récupère les articles depuis le résultat fetch_order ci-dessus)'
-      if (linesRaw) {
-        try {
-          const lines = JSON.parse(linesRaw) as Array<{ product_name?: string; quantity?: number; stock_item_identifier?: string }>
-          if (Array.isArray(lines) && lines.length > 0) {
-            linesDisplay = lines.map(l => {
-              const shortId = l.stock_item_identifier?.match(/(\d+)$/)?.[1]
-              return shortId
-                ? `${l.quantity ?? 1}x ${l.product_name ?? '?'} ID-${shortId}`
-                : `${l.quantity ?? 1}x ${l.product_name ?? '?'}`
-            }).join('\n')
-          }
-        } catch { /* pas JSON */ }
-      }
-      return `══════════════════════════════════════════
-ÉTAPE ${stepIndex + 1}/${totalSteps} — SÉLECTION ARTICLES : ${step.title}
-${orderRef}
-══════════════════════════════════════════
-${step.description ?? 'Quels articles n\'ont pas été retournés ?'}
-
-ARTICLES DE LA COMMANDE :
-${linesDisplay}
-
-CONSIGNE : Affiche la liste ci-dessus (format : "Qty x Produit ID-X"), puis demande à l'opérateur quels articles n'ont pas été retournés.
-N'appelle AUCUN outil. Attends la réponse tapée par l'opérateur.${context}`
-    }
+    // choose_article en mode AI : appelle l'outil choose_article qui retourne les boutons (__type__: 'choices')
+    // lines_json est injecté par buildToolArgs depuis les vars — toutes les lignes (avec ou sans ID) sont incluses
 
     const toolArgs   = buildToolArgs(step, vars)
     const ctx = step.order_context ?? 'parent'

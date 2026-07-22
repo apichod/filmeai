@@ -7,7 +7,7 @@ const BOOQABLE_TOOLS = [
   { value: 'search_products',     label: 'search_products — identifier les articles (bulk/trackable/custom)' },
   { value: 'add_internal_note',   label: 'add_internal_note — note interne' },
   { value: 'create_new_return_order', label: 'create_new_return_order — créer la commande de retour' },
-  { value: 'add_new_product_line',    label: 'add_new_product_line — ajouter un article à la commande' },
+  { value: 'add_new_product_line',    label: 'add_new_product_line — ajouter les articles sélectionnés (produit ou custom si sans ID)' },
   { value: 'set_original_order',      label: 'set_original_order — renseigner la commande d\'origine (original_order)' },
   { value: 'clear_tags',           label: 'clear_tags — supprimer tous les tags' },
   { value: 'revert_to_concept',    label: 'revert_to_concept — repasser en draft (concept)' },
@@ -63,7 +63,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   clear_tags:              { reads: ['id'],           writes: [] },
   add_tag:                 { reads: ['id'],           writes: [] },
   choose_article:          { reads: ['lines'],         writes: ['chosen_tag', 'chosen_lines'] },
-  add_new_product_line:    { reads: ['chosen_lines'],  writes: ['kept_product_names', 'chosen_tag'] },
+  add_new_product_line:    { reads: ['chosen_tag', 'chosen_lines'],  writes: ['kept_product_names', 'chosen_tag'] },
   remove_other_lines:      { reads: ['lines', 'chosen_tag'], writes: [] },
   choose_problem_tag:      { reads: ['id'],           writes: ['chosen_tag'] },
   reserve_order:           { reads: ['id'],           writes: [] },
@@ -141,11 +141,11 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
 /** Description comportement par mode (pour les outils 'both') */
 const TOOL_MODE_DESC: Record<string, { code: string; ai: string }> = {
   fetch_order:        { code: 'Exécution directe via UUID ou numéro depuis les vars', ai: 'L\'IA extrait le numéro depuis la conversation' },
-  choose_article:     { code: 'Affiche des boutons multi-select', ai: 'Liste les articles, l\'opérateur saisit sa sélection par texte' },
+  choose_article:     { code: 'Affiche des boutons multi-select', ai: 'Affiche des boutons multi-select (via appel outil)' },
   choose_problem_tag: { code: 'Affiche des boutons de choix', ai: 'L\'IA extrait le tag depuis la conversation' },
   add_tag:            { code: 'Tags définis dans les paramètres du step', ai: 'L\'IA détermine les tags selon le contexte' },
   add_sav_comment:        { code: 'Commentaire défini dans les paramètres', ai: 'L\'IA rédige le commentaire' },
-  add_new_product_line:   { code: 'Match ID-X ou nom → UUIDs depuis original.lines (déterministe)', ai: 'L\'IA détermine les articles depuis la conversation' },
+  add_new_product_line:   { code: 'Ajoute chaque article choisi (produit si product_group_id, sinon custom)', ai: 'L\'IA détermine les articles depuis la conversation' },
 }
 
 // Hint JSON par outil

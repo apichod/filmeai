@@ -463,24 +463,77 @@ export async function executeCodeStep(
         })
       }
 
+      case 'add_new_product': {
+        // Lit les articles choisis depuis ctx.chosen_tag (IDs) + ctx.lines (données complètes)
+        // Si product_group_id → ligne produit ; sinon → ligne custom
+        const ctx        = step.order_context ?? 'original'
+        const chosenStr  = vars[`${ctx}.chosen_tag`] ?? ''
+        const linesRaw   = vars[`${ctx}.lines`]
+        const returnId   = vars['parent.id'] ?? vars[`${step.output_context ?? 'parent'}.id`]
+
+        if (!returnId)  return err('add_new_product : return order id manquant (parent.id)')
+        if (!linesRaw)  return err('add_new_product : lignes manquantes (fetch_order requis avant)')
+        if (!chosenStr) return err('add_new_product : aucun article sélectionné (choose_article requis avant)')
+
+        const chosenIds = chosenStr.split(',').map(s => s.trim()).filter(Boolean)
+        const allLines  = JSON.parse(linesRaw) as Array<{
+          id: string; product_name?: string; quantity?: number
+          product_group_id?: string; stock_item_id?: string
+        }>
+
+        const chosenLines = allLines.filter(l => {
+          const realId = l.id.includes('__') ? l.id.split('__')[0] : l.id
+          return chosenIds.includes(l.id) || chosenIds.includes(realId)
+        })
+
+        let addedCount = 0
+        for (const line of chosenLines) {
+          if (line.product_group_id) {
+            await addSAVLine({ type: 'product', orderId: returnId, productGroupId: line.product_group_id, quantity: line.quantity ?? 1, stockItemId: line.stock_item_id ?? undefined })
+          } else {
+            await addSAVLine({ type: 'custom', orderId: returnId, title: line.product_name || 'Article', quantity: line.quantity ?? 1 })
+          }
+          addedCount++
+        }
+
+        const formatted = chosenLines.map(l => `${l.quantity ?? 1} x ${l.product_name || 'Article'}`).join('\n')
+        return ok({ success: true, kept_product_names: formatted, message: `✓ ${addedCount} article(s) ajouté(s) à la commande de retour` })
+      }
+
       case 'add_new_product_line': {
-        // Lit {input_context}.chosen_lines (JSON structuré construit par choose_article)
-        // → UUIDs déjà résolus, pas de matching texte ici.
+        // Lit {input_context}.chosen_lines (JSON structuré construit par choose_article AI)
+        // OU fallback : reconstruit depuis chosen_tag (IDs) + lines (si choose_article code/boutons)
         const srcCtx         = step.input_context ?? 'original'
         const chosenLinesRaw = vars[`${srcCtx}.chosen_lines`]
+        const chosenTagRaw   = vars[`${srcCtx}.chosen_tag`]
+        const linesRaw       = vars[`${srcCtx}.lines`]
         // La return order est toujours dans return.id (écrit par create_new_return_order)
         // On accepte aussi order_context si return.id absent (robustesse)
         const returnId = vars['return.id'] ?? vars[`${step.order_context ?? 'return'}.id`] ?? orderId
 
-        if (!returnId)       return err('add_new_product_line : return order id manquant dans les variables')
-        if (!chosenLinesRaw) return err('add_new_product_line : original.chosen_lines manquant (choose_article requis avant)')
+        if (!returnId) return err('add_new_product_line : return order id manquant dans les variables')
 
         type ChosenLine = {
           id: string; product_name?: string; quantity?: number
           product_group_id?: string | null; stock_item_id?: string | null
         }
-        const chosenLines = JSON.parse(chosenLinesRaw) as ChosenLine[]
-        if (!chosenLines.length) return err('add_new_product_line : aucun article dans chosen_lines')
+
+        let chosenLines: ChosenLine[] = []
+
+        if (chosenLinesRaw) {
+          // Mode AI : chosen_lines contient les objets complets
+          chosenLines = JSON.parse(chosenLinesRaw) as ChosenLine[]
+        } else if (chosenTagRaw && linesRaw) {
+          // Mode code/boutons : chosen_tag contient les IDs, on reconstruit depuis lines
+          const chosenIds = chosenTagRaw.split(',').map(s => s.trim()).filter(Boolean)
+          const allLines  = JSON.parse(linesRaw) as ChosenLine[]
+          chosenLines = allLines.filter(l => {
+            const realId = l.id.includes('__') ? l.id.split('__')[0] : l.id
+            return chosenIds.includes(l.id) || chosenIds.includes(realId)
+          })
+        }
+
+        if (!chosenLines.length) return err('add_new_product_line : aucun article sélectionné (choose_article requis avant)')
 
         const added: string[] = []
         for (const line of chosenLines) {
