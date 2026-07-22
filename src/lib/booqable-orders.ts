@@ -696,9 +696,12 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
         console.log(`[startSAVOrder] plannings count: ${(planData.data || []).length}, coveredPlanIds: ${coveredPlanIds.size}`)
         for (const plan of planData.data || []) {
           const planId    = plan.id
-          const productId = String(plan.attributes.product_id || '')
+          // Debug : afficher les attributs bruts pour comprendre la structure
+          const attrs = plan.attributes
+          const productId = String(attrs.product_id || attrs.product_group_id || '')
+          console.log(`[startSAVOrder] plan ${planId}: covered=${coveredPlanIds.has(planId)} productId="${productId}" attrs_keys=${Object.keys(attrs).join(',')}`)
           if (!productId || coveredPlanIds.has(planId)) continue
-          const qty = Number(plan.attributes.quantity) || 1
+          const qty = Number(attrs.quantity) || 1
           console.log(`[startSAVOrder] bulk plan: planning_id=${planId} product_id=${productId} qty=${qty}`)
           bulkActions.push({
             action: 'start_products', planning_id: planId, product_id: productId, quantity: qty,
