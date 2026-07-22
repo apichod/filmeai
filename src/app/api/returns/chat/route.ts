@@ -1341,8 +1341,6 @@ Affiche les {{...}} littéralement, toujours.`
                 isChoicesResult = true
               }
               if (choicesParsed.__type__ === 'email_editor') {
-                console.log('[pre-pass] email_editor détecté, subject:', choicesParsed.subject?.slice(0, 40), 'body length:', choicesParsed.body?.length)
-                send(JSON.stringify({ type: 'text', content: '✉️ Template chargé — modifiez l\'email ci-dessous puis confirmez l\'envoi.' }))
                 send(JSON.stringify({ type: 'email_editor', subject: choicesParsed.subject ?? '', body: choicesParsed.body ?? '' }))
                 wfState = { ...wfState, status: 'waiting_for_input' }
                 isChoicesResult = true
@@ -1571,8 +1569,6 @@ Affiche les {{...}} littéralement, toujours.`
                   isChoicesResultAI = true
                 }
                 if (parsed.__type__ === 'email_editor') {
-                  console.log('[AI mode] email_editor détecté, subject:', parsed.subject?.slice(0, 40))
-                  send(JSON.stringify({ type: 'text', content: '✉️ Template chargé — modifiez l\'email ci-dessous puis confirmez l\'envoi.' }))
                   send(JSON.stringify({ type: 'email_editor', subject: parsed.subject ?? '', body: parsed.body ?? '' }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   isChoicesResultAI = true
@@ -1643,8 +1639,6 @@ Affiche les {{...}} littéralement, toujours.`
                   postIsChoices = true
                 }
                 if (postParsed.__type__ === 'email_editor') {
-                  console.log('[post-LLM] email_editor détecté, subject:', postParsed.subject?.slice(0, 40), 'body length:', postParsed.body?.length)
-                  send(JSON.stringify({ type: 'text', content: '✉️ Template chargé — modifiez l\'email ci-dessous puis confirmez l\'envoi.' }))
                   send(JSON.stringify({ type: 'email_editor', subject: postParsed.subject ?? '', body: postParsed.body ?? '' }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   postIsChoices = true

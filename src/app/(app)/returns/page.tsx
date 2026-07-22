@@ -34,6 +34,7 @@ type ChatMessage = {
   role: 'user' | 'assistant'
   content: string
   toolCalls?: { name: string; result?: string }[]
+  emailEditor?: { subject: string; body: string }
 }
 
 type ReturnCase = {
@@ -463,6 +464,11 @@ function ChatPanel() {
               console.log('[client] email_editor reçu, subject:', event.subject?.slice(0, 40))
               setPendingEmail({ subject: event.subject, body: event.body })
               setEmailInstruction('')
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, emailEditor: { subject: event.subject, body: event.body } }
+                  : m
+              ))
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -599,6 +605,11 @@ function ChatPanel() {
               console.log('[client] email_editor reçu, subject:', event.subject?.slice(0, 40))
               setPendingEmail({ subject: event.subject, body: event.body })
               setEmailInstruction('')
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId
+                  ? { ...m, emailEditor: { subject: event.subject, body: event.body } }
+                  : m
+              ))
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -901,7 +912,83 @@ function ChatPanel() {
                   })}
                 </div>
               )}
-              {(msg.content || msg.role === 'assistant') && (
+              {/* Éditeur email inline — dans le flux du chat */}
+              {msg.emailEditor && (
+                <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm w-full max-w-lg">
+                  <div className="flex items-center px-3 py-2 border-b border-gray-100 bg-gray-50">
+                    <span className="text-xs font-semibold text-gray-600">✉️ Brouillon email — modifiez si besoin</span>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Objet</label>
+                      <input
+                        type="text"
+                        value={pendingEmail?.subject ?? msg.emailEditor.subject}
+                        onChange={e => setPendingEmail(p => ({ subject: e.target.value, body: p?.body ?? msg.emailEditor!.body }))}
+                        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-gray-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Corps</label>
+                      <textarea
+                        value={pendingEmail?.body ?? msg.emailEditor.body}
+                        onChange={e => setPendingEmail(p => ({ subject: p?.subject ?? msg.emailEditor!.subject, body: e.target.value }))}
+                        rows={8}
+                        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-gray-400 resize-y font-mono"
+                      />
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        value={emailInstruction}
+                        onChange={e => setEmailInstruction(e.target.value)}
+                        placeholder="Ex: Rends plus formel, ajoute une excuse..."
+                        className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-gray-400"
+                      />
+                      <button
+                        onClick={async () => {
+                          const sub = pendingEmail?.subject ?? msg.emailEditor!.subject
+                          const bod = pendingEmail?.body ?? msg.emailEditor!.body
+                          if (!emailInstruction.trim()) return
+                          setEmailImproving(true)
+                          try {
+                            const res = await fetch('/api/returns/improve-email', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ instruction: emailInstruction, subject: sub, body: bod }),
+                            })
+                            const data = await res.json() as { subject?: string; body?: string }
+                            if (data.subject && data.body) setPendingEmail({ subject: data.subject, body: data.body })
+                            setEmailInstruction('')
+                          } finally {
+                            setEmailImproving(false)
+                          }
+                        }}
+                        disabled={emailImproving || !emailInstruction.trim()}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors disabled:opacity-40 whitespace-nowrap"
+                      >
+                        {emailImproving ? '...' : '✨ Améliorer'}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const sub = pendingEmail?.subject ?? msg.emailEditor!.subject
+                        const bod = pendingEmail?.body ?? msg.emailEditor!.body
+                        const payload = '__email_confirm__:' + JSON.stringify({ subject: sub, body: bod })
+                        setPendingEmail(null)
+                        setEmailInstruction('')
+                        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, emailEditor: undefined } : m))
+                        quickSend(payload)
+                      }}
+                      disabled={sending}
+                      className="w-full py-2 text-xs font-semibold rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40"
+                    >
+                      Envoyer cet email ✓
+                    </button>
+                  </div>
+                </div>
+              )}
+              {(msg.content || (msg.role === 'assistant' && !msg.emailEditor)) && (
                 <div className={`rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
                   msg.role === 'user'
                     ? 'bg-black text-white rounded-br-sm'
