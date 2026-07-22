@@ -1558,13 +1558,18 @@ Affiche les {{...}} littéralement, toujours.`
                 wfState = { ...wfState, vars: { ...wfState.vars, ...newVars } }
               }
 
-              // Émettre un event SSE 'choices' si le tool retourne __type__:'choices'
+              // Émettre un event SSE 'choices' ou 'email_editor' si le tool retourne __type__ spécial
               // → waiting_for_input, ne pas avancer l'étape
               let isChoicesResultAI = false
               try {
-                const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean }
+                const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean; subject?: string; body?: string }
                 if (parsed.__type__ === 'choices') {
                   send(JSON.stringify({ type: 'choices', order_id: parsed.order_id, items: parsed.items, multiSelect: parsed.multiSelect ?? false }))
+                  wfState = { ...wfState, status: 'waiting_for_input' }
+                  isChoicesResultAI = true
+                }
+                if (parsed.__type__ === 'email_editor') {
+                  send(JSON.stringify({ type: 'email_editor', subject: parsed.subject ?? '', body: parsed.body ?? '' }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   isChoicesResultAI = true
                 }
@@ -1622,14 +1627,19 @@ Affiche les {{...}} littéralement, toujours.`
                 wfState = { ...wfState, vars: { ...wfState.vars, ...codeRes.newVars } }
               }
 
-              // choices → SSE + waiting_for_input, pas d'avance
+              // choices / email_editor → SSE + waiting_for_input, pas d'avance
               let postIsChoices = false
               try {
-                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean }
+                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string }
                 if (postParsed.__type__ === 'choices') {
                   const postPrompt = postCodeStep.description ?? postParsed.message ?? postCodeStep.title ?? ''
                   if (postPrompt) send(JSON.stringify({ type: 'text', content: postPrompt }))
                   send(JSON.stringify({ type: 'choices', order_id: postParsed.order_id, items: postParsed.items, multiSelect: postParsed.multiSelect ?? false }))
+                  wfState = { ...wfState, status: 'waiting_for_input' }
+                  postIsChoices = true
+                }
+                if (postParsed.__type__ === 'email_editor') {
+                  send(JSON.stringify({ type: 'email_editor', subject: postParsed.subject ?? '', body: postParsed.body ?? '' }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   postIsChoices = true
                 }
