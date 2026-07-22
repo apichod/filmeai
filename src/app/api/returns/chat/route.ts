@@ -1100,11 +1100,25 @@ Affiche les {{...}} littéralement, toujours.`
   // État courant : envoyé par le client, ou initialisation à l'étape 0
   let wfState: WorkflowState = clientWorkflowState ?? { step_index: 0, vars: {}, status: 'running' }
 
-  // Si on attendait une réponse (choose_problem_tag ou choose_article) → capturer le choix et avancer
+  // Si on attendait une réponse → capturer le choix/confirmation et avancer
   if (activeSteps.length > 0 && wfState.status === 'waiting_for_input') {
     const leavingStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
     const isChoiceStep = leavingStep?.booqable_action === 'choose_problem_tag'
                       || leavingStep?.booqable_action === 'choose_article'
+
+    // draft_email → l'opérateur renvoie __email_confirm__:{subject,body}
+    if (leavingStep?.booqable_action === 'draft_email') {
+      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
+      const raw = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content.trim() : ''
+      if (raw.startsWith('__email_confirm__:')) {
+        try {
+          const emailData = JSON.parse(raw.slice('__email_confirm__:'.length)) as { subject: string; body: string }
+          const ctx = leavingStep.output_context ?? leavingStep.order_context ?? 'parent'
+          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.subject`]: emailData.subject, [`${ctx}.body`]: emailData.body } }
+        } catch { /* ignore */ }
+      }
+    }
+
     if (isChoiceStep) {
       const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
       const chosenTag = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content.trim() : ''
@@ -1315,15 +1329,19 @@ Affiche les {{...}} littéralement, toujours.`
               return
             }
 
-            // Si le résultat est un choix (choose_problem_tag / choose_article) → SSE + waiting_for_input + pas d'avance
+            // Si le résultat est un choix ou un éditeur email → SSE + waiting_for_input + pas d'avance
             let isChoicesResult = false
             try {
-              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean }
+              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string }
               if (choicesParsed.__type__ === 'choices') {
-                // Texte explicatif avant les boutons — description du step en priorité
                 const promptText = codeStep.description ?? choicesParsed.message ?? codeStep.title ?? ''
                 if (promptText) send(JSON.stringify({ type: 'text', content: promptText }))
                 send(JSON.stringify({ type: 'choices', order_id: choicesParsed.order_id, items: choicesParsed.items, multiSelect: choicesParsed.multiSelect ?? false }))
+                wfState = { ...wfState, status: 'waiting_for_input' }
+                isChoicesResult = true
+              }
+              if (choicesParsed.__type__ === 'email_editor') {
+                send(JSON.stringify({ type: 'email_editor', subject: choicesParsed.subject ?? '', body: choicesParsed.body ?? '' }))
                 wfState = { ...wfState, status: 'waiting_for_input' }
                 isChoicesResult = true
               }

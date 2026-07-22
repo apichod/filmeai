@@ -391,8 +391,8 @@ export async function executeCodeStep(
         }
         const best = caseKeyArg ? typedRows[0] : typedRows.reduce((prev, cur) => score(cur) >= score(prev) ? cur : prev)
 
-        const preview = `Objet : ${best.subject}\n\n${best.body}\n\nConfirmez-vous l'envoi de cet email ?`
-        return ok({ success: true, subject: best.subject, body: best.body, message: preview })
+        // __type__: 'email_editor' → déclenche l'éditeur inline côté client
+        return ok({ __type__: 'email_editor', subject: best.subject, body: best.body })
       }
 
       case 'send_email': {

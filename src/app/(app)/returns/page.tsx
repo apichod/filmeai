@@ -25,6 +25,7 @@ type StreamEvent =
   | { type: 'tool_call'; name: string }
   | { type: 'tool_result'; name: string; result: string }
   | { type: 'choices'; order_id: string; items: Array<{ label: string; tag: string }>; multiSelect?: boolean }
+  | { type: 'email_editor'; subject: string; body: string }
   | { type: 'done'; caseId: string | null; workflowState?: WorkflowState | null }
   | { type: 'error'; message: string }
 
@@ -334,6 +335,9 @@ function ChatPanel() {
   const [pendingChoices, setPendingChoices] = useState<Array<{ label: string; tag: string }> | null>(null)
   const [pendingChoicesMulti, setPendingChoicesMulti] = useState(false)
   const [selectedChoiceTags, setSelectedChoiceTags] = useState<Set<string>>(new Set())
+  const [pendingEmail, setPendingEmail] = useState<{ subject: string; body: string } | null>(null)
+  const [emailImproving, setEmailImproving] = useState(false)
+  const [emailInstruction, setEmailInstruction] = useState('')
   const [caseId, setCaseId] = useState<string | null>(null)
   const [scenario, setScenario] = useState<Scenario | null>(null)
   const [level1, setLevel1] = useState<Level1Key | null>(null)
@@ -454,6 +458,10 @@ function ChatPanel() {
               setPendingChoices(event.items)
               setPendingChoicesMulti(event.multiSelect ?? false)
               setSelectedChoiceTags(new Set())
+            }
+            if (event.type === 'email_editor') {
+              setPendingEmail({ subject: event.subject, body: event.body })
+              setEmailInstruction('')
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -585,6 +593,10 @@ function ChatPanel() {
               setPendingChoices(event.items)
               setPendingChoicesMulti(event.multiSelect ?? false)
               setSelectedChoiceTags(new Set())
+            }
+            if (event.type === 'email_editor') {
+              setPendingEmail({ subject: event.subject, body: event.body })
+              setEmailInstruction('')
             }
             if (event.type === 'done') {
               finishedCaseId = event.caseId
@@ -964,6 +976,81 @@ function ChatPanel() {
                 Confirmer ({selectedChoiceTags.size} article{selectedChoiceTags.size > 1 ? 's' : ''})
               </button>
             )}
+          </div>
+        )}
+        {/* Éditeur email inline */}
+        {pendingEmail && (
+          <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
+              <span className="text-xs font-semibold text-gray-600">✉️ Brouillon email — modifiez si besoin</span>
+            </div>
+            <div className="p-3 space-y-2">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Objet</label>
+                <input
+                  type="text"
+                  value={pendingEmail.subject}
+                  onChange={e => setPendingEmail(p => p ? { ...p, subject: e.target.value } : p)}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Corps</label>
+                <textarea
+                  value={pendingEmail.body}
+                  onChange={e => setPendingEmail(p => p ? { ...p, body: e.target.value } : p)}
+                  rows={8}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-gray-400 resize-y font-mono"
+                />
+              </div>
+              {/* Aide IA */}
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={emailInstruction}
+                  onChange={e => setEmailInstruction(e.target.value)}
+                  placeholder="Ex: Rends plus formel, ajoute une excuse..."
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-gray-400"
+                  onKeyDown={e => { if (e.key === 'Enter' && emailInstruction.trim()) e.currentTarget.blur() }}
+                />
+                <button
+                  onClick={async () => {
+                    if (!emailInstruction.trim() || !pendingEmail) return
+                    setEmailImproving(true)
+                    try {
+                      const res = await fetch('/api/returns/improve-email', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ instruction: emailInstruction, subject: pendingEmail.subject, body: pendingEmail.body }),
+                      })
+                      const data = await res.json() as { subject?: string; body?: string }
+                      if (data.subject && data.body) setPendingEmail({ subject: data.subject, body: data.body })
+                      setEmailInstruction('')
+                    } finally {
+                      setEmailImproving(false)
+                    }
+                  }}
+                  disabled={emailImproving || !emailInstruction.trim()}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors disabled:opacity-40 whitespace-nowrap"
+                >
+                  {emailImproving ? '...' : '✨ Améliorer'}
+                </button>
+              </div>
+              {/* Bouton envoyer */}
+              <button
+                onClick={() => {
+                  if (!pendingEmail) return
+                  const payload = '__email_confirm__:' + JSON.stringify({ subject: pendingEmail.subject, body: pendingEmail.body })
+                  setPendingEmail(null)
+                  setEmailInstruction('')
+                  quickSend(payload)
+                }}
+                disabled={sending}
+                className="w-full py-2 text-xs font-semibold rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40"
+              >
+                Envoyer cet email ✓
+              </button>
+            </div>
           </div>
         )}
         {/* Quick replies */}
