@@ -204,6 +204,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
       const attrs = r.attributes
       const qty = Number(attrs.quantity) || 0
       if (!isChild && qty <= 0) return null   // top-level à 0 → ignorer
+      if (!isChild && attrs.parent_line_id != null) return null  // bundle child → géré en passe 2
       if (bundleHeaderIdSet.has(r.id)) return null  // header de bundle → ignorer
 
       type Rel = { data?: { type: string; id: string } | null }
