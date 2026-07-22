@@ -1466,6 +1466,10 @@ export async function removeProductLine(lineId: string): Promise<void> {
 // ── updateOrderReturnDate ─────────────────────────────────────────────────────
 // Change la date de retour (stops_at) d'une commande à l'heure exacte du retour.
 export async function updateOrderReturnDate(orderId: string): Promise<void> {
+  const now = new Date()
+  const stopsAt = bqDate(now)
+  console.log(`[updateReturnDate] orderId=${orderId} stopsAt="${stopsAt}" (iso="${now.toISOString()}")`)
+
   const res = await fetch(`${BASE4}/orders/${orderId}`, {
     method: 'PUT',
     headers: headers(),
@@ -1473,15 +1477,23 @@ export async function updateOrderReturnDate(orderId: string): Promise<void> {
       data: {
         id:   orderId,
         type: 'orders',
-        attributes: { stops_at: bqDate(new Date()) },
+        attributes: { stops_at: stopsAt },
       },
     }),
     signal: AbortSignal.timeout(10000),
   })
+
   if (!res.ok) {
     const text = await res.text()
+    console.error(`[updateReturnDate] FAILED ${res.status}: ${text.slice(0, 300)}`)
     throw new Error(`Booqable updateReturnDate error ${res.status}: ${text}`)
   }
+
+  // Log la réponse pour vérifier ce que Booqable a effectivement enregistré
+  try {
+    const data = await res.json() as { data?: { attributes?: { stops_at?: string } } }
+    console.log(`[updateReturnDate] OK — stops_at enregistré par Booqable: "${data.data?.attributes?.stops_at}"`)
+  } catch { /* ignore */ }
 }
 
 // ── stopOrder ────────────────────────────────────────────────────────────────
