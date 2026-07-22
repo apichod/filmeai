@@ -1709,22 +1709,37 @@ export async function stopOrder(orderId: string): Promise<void> {
   throw new Error(`Booqable stopOrder error ${r2.status}: ${r2.text}`)
 }
 
-// ── fetchBooqableDocument ─────────────────────────────────────────────────────
-// Récupère le contenu d'un template email Booqable (document) par son UUID.
-export async function fetchBooqableDocument(
-  documentId: string
-): Promise<{ name: string; subject: string; body: string } | null> {
+// ── renderBooqableEmailTemplate ───────────────────────────────────────────────
+// Appelle /api/boomerang/rendered_emails : Booqable résout toutes les {{variables}}
+// côté serveur et retourne le subject + body finaux prêts à l'envoi.
+export async function renderBooqableEmailTemplate(
+  emailTemplateId: string,
+  orderId: string,
+): Promise<{ subject: string; body: string } | null> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
-  const res = await fetch(`${BASE_BOOMERANG}/documents/${documentId}`, {
+  const res = await fetch(`${BASE_BOOMERANG}/rendered_emails`, {
+    method: 'POST',
     headers: headers(),
-    signal: AbortSignal.timeout(10000),
+    body: JSON.stringify({
+      data: {
+        type: 'rendered_emails',
+        attributes: {
+          order_id:          orderId,
+          email_template_id: emailTemplateId,
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(15000),
   })
-  if (!res.ok) return null
-  const data = await res.json() as { data?: { attributes?: { name?: string; subject?: string; body?: string } } }
+  if (!res.ok) {
+    const text = await res.text()
+    console.error(`[renderBooqableEmailTemplate] ${res.status}: ${text}`)
+    return null
+  }
+  const data = await res.json() as { data?: { attributes?: { subject?: string; body?: string } } }
   const attrs = data.data?.attributes
   if (!attrs) return null
   return {
-    name:    String(attrs.name    ?? ''),
     subject: String(attrs.subject ?? ''),
     body:    String(attrs.body    ?? ''),
   }

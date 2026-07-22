@@ -25,7 +25,7 @@ import {
   setOriginalOrder,
   addInternalNote,
   sendEmailViaBooqable,
-  fetchBooqableDocument,
+  renderBooqableEmailTemplate,
   addSAVComment,
   addSAVLine,
 } from './booqable-orders'
@@ -398,49 +398,18 @@ export async function executeCodeStep(
       }
 
       case 'draft_email_booqable': {
-        // Affiche un aperçu non-éditable du template Booqable, variables résolues via API
-        const documentId = String(params.document_id ?? '')
-        if (!documentId) return err('draft_email_booqable : document_id manquant dans les paramètres du step')
-
-        // Fetch template + order en parallèle
-        const [doc, orderPreview] = await Promise.all([
-          fetchBooqableDocument(documentId),
-          orderId ? fetchOrderById(orderId) : Promise.resolve(null),
-        ])
-        if (!doc) return err(`draft_email_booqable : template Booqable ${documentId} introuvable`)
-
-        // Formatage date FR (ex: "12 mars 2025")
-        const fmtDate = (iso: string) => {
-          if (!iso) return ''
-          try {
-            return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(iso))
-          } catch { return iso }
-        }
-
-        // Map de substitution {{variable}} → valeur réelle
-        const props = orderPreview?.properties_attributes ?? {}
-        const varMap: Record<string, string> = {
-          'company.name':                    'Filme',
-          'customer.name':                   orderPreview?.customer?.name ?? '',
-          'order.number':                    String(orderPreview?.number ?? ''),
-          'order.startsAt':                  fmtDate(orderPreview?.starts_at ?? ''),
-          'order.stopsAt':                   fmtDate(orderPreview?.stops_at ?? ''),
-          'order.custom_fields.order_sav':   props.order_sav   ?? '',
-          'order.custom_fields.notes_sav':   props.notes_sav   ?? '',
-          // Alias courants
-          'order.starts_at':                 fmtDate(orderPreview?.starts_at ?? ''),
-          'order.stops_at':                  fmtDate(orderPreview?.stops_at ?? ''),
-        }
-
-        const replaceVars = (text: string) =>
-          text.replace(/\{\{([^}]+)\}\}/g, (match, key: string) => varMap[key.trim()] ?? match)
-
+        // Booqable résout les {{variables}} via /rendered_emails — aucune substitution manuelle
+        const emailTemplateId = String(params.document_id ?? '')
+        if (!emailTemplateId) return err('draft_email_booqable : document_id (email_template_id) manquant')
+        if (!orderId)         return err('draft_email_booqable : order_id manquant')
+        const rendered = await renderBooqableEmailTemplate(emailTemplateId, orderId)
+        if (!rendered) return err(`draft_email_booqable : rendu template ${emailTemplateId} échoué`)
         return ok({
           __type__:    'email_preview',
-          document_id: documentId,
-          name:        doc.name,
-          subject:     replaceVars(doc.subject),
-          body:        replaceVars(doc.body),
+          document_id: emailTemplateId,
+          name:        emailTemplateId,
+          subject:     rendered.subject,
+          body:        rendered.body,
         })
       }
 
@@ -462,15 +431,15 @@ export async function executeCodeStep(
       }
 
       case 'send_email_booqable': {
-        // Envoie via template Booqable (document_id) — Booqable résout les {{variables}}
+        // 1. Rend le template via /rendered_emails (Booqable résout les {{variables}})
+        // 2. Envoie le contenu rendu via /emails
         if (!orderId) return err('send_email_booqable : order_id manquant')
-        const inputCtx   = step.input_context ?? step.order_context ?? 'parent'
-        const documentId = String(params.document_id ?? '')
-        if (!documentId) return err('send_email_booqable : document_id manquant dans les paramètres du step')
+        const inputCtx      = step.input_context ?? step.order_context ?? 'parent'
+        const emailTemplateId = String(params.document_id ?? '')
+        if (!emailTemplateId) return err('send_email_booqable : document_id (email_template_id) manquant')
 
-        // customer_id depuis vars, sinon fallback fetch
-        let customerId = String(vars[`${inputCtx}.customer_id`] ?? '')
-        // recipient email depuis vars, sinon fallback fetch
+        // Récupère l'email du client
+        let customerId     = String(vars[`${inputCtx}.customer_id`]    ?? '')
         let recipientEmail = String(vars[`${inputCtx}.customer_email`] ?? '')
         if (!customerId || !recipientEmail) {
           const fetchedOrder = await fetchOrderById(orderId)
@@ -480,27 +449,12 @@ export async function executeCodeStep(
         if (!customerId)     return err('send_email_booqable : customer_id introuvable')
         if (!recipientEmail) return err('send_email_booqable : email client introuvable')
 
-        const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
-        const res = await fetch(`${BASE_BOOMERANG}/emails`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.BOOQABLE_API_KEY}` },
-          body: JSON.stringify({
-            data: {
-              type: 'emails',
-              attributes: {
-                order_id:     orderId,
-                customer_id:  customerId,
-                document_ids: [documentId],
-                recipients:   recipientEmail,
-              },
-            },
-          }),
-          signal: AbortSignal.timeout(15000),
-        })
-        if (!res.ok) {
-          const text = await res.text()
-          return err(`send_email_booqable : Booqable error ${res.status}: ${text}`)
-        }
+        // Rend le template
+        const rendered = await renderBooqableEmailTemplate(emailTemplateId, orderId)
+        if (!rendered) return err(`send_email_booqable : rendu template ${emailTemplateId} échoué`)
+
+        // Envoie
+        await sendEmailViaBooqable(orderId, rendered.subject, rendered.body, recipientEmail)
         return ok({ success: true, message: `✓ Email template envoyé pour ${label}` })
       }
 
