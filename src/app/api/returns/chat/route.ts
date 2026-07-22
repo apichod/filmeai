@@ -1406,7 +1406,7 @@ Affiche les {{...}} littéralement, toujours.`
             // Si le résultat est un choix ou un éditeur email → SSE + waiting_for_input + pas d'avance
             let isChoicesResult = false
             try {
-              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string }
+              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; document_id?: string; name?: string }
               if (choicesParsed.__type__ === 'choices') {
                 const promptText = codeStep.description ?? choicesParsed.message ?? codeStep.title ?? ''
                 if (promptText) send(JSON.stringify({ type: 'text', content: promptText }))
