@@ -1464,7 +1464,7 @@ export async function removeProductLine(lineId: string): Promise<void> {
 }
 
 // ── updateOrderReturnDate ─────────────────────────────────────────────────────
-// Change la date de retour (stops_at) d'une commande à aujourd'hui.
+// Change la date de retour (stops_at) d'une commande à l'heure exacte du retour.
 export async function updateOrderReturnDate(orderId: string): Promise<void> {
   const res = await fetch(`${BASE4}/orders/${orderId}`, {
     method: 'PUT',
@@ -1473,7 +1473,7 @@ export async function updateOrderReturnDate(orderId: string): Promise<void> {
       data: {
         id:   orderId,
         type: 'orders',
-        attributes: { stops_at: bqDate(today()) },
+        attributes: { stops_at: new Date().toISOString() },
       },
     }),
     signal: AbortSignal.timeout(10000),
