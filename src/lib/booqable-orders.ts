@@ -1715,7 +1715,8 @@ export async function stopOrder(orderId: string): Promise<void> {
 export async function sendEmailViaBooqable(
   orderId: string,
   subject: string,
-  body: string
+  body: string,
+  recipientEmail: string,
 ): Promise<void> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
   const res = await fetch(`${BASE_BOOMERANG}/emails`, {
@@ -1725,9 +1726,10 @@ export async function sendEmailViaBooqable(
       data: {
         type: 'emails',
         attributes: {
-          order_id:        orderId,
+          order_id:   orderId,
           subject,
           body,
+          recipients: recipientEmail,
         },
       },
     }),

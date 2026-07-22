@@ -113,12 +113,13 @@ export async function executeCodeStep(
         }
         if (!order) return err(`fetch_order : commande ${label} introuvable`)
         return ok({
-          id:          order.id,
-          number:      order.number,
-          status:      order.status,
-          customer_id: order.customer_id,
-          tags:        order.tags,
-          lines:       order.lines,
+          id:             order.id,
+          number:         order.number,
+          status:         order.status,
+          customer_id:    order.customer_id,
+          customer_email: order.customer?.email ?? '',
+          tags:           order.tags,
+          lines:          order.lines,
         })
       }
 
@@ -397,11 +398,13 @@ export async function executeCodeStep(
 
       case 'send_email': {
         if (!orderId) return err('send_email : order_id manquant')
-        const inputCtx = step.input_context ?? step.order_context ?? 'parent'
-        const subject  = String(vars[`${inputCtx}.subject`] ?? params.subject ?? '')
-        const body     = String(vars[`${inputCtx}.body`]    ?? params.body    ?? '')
-        if (!subject || !body) return err('send_email : subject/body manquants — draft_email requis avant')
-        await sendEmailViaBooqable(orderId, subject, body)
+        const inputCtx       = step.input_context ?? step.order_context ?? 'parent'
+        const subject        = String(vars[`${inputCtx}.subject`] ?? params.subject ?? '')
+        const body           = String(vars[`${inputCtx}.body`]    ?? params.body    ?? '')
+        const recipientEmail = String(vars[`${inputCtx}.customer_email`] ?? params.recipient_email ?? '')
+        if (!subject || !body)     return err('send_email : subject/body manquants — draft_email requis avant')
+        if (!recipientEmail)       return err('send_email : customer_email manquant — fetch_order requis avant')
+        await sendEmailViaBooqable(orderId, subject, body, recipientEmail)
         return ok({ success: true, message: `✓ Email envoyé pour ${label}` })
       }
 
@@ -564,12 +567,13 @@ export async function executeCodeStep(
         })
       }
 
-      case 'send_email': {
+      case 'send_email': {  // dead code — handled above
         if (!orderId) return err('send_email : order_id manquant')
-        const subject = String(params.subject ?? '')
-        const body    = String(params.body ?? '')
-        if (!subject || !body) return err('send_email : paramètres "subject" et "body" requis')
-        await sendEmailViaBooqable(orderId, subject, body)
+        const subject2   = String(params.subject ?? '')
+        const body2      = String(params.body ?? '')
+        const recipient2 = String(params.recipient_email ?? '')
+        if (!subject2 || !body2) return err('send_email : paramètres "subject" et "body" requis')
+        await sendEmailViaBooqable(orderId, subject2, body2, recipient2)
         return ok({ success: true, message: `✓ Email envoyé pour ${label}` })
       }
 
