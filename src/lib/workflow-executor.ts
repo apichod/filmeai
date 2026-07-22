@@ -87,7 +87,7 @@ export async function executeCodeStep(
         }
         if (!lines.length) return ok({ success: true, message: `Aucun article sur la commande ${label}` })
         const formatted = lines
-          .map(l => `• ${l.quantity ?? 1}x ${l.product_name ?? '?'}${l.stock_item_label ? ` (${l.stock_item_label})` : ''}`)
+          .map(l => `${l.quantity ?? 1} x ${l.product_name ?? '?'}${l.stock_item_label ? ` ${l.stock_item_label}` : ''}`)
           .join('\n')
         return ok({ success: true, message: `Articles de la commande ${label} :\n${formatted}` })
       }

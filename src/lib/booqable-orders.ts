@@ -1556,6 +1556,42 @@ export async function stopOrder(orderId: string): Promise<void> {
 
   // ── Approche 2 : order_transitions (bulk items / fallback) ───────────────
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+
+  const doTransition = async (from: string, to: string): Promise<boolean> => {
+    const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        data: {
+          type: 'order_transitions',
+          attributes: { order_id: orderId, transition_from: from, transition_to: to, confirm_shortage: true },
+        },
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.ok
+  }
+
+  // Approche 2a : vérifier le statut courant et amener à 'started' si nécessaire
+  // (concept → reserved → started → stopped)
+  try {
+    const statusRes = await fetch(`${BASE4}/orders/${orderId}?fields[orders]=status`, {
+      headers: headers(), signal: AbortSignal.timeout(5000),
+    })
+    if (statusRes.ok) {
+      const statusData = await statusRes.json() as { data?: { attributes?: { status?: string } } }
+      const s = statusData.data?.attributes?.status ?? ''
+      if (s === 'stopped') return   // déjà stopped — succès silencieux
+      if (s === 'concept') {
+        await doTransition('concept',  'reserved').catch(() => {})
+        await doTransition('reserved', 'started').catch(() => {})
+      } else if (s === 'reserved') {
+        await doTransition('reserved', 'started').catch(() => {})
+      }
+    }
+  } catch { /* ignore — on tente quand même les transitions stop */ }
+
+  // Approche 2b : transitions stopped
   const tryTransition = async (from: string): Promise<{ ok: boolean; status: number; text: string }> => {
     const res = await fetch(`${BASE_BOOMERANG}/order_transitions`, {
       method: 'POST',
@@ -1577,7 +1613,7 @@ export async function stopOrder(orderId: string): Promise<void> {
   const r2 = await tryTransition('reserved')
   if (r2.ok) return
 
-  // ── Approche 3 : vérifier si déjà stopped ────────────────────────────────
+  // ── Approche 3 : vérifier si finalement stopped ───────────────────────────
   try {
     const checkRes = await fetch(`${BASE4}/orders/${orderId}?fields[orders]=status`, {
       headers: headers(), signal: AbortSignal.timeout(8000),
