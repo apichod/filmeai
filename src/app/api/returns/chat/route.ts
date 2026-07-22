@@ -1333,14 +1333,6 @@ Affiche les {{...}} littéralement, toujours.`
               wfState = advanceStep(wfState, activeSteps.length)
             }
 
-            // Afficher le message dans le chat pour les steps "display" (instruction, list_order)
-            if (!isChoicesResult && (codeStep.type === 'instruction' || codeStep.booqable_action === 'list_order')) {
-              try {
-                const parsed = JSON.parse(resultText) as { message?: string }
-                if (parsed.message) send(JSON.stringify({ type: 'text', content: parsed.message }))
-              } catch { /* ignore */ }
-            }
-
             send(JSON.stringify({ type: 'tool_result', name: displayName, result: resultText }))
 
             // Ghost messages — l'IA verra l'historique complet des appels code
@@ -1618,13 +1610,6 @@ Affiche les {{...}} littéralement, toujours.`
                 wfState = advanceStep(wfState, activeSteps.length)
               }
 
-              // Afficher le message dans le chat pour les steps "display" (instruction, list_order)
-              if (!postIsChoices && (postCodeStep.type === 'instruction' || postCodeStep.booqable_action === 'list_order')) {
-                try {
-                  const dp = JSON.parse(codeRes.resultText) as { message?: string }
-                  if (dp.message) send(JSON.stringify({ type: 'text', content: dp.message }))
-                } catch { /* ignore */ }
-              }
 
               send(JSON.stringify({ type: 'tool_result', name: postDisplayName, result: codeRes.resultText }))
               currentMessages = [

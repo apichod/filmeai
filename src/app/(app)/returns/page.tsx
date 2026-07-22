@@ -257,6 +257,12 @@ function toolSummary(name: string, result: string | undefined): string | null {
     return m ? `→ ${m[0]}` : null
   }
 
+  // Fallback générique : si le résultat JSON a { success: true, message: "..." }, afficher le message
+  try {
+    const d = JSON.parse(result) as { success?: boolean; message?: string }
+    if (d.success === true && d.message) return d.message
+  } catch { /* not JSON */ }
+
   return null
 }
 
@@ -874,7 +880,7 @@ function ChatPanel() {
                           <p className="mt-0.5 pl-5 text-amber-400 text-xs">{toolErrorMessage(tc.result)}</p>
                         )}
                         {(status === 'success' || status === 'pending') && summary && (
-                          <p className="mt-0.5 pl-5 text-gray-400 truncate">{summary}</p>
+                          <p className="mt-0.5 pl-5 text-gray-400 whitespace-pre-wrap">{summary}</p>
                         )}
                       </div>
                     )
