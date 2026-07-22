@@ -419,7 +419,10 @@ ${orderRef}
 Appelle UNIQUEMENT l'outil "${step.booqable_action}" avec ces paramètres :
 ${JSON.stringify(toolArgs, null, 2)}${commentNote}
 
-INTERDIT ABSOLU : appeler d'autres outils que "${step.booqable_action}", poser des questions, répéter cette étape.
+INTERDIT ABSOLU :
+- N'émets AUCUN texte (ni avant ni après l'appel outil).
+- N'appelle pas d'autres outils que "${step.booqable_action}".
+- Ne pose pas de questions, ne résume pas, ne fais pas de commentaires.
 Le système orchestre automatiquement toutes les autres étapes — tu n'exécutes QUE celle-ci.${context}`
   }
 
