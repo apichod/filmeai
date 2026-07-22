@@ -1503,17 +1503,25 @@ export async function updateOrderReturnDate(orderId: string): Promise<void> {
 export async function stopOrder(orderId: string): Promise<void> {
   type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
 
-  // ── Mise à jour stops_at à l'heure exacte du retour ─────────────────────
+  // ── Mise à jour stops_at à l'heure exacte du retour (avant le stop) ────────
   try {
-    await fetch(`${BASE4}/orders/${orderId}`, {
+    const nowStr = bqDate(new Date())
+    console.log(`[stopOrder] PUT stops_at="${nowStr}" sur order ${orderId}`)
+    const dateRes = await fetch(`${BASE4}/orders/${orderId}`, {
       method: 'PUT',
       headers: headers(),
       body: JSON.stringify({
-        data: { id: orderId, type: 'orders', attributes: { stops_at: bqDate(new Date()) } },
+        data: { id: orderId, type: 'orders', attributes: { stops_at: nowStr } },
       }),
       signal: AbortSignal.timeout(8000),
     })
-  } catch { /* non bloquant */ }
+    if (dateRes.ok) {
+      const d = await dateRes.json() as { data?: { attributes?: { stops_at?: string } } }
+      console.log(`[stopOrder] stops_at enregistré: "${d.data?.attributes?.stops_at}"`)
+    } else {
+      console.warn(`[stopOrder] PUT stops_at failed: ${dateRes.status}`)
+    }
+  } catch (e) { console.warn('[stopOrder] PUT stops_at error:', e) }
 
   // ── Approche 1 : stop via order_fulfillments (items trackables) ─────────────
   // Phase A : start_stock_items pour les SIPs reserved-but-not-started
