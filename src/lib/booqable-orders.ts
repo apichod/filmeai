@@ -54,9 +54,23 @@ export type BooqableOrder = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/** Formate une date ISO en format Booqable */
+/** Formate une date ISO en format Booqable (UTC) */
 function bqDate(date: Date): string {
   return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
+}
+
+/** Formate "maintenant" en heure de Paris au format Booqable.
+ *  Booqable affiche les heures en UTC — on envoie l'heure locale Paris
+ *  pour que l'affichage Booqable corresponde à l'heure française. */
+function bqDateParis(date: Date): string {
+  // sv-SE produit "YYYY-MM-DD HH:MM:SS" directement dans le timezone voulu
+  const local = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).format(date)
+  return local + ' UTC'
 }
 
 function today(): Date { return new Date() }
@@ -1467,7 +1481,7 @@ export async function removeProductLine(lineId: string): Promise<void> {
 // Change la date de retour (stops_at) d'une commande à l'heure exacte du retour.
 export async function updateOrderReturnDate(orderId: string): Promise<void> {
   const now = new Date()
-  const stopsAt = bqDate(now)
+  const stopsAt = bqDateParis(now)
   console.log(`[updateReturnDate] orderId=${orderId} stopsAt="${stopsAt}" (iso="${now.toISOString()}")`)
 
   const res = await fetch(`${BASE4}/orders/${orderId}`, {
@@ -1505,7 +1519,7 @@ export async function stopOrder(orderId: string): Promise<void> {
 
   // ── Mise à jour stops_at à l'heure exacte du retour (avant le stop) ────────
   try {
-    const nowStr = bqDate(new Date())
+    const nowStr = bqDateParis(new Date())
     console.log(`[stopOrder] PUT stops_at="${nowStr}" sur order ${orderId}`)
     const dateRes = await fetch(`${BASE4}/orders/${orderId}`, {
       method: 'PUT',
@@ -1584,7 +1598,7 @@ export async function stopOrder(orderId: string): Promise<void> {
 
       // Phase B : stop_stock_items (avec stopped_at pour forcer l'heure exacte)
       if (stopGroups.size > 0) {
-        const stoppedAt = bqDate(new Date())
+        const stoppedAt = bqDateParis(new Date())
         console.log(`[stopOrder] phase B stop_stock_items stoppedAt="${stoppedAt}"`)
         const stopActions: Array<Record<string, unknown>> = Array.from(stopGroups.entries()).map(([planId, g]) => ({
           action: 'stop_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
