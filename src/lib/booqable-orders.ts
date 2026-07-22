@@ -1790,22 +1790,22 @@ export async function sendEmailViaBooqable(
   subject: string,
   body: string,
   recipientEmail: string,
+  customerId?: string,
+  emailTemplateId?: string,
 ): Promise<void> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const attributes: Record<string, unknown> = {
+    order_id:   orderId,
+    subject,
+    body,
+    recipients: recipientEmail,
+  }
+  if (customerId)      attributes.customer_id  = customerId
+  if (emailTemplateId) attributes.document_ids = [emailTemplateId]
   const res = await fetch(`${BASE_BOOMERANG}/emails`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({
-      data: {
-        type: 'emails',
-        attributes: {
-          order_id:   orderId,
-          subject,
-          body,
-          recipients: recipientEmail,
-        },
-      },
-    }),
+    body: JSON.stringify({ data: { type: 'emails', attributes } }),
     signal: AbortSignal.timeout(15000),
   })
   if (!res.ok) {

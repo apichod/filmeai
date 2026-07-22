@@ -454,8 +454,8 @@ export async function executeCodeStep(
         const rendered = await renderBooqableEmailTemplate(emailTemplateId, orderId)
         if (!rendered) return err(`send_email_booqable : rendu template ${emailTemplateId} échoué`)
 
-        // Envoie
-        await sendEmailViaBooqable(orderId, rendered.subject, rendered.body, recipientEmail)
+        // Envoie avec customer_id + document_ids pour l'historique Booqable
+        await sendEmailViaBooqable(orderId, rendered.subject, rendered.body, recipientEmail, customerId, emailTemplateId)
         return ok({ success: true, message: `✓ Email template envoyé pour ${label}` })
       }
 
