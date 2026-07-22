@@ -1154,28 +1154,53 @@ Affiche les {{...}} littéralement, toujours.`
                   return ids.includes(l.id) || ids.includes(realId)
                 })
               } else {
-                // MODE TEXTE IA : chosen_tag = texte libre (ex: "Carte CFexpress ID-10\nBatterie ID-2")
+                // MODE TEXTE IA : items séparés par retour à la ligne ou virgule
                 const items = chosenTag.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
-                for (const item of items) {
-                  // 1. Match par ID-X (ex: "ID-10")
-                  const idMatch = item.match(/\bID-?(\d+)\b/i)
+                for (let idx = 0; idx < items.length; idx++) {
+                  const item = items[idx]
+                  const idM  = item.match(/\bID-?(\d+)\b/i)
+                  const iLow = item.toLowerCase().replace(/^\d+x?\s*/i, '').replace(/\bID-?\d+\b/gi, '').trim()
                   let line: RawLine | undefined
-                  if (idMatch) {
-                    const idLabel = `ID-${idMatch[1]}`
-                    line = allLines.find(l => l.stock_item_label === idLabel
-                      || l.stock_item_identifier?.endsWith(`-${idMatch[1]}`))
-                  }
-                  // 2. Fallback : match par nom
-                  if (!line) {
-                    const itemLow = item.toLowerCase().replace(/^\d+x?\s*/i, '').trim()
-                    if (itemLow.length > 2) {
+
+                  if (idM) {
+                    const idNum = idM[1]
+                    // Priorité 1 : nom ET ID correspondent ensemble
+                    if (iLow.length > 2) {
                       line = allLines.find(l => {
-                        const nameLow = (l.product_name ?? '').toLowerCase()
-                        return nameLow.includes(itemLow) || itemLow.includes(nameLow)
+                        const nLow  = (l.product_name ?? '').toLowerCase()
+                        const idOk  = l.stock_item_label === `ID-${idNum}` || l.stock_item_identifier?.endsWith(`-${idNum}`)
+                        const nameOk = nLow.includes(iLow) || iLow.includes(nLow)
+                        return idOk && nameOk
                       })
                     }
+                    // Priorité 2 : ID seul (si nom trop court ou absent)
+                    if (!line) {
+                      line = allLines.find(l =>
+                        l.stock_item_label === `ID-${idNum}` || l.stock_item_identifier?.endsWith(`-${idNum}`)
+                      )
+                    }
                   }
-                  if (line) chosenLines.push(line)
+                  // Priorité 3 : nom seul
+                  if (!line && iLow.length > 2) {
+                    line = allLines.find(l => {
+                      const nLow = (l.product_name ?? '').toLowerCase()
+                      return nLow.includes(iLow) || iLow.includes(nLow)
+                    })
+                  }
+
+                  if (line) {
+                    chosenLines.push(line)
+                  } else {
+                    // Fallback : custom line (article non reconnu dans Booqable)
+                    const customName = item.replace(/^\d+x?\s*/i, '').replace(/\bID-?\d+\b/gi, '').trim() || item
+                    chosenLines.push({
+                      id: `custom_${Date.now()}_${idx}`,
+                      product_name: customName,
+                      quantity: 1,
+                      product_group_id: null,
+                      stock_item_id: null,
+                    })
+                  }
                 }
               }
 
