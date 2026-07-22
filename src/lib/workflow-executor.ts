@@ -5,6 +5,7 @@
  * (plus de switch/case hardcodé).
  */
 
+import { createClient } from '@supabase/supabase-js'
 import {
   fetchOrderById,
   duplicateOrder,
@@ -27,6 +28,14 @@ import {
   addSAVComment,
   addSAVLine,
 } from './booqable-orders'
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  )
+}
 
 import {
   TOOL_REGISTRY,
@@ -348,6 +357,52 @@ export async function executeCodeStep(
         if (!note) return err('add_internal_note : paramètre "note" manquant')
         await addInternalNote(orderId, note)
         return ok({ success: true, message: `✓ Note interne ajoutée sur ${label}` })
+      }
+
+      case 'draft_email': {
+        const templateId  = String(params.template_id ?? '')
+        const caseKeyArg  = params.case_key ? String(params.case_key) : null
+        if (!templateId) return err('draft_email : paramètre template_id manquant')
+
+        const sb = getSupabase()
+        let query = sb
+          .from('email_templates')
+          .select('case_key, subject, body, conditions, sort_order')
+          .eq('template_id', templateId)
+          .order('sort_order')
+        if (caseKeyArg) query = (query as typeof query).eq('case_key', caseKeyArg)
+
+        const { data: rows } = await query
+        if (!rows || rows.length === 0) return err(`draft_email : template "${templateId}" introuvable en DB`)
+
+        // Sélection par score de conditions (insurance, caution, etc.)
+        type EmailRow = { case_key?: string; subject: string; body: string; conditions: Record<string, boolean> | null; sort_order?: number }
+        const typedRows = rows as EmailRow[]
+        const conditions: Record<string, boolean> = {
+          insurance:      Boolean(params.insurance),
+          caution:        Boolean(params.caution),
+          amountAbove500: Boolean(params.amount_above_500),
+          latePayment:    Boolean(params.late_payment),
+        }
+        const score = (row: EmailRow) => {
+          const c = row.conditions ?? {}
+          return Object.entries(c).filter(([k, v]) => conditions[k] === v).length
+               - Object.entries(c).filter(([k, v]) => conditions[k] !== v).length
+        }
+        const best = caseKeyArg ? typedRows[0] : typedRows.reduce((prev, cur) => score(cur) >= score(prev) ? cur : prev)
+
+        const preview = `Objet : ${best.subject}\n\n${best.body}\n\nConfirmez-vous l'envoi de cet email ?`
+        return ok({ success: true, subject: best.subject, body: best.body, message: preview })
+      }
+
+      case 'send_email': {
+        if (!orderId) return err('send_email : order_id manquant')
+        const inputCtx = step.input_context ?? step.order_context ?? 'parent'
+        const subject  = String(vars[`${inputCtx}.subject`] ?? params.subject ?? '')
+        const body     = String(vars[`${inputCtx}.body`]    ?? params.body    ?? '')
+        if (!subject || !body) return err('send_email : subject/body manquants — draft_email requis avant')
+        await sendEmailViaBooqable(orderId, subject, body)
+        return ok({ success: true, message: `✓ Email envoyé pour ${label}` })
       }
 
       case 'add_missing_lines': {

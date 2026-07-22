@@ -169,9 +169,14 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: [],
   },
+  draft_email: {
+    label:  'Préparer l\'email client (template)',
+    reads:  [],
+    writes: ['subject', 'body'],
+  },
   send_email: {
-    label:  'Envoyer un email (template fixe)',
-    reads:  ['id'],
+    label:  'Envoyer un email',
+    reads:  ['id', 'subject', 'body'],
     writes: [],
   },
   add_missing_lines: {

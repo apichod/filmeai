@@ -78,7 +78,8 @@ const TOOL_IO: Record<string, ToolIO> = {
   zero_out_order_lines:    { reads: ['id'],           writes: [] },
   set_original_order:      { reads: ['id'],           writes: [] },
   add_internal_note:       { reads: ['id'],           writes: [] },
-  send_email:              { reads: ['id'],           writes: [] },
+  draft_email:             { reads: [],               writes: ['subject', 'body'] },
+  send_email:              { reads: ['subject', 'body'], writes: [] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
@@ -103,7 +104,8 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   zero_out_order_lines:    'code',
   set_original_order:      'code',
   add_internal_note:       'ai',
-  send_email:              'ai',
+  draft_email:             'code',
+  send_email:              'code',
 }
 
 /** Compatibilité d'exécution par outil */
@@ -130,9 +132,9 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   choose_article:          'both',
   remove_other_lines:      'code',
   choose_problem_tag:      'both',
-  draft_email:             'ai',
+  draft_email:             'both',
   zero_out_order_lines:    'code',
-  send_email:              'ai',
+  send_email:              'both',
   log_case:                'ai',
 }
 
