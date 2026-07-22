@@ -1341,6 +1341,7 @@ Affiche les {{...}} littéralement, toujours.`
                 isChoicesResult = true
               }
               if (choicesParsed.__type__ === 'email_editor') {
+                console.log('[pre-pass] email_editor détecté, subject:', choicesParsed.subject?.slice(0, 40), 'body length:', choicesParsed.body?.length)
                 send(JSON.stringify({ type: 'email_editor', subject: choicesParsed.subject ?? '', body: choicesParsed.body ?? '' }))
                 wfState = { ...wfState, status: 'waiting_for_input' }
                 isChoicesResult = true

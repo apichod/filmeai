@@ -460,6 +460,7 @@ function ChatPanel() {
               setSelectedChoiceTags(new Set())
             }
             if (event.type === 'email_editor') {
+              console.log('[client] email_editor reçu, subject:', event.subject?.slice(0, 40))
               setPendingEmail({ subject: event.subject, body: event.body })
               setEmailInstruction('')
             }
@@ -595,6 +596,7 @@ function ChatPanel() {
               setSelectedChoiceTags(new Set())
             }
             if (event.type === 'email_editor') {
+              console.log('[client] email_editor reçu, subject:', event.subject?.slice(0, 40))
               setPendingEmail({ subject: event.subject, body: event.body })
               setEmailInstruction('')
             }
