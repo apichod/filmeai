@@ -1288,7 +1288,7 @@ Affiche les {{...}} littéralement, toujours.`
             wfState.step_index < activeSteps.length
           ) {
             const codeStep = activeSteps[wfState.step_index] as WorkflowStep
-            if (codeStep.execution !== 'code') break
+            if (codeStep.execution !== 'code' && codeStep.type !== 'instruction') break
 
             codeStepRan = true
             const toolName    = codeStep.booqable_action ?? 'code_step'
@@ -1421,7 +1421,7 @@ Affiche les {{...}} littéralement, toujours.`
           // choose_article en mode AI = question (texte libre, pas boutons) → pas de tool call forcé
           const isAiTextChooseArticle = aiStep?.booqable_action === 'choose_article' && aiStep?.execution === 'ai'
           // Outils qui ne ciblent pas une commande existante → pas besoin de order_id en vars
-          const NO_ORDER_ID_NEEDED = new Set(['create_new_return_order', 'draft_email', 'send_email', 'search_products', 'get_stock_items'])
+          const NO_ORDER_ID_NEEDED = new Set(['create_new_return_order', 'draft_email', 'send_email', 'search_products', 'get_stock_items', 'list_order'])
           const _orderCtxForTool = aiStep?.order_context ?? 'parent'
           const orderIdReady = !aiStep?.booqable_action
             || NO_ORDER_ID_NEEDED.has(aiStep.booqable_action)
@@ -1583,7 +1583,7 @@ Affiche les {{...}} littéralement, toujours.`
             let codeSeq = 0
             while (wfState.status === 'running' && wfState.step_index < activeSteps.length) {
               const postCodeStep = activeSteps[wfState.step_index] as WorkflowStep
-              if (postCodeStep.execution !== 'code') break
+              if (postCodeStep.execution !== 'code' && postCodeStep.type !== 'instruction') break
               const codeId   = `code_post_${codeTs}_${codeSeq++}`
               const codeArgs = buildToolArgs(postCodeStep, wfState.vars)
               const postDisplayName = postCodeStep.title ?? postCodeStep.booqable_action ?? 'code_step'

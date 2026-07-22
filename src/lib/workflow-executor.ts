@@ -66,7 +66,31 @@ export async function executeCodeStep(
   }
 
   try {
+    // ── Instruction step : affiche le titre/description comme message dans le chat ──
+    if (step.type === 'instruction') {
+      const msg = step.description ?? step.title ?? 'Information'
+      return { success: true, resultText: JSON.stringify({ message: msg }), newVars: {} }
+    }
+
     switch (step.booqable_action) {
+
+      case 'list_order': {
+        const ctx      = step.order_context ?? 'parent'
+        const linesRaw = vars[`${ctx}.lines`]
+        type Line = { product_name?: string; quantity?: number; stock_item_label?: string | null }
+        let lines: Line[] = []
+        if (linesRaw) {
+          try { lines = JSON.parse(linesRaw) as Line[] } catch { /* ignore */ }
+        } else if (orderId) {
+          const order = await fetchOrderById(orderId)
+          lines = order?.lines ?? []
+        }
+        if (!lines.length) return ok({ success: true, message: `Aucun article sur la commande ${label}` })
+        const formatted = lines
+          .map(l => `• ${l.quantity ?? 1}x ${l.product_name ?? '?'}${l.stock_item_label ? ` (${l.stock_item_label})` : ''}`)
+          .join('\n')
+        return ok({ success: true, message: `Articles de la commande ${label} :\n${formatted}` })
+      }
 
       case 'fetch_order': {
         const ctx = step.order_context ?? 'parent'

@@ -30,7 +30,7 @@ export type WorkflowState = {
 
 export type WorkflowStep = {
   id:              string
-  type:            'action' | 'question' | 'check'
+  type:            'action' | 'question' | 'check' | 'instruction'
   title:           string
   description?:    string
   booqable_action?: string
@@ -112,6 +112,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   update_return_date: {
     label:  'Mettre à jour la date de retour',
     reads:  ['id'],
+    writes: [],
+  },
+  list_order: {
+    label:  'Lister les articles de la commande',
+    reads:  ['lines'],
     writes: [],
   },
   remove_product_line: {
