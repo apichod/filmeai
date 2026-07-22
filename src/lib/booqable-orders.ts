@@ -643,67 +643,103 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
   type SIPNode = { id: string; type: string; attributes: Record<string, unknown> }
 
-  // ── Approche 1 : start_stock_items via order_fulfillments ──────────────────
+  // ── Approche 1 : order_fulfillments (trackable + bulk) ────────────────────
   try {
+    // Passe A : stock_item_plannings → actions start_stock_items (produits trackables)
     const sipRes = await fetch(
       `${BASE4}/stock_item_plannings?filter[order_id]=${orderId}&include=stock_item&page[size]=200`,
       { headers: headers(), signal: AbortSignal.timeout(10000) }
     )
+
+    type PlanGroup = { productId: string; siIds: string[] }
+    const planGroups    = new Map<string, PlanGroup>()   // trackable
+    const coveredPlanIds = new Set<string>()              // plan IDs déjà traités
+    let sipAllStarted   = true
+
     if (sipRes.ok) {
       const sipData = await sipRes.json() as { data?: SIPNode[]; included?: SIPNode[] }
-
-      const siMap = new Map<string, SIPNode>()
+      const siMap   = new Map<string, SIPNode>()
       for (const r of sipData.included || []) {
         if (r.type === 'stock_items') siMap.set(r.id, r)
       }
-
-      // Grouper par planning_id : un seul action par planning avec tous ses stock_item_ids
-      // (Booqable rejette 422 si plusieurs actions pour le même planning_id)
-      type PlanGroup = { productId: string; siIds: string[] }
-      const planGroups = new Map<string, PlanGroup>()
-      let allStarted = true
-
       for (const sip of sipData.data || []) {
-        if (sip.attributes.started) continue  // déjà started → skip
-        allStarted = false
+        if (sip.attributes.started) continue
+        sipAllStarted = false
         const planId    = String(sip.attributes.planning_id   || '')
         const siId      = String(sip.attributes.stock_item_id || '')
         if (!planId || !siId) continue
+        coveredPlanIds.add(planId)
         const si        = siMap.get(siId)
-        const productId = String(si?.attributes.product_id    || '')
+        const productId = String(si?.attributes.product_id || '')
         if (!productId) continue
         const g = planGroups.get(planId) || { productId, siIds: [] }
         g.siIds.push(siId)
         planGroups.set(planId, g)
       }
-
-      // Tous les SIPs déjà started → succès silencieux
-      if (allStarted && (sipData.data || []).length > 0) {
+      if (sipAllStarted && (sipData.data || []).length > 0) {
         console.log(`startSAVOrder: order ${orderId} — tous SIPs déjà started, ok`)
+        // Ne pas retourner ici : il peut rester des produits bulk à démarrer
+      }
+    }
+
+    // Passe B : plannings → actions start_products (bulk / no_tracking non couverts)
+    const bulkActions: Array<Record<string, unknown>> = []
+    try {
+      const planRes = await fetch(
+        `${BASE4}/plannings?filter[order_id]=${orderId}&include=product&page[size]=200`,
+        { headers: headers(), signal: AbortSignal.timeout(10000) }
+      )
+      if (planRes.ok) {
+        const planData = await planRes.json() as { data?: SIPNode[]; included?: SIPNode[] }
+        const productMap = new Map<string, { tracking: string }>()
+        for (const inc of planData.included || []) {
+          if (inc.type === 'products') {
+            productMap.set(inc.id, { tracking: String(inc.attributes.tracking || '') })
+          }
+        }
+        for (const plan of planData.data || []) {
+          const planId    = plan.id
+          const productId = String(plan.attributes.product_id || '')
+          if (!productId || coveredPlanIds.has(planId)) continue  // trackable déjà géré
+          const product   = productMap.get(productId)
+          if (!product) continue
+          const tracking  = product.tracking
+          if (tracking === 'bulk' || tracking === 'no_tracking') {
+            const qty = Number(plan.attributes.quantity) || 1
+            bulkActions.push({
+              action: 'start_products', planning_id: planId, product_id: productId, quantity: qty,
+            })
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[startSAVOrder] plannings fetch error:', e)
+    }
+
+    const trackableActions: Array<Record<string, unknown>> = Array.from(planGroups.entries()).map(([planId, g]) => ({
+      action: 'start_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
+    }))
+    const actions = [...trackableActions, ...bulkActions]
+
+    if (actions.length > 0) {
+      console.log(`startSAVOrder: ${actions.length} action(s) pour ${orderId}:`, JSON.stringify(actions))
+      const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          data: { type: 'order_fulfillments', attributes: { order_id: orderId, confirm_shortage: true, actions } },
+        }),
+        signal: AbortSignal.timeout(15000),
+      })
+      if (fulfillRes.ok) {
+        console.log(`startSAVOrder: order ${orderId} started (trackable+bulk) ✓`)
         return {}
       }
-
-      const actions: Array<Record<string, unknown>> = Array.from(planGroups.entries()).map(([planId, g]) => ({
-        action: 'start_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
-      }))
-
-      if (actions.length > 0) {
-        console.log(`startSAVOrder: ${actions.length} action(s) pour ${orderId}:`, JSON.stringify(actions))
-        const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
-          method: 'POST',
-          headers: headers(),
-          body: JSON.stringify({
-            data: { type: 'order_fulfillments', attributes: { order_id: orderId, confirm_shortage: true, actions } },
-          }),
-          signal: AbortSignal.timeout(15000),
-        })
-        if (fulfillRes.ok) {
-          console.log(`startSAVOrder: order ${orderId} started via start_stock_items ✓`)
-          return {}
-        }
-        const errText = await fulfillRes.text()
-        console.warn('[startSAVOrder] start_stock_items failed:', fulfillRes.status, errText.slice(0, 300))
-      }
+      const errText = await fulfillRes.text()
+      console.warn('[startSAVOrder] start_stock_items+start_products failed:', fulfillRes.status, errText.slice(0, 300))
+    } else if (sipAllStarted) {
+      // Rien à démarrer
+      return {}
     }
   } catch (e) {
     console.warn('[startSAVOrder] fulfillments approach error:', e)
