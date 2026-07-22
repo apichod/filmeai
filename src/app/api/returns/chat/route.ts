@@ -1227,10 +1227,14 @@ Affiche les {{...}} littéralement, toujours.`
                              || leavingStep2?.booqable_action === 'choose_article'
           if (isChoiceStep2) {
             const lastUserMsg2 = [...messages].reverse().find(m => m.role === 'user')
-            const chosenTag2 = typeof lastUserMsg2?.content === 'string' ? lastUserMsg2.content.trim() : ''
-            if (chosenTag2) {
+            const selectionText2 = typeof lastUserMsg2?.content === 'string' ? lastUserMsg2.content.trim() : ''
+            if (selectionText2) {
               const ctx2 = leavingStep2!.output_context ?? leavingStep2!.order_context ?? 'parent'
-              wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.chosen_tag`]: chosenTag2 } }
+              // Mode boutons (code) : chosen_tag = IDs séparés par virgule
+              // Mode texte (AI)     : chosen_tag N'EST PAS écrasé avec le texte libre (inutilisable comme tag)
+              if (leavingStep2?.execution === 'code') {
+                wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.chosen_tag`]: selectionText2 } }
+              }
 
               // Construire chosen_lines pour choose_article (même logique que le bloc pre-stream)
               if (leavingStep2?.booqable_action === 'choose_article') {
@@ -1242,16 +1246,49 @@ Affiche les {{...}} littéralement, toujours.`
                     const allLines2 = JSON.parse(linesRaw2) as RawLine2[]
                     let chosenLines2: RawLine2[] = []
                     if (leavingStep2.execution === 'code') {
-                      const ids2 = chosenTag2.split(',').map(s => s.trim()).filter(Boolean)
+                      const ids2 = selectionText2.split(',').map(s => s.trim()).filter(Boolean)
                       chosenLines2 = allLines2.filter(l => { const r = l.id.includes('__') ? l.id.split('__')[0] : l.id; return ids2.includes(l.id) || ids2.includes(r) })
                     } else {
-                      const items2 = chosenTag2.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+                      // Mode AI : texte libre → matching par nom + ID
+                      const items2 = selectionText2.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
                       for (const item2 of items2) {
-                        const idM = item2.match(/\bID-?(\d+)\b/i)
+                        if (!item2) continue
+                        const idM   = item2.match(/\bID-?(\d+)\b/i)
+                        const iLow  = item2.toLowerCase().replace(/^\d+x?\s*/i, '').replace(/\bID-?\d+\b/gi, '').trim()
                         let line2: RawLine2 | undefined
-                        if (idM) line2 = allLines2.find(l => l.stock_item_label === `ID-${idM[1]}` || l.stock_item_identifier?.endsWith(`-${idM[1]}`))
-                        if (!line2) { const iLow = item2.toLowerCase().replace(/^\d+x?\s*/i, '').trim(); if (iLow.length > 2) line2 = allLines2.find(l => { const nLow = (l.product_name ?? '').toLowerCase(); return nLow.includes(iLow) || iLow.includes(nLow) }) }
-                        if (line2) chosenLines2.push(line2)
+
+                        if (idM) {
+                          const idNum = idM[1]
+                          // Priorité 1 : nom ET ID correspondent ensemble
+                          if (iLow.length > 2) {
+                            line2 = allLines2.find(l => {
+                              const nLow = (l.product_name ?? '').toLowerCase()
+                              const idOk = l.stock_item_label === `ID-${idNum}` || l.stock_item_identifier?.endsWith(`-${idNum}`)
+                              const nameOk = nLow.includes(iLow) || iLow.includes(nLow)
+                              return idOk && nameOk
+                            })
+                          }
+                          // Priorité 2 : ID seul (si nom court ou pas de match nom+ID)
+                          if (!line2) {
+                            line2 = allLines2.find(l => l.stock_item_label === `ID-${idNum}` || l.stock_item_identifier?.endsWith(`-${idNum}`))
+                          }
+                        }
+
+                        // Priorité 3 : nom seul (sans ID dans le texte)
+                        if (!line2 && iLow.length > 2) {
+                          line2 = allLines2.find(l => {
+                            const nLow = (l.product_name ?? '').toLowerCase()
+                            return nLow.includes(iLow) || iLow.includes(nLow)
+                          })
+                        }
+
+                        if (line2) {
+                          chosenLines2.push(line2)
+                        } else {
+                          // Aucun match → custom line (article non référencé)
+                          const customName = item2.replace(/^\d+x?\s*/i, '').replace(/\bID-?\d+\b/gi, '').trim() || item2
+                          chosenLines2.push({ id: `custom_${Date.now()}_${chosenLines2.length}`, product_name: customName, quantity: 1, product_group_id: null, stock_item_id: null })
+                        }
                       }
                     }
                     if (chosenLines2.length > 0) wfState = { ...wfState, vars: { ...wfState.vars, [`${srcCtx2}.chosen_lines`]: JSON.stringify(chosenLines2) } }
