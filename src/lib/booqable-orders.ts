@@ -1720,7 +1720,6 @@ export async function sendEmailViaBooqable(
           order_id:        orderId,
           subject,
           body,
-          send_immediately: true,
         },
       },
     }),
