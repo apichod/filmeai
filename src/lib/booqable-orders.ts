@@ -1596,13 +1596,12 @@ export async function stopOrder(orderId: string): Promise<void> {
         }
       }
 
-      // Phase B : stop_stock_items (avec stopped_at pour forcer l'heure exacte)
+      // Phase B : stop_stock_items
+      // Note : stops_at est déjà fixé via le PUT sur l'order juste avant — on ne le répète pas ici
       if (stopGroups.size > 0) {
-        const stoppedAt = bqDateParis(new Date())
-        console.log(`[stopOrder] phase B stop_stock_items stoppedAt="${stoppedAt}"`)
+        console.log(`[stopOrder] phase B stop_stock_items (${stopGroups.size} planning(s))`)
         const stopActions: Array<Record<string, unknown>> = Array.from(stopGroups.entries()).map(([planId, g]) => ({
           action: 'stop_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
-          stopped_at: stoppedAt,
         }))
         const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
           method: 'POST',
