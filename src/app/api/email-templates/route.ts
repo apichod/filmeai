@@ -274,3 +274,18 @@ export async function PATCH(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }
+
+// DELETE — supprime toutes les variantes d'un template (par template_id)
+export async function DELETE(req: NextRequest) {
+  const { template_id } = await req.json() as { template_id: string }
+  if (!template_id) return NextResponse.json({ error: 'template_id requis' }, { status: 400 })
+
+  const supabase = getSupabaseAdmin()
+  const { error } = await supabase
+    .from('email_templates')
+    .delete()
+    .eq('template_id', template_id)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true })
+}
