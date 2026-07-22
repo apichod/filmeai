@@ -1582,10 +1582,13 @@ export async function stopOrder(orderId: string): Promise<void> {
         }
       }
 
-      // Phase B : stop_stock_items
+      // Phase B : stop_stock_items (avec stopped_at pour forcer l'heure exacte)
       if (stopGroups.size > 0) {
+        const stoppedAt = bqDate(new Date())
+        console.log(`[stopOrder] phase B stop_stock_items stoppedAt="${stoppedAt}"`)
         const stopActions: Array<Record<string, unknown>> = Array.from(stopGroups.entries()).map(([planId, g]) => ({
           action: 'stop_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
+          stopped_at: stoppedAt,
         }))
         const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
           method: 'POST',
@@ -1595,7 +1598,14 @@ export async function stopOrder(orderId: string): Promise<void> {
           }),
           signal: AbortSignal.timeout(15000),
         })
-        if (fulfillRes.ok) return
+        if (fulfillRes.ok) {
+          // Log le stops_at effectivement enregistré
+          try {
+            const fd = await fulfillRes.json() as { data?: { attributes?: Record<string, unknown> } }
+            console.log('[stopOrder] fulfillment OK attrs:', JSON.stringify(fd.data?.attributes ?? {}))
+          } catch { /* ignore */ }
+          return
+        }
         const errText = await fulfillRes.text()
         console.warn('[stopOrder] stop_stock_items failed:', fulfillRes.status, errText.slice(0, 300))
       }
