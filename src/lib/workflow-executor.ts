@@ -379,11 +379,13 @@ export async function executeCodeStep(
         if (!rows || rows.length === 0) return err(`draft_email : template "${templateId}" introuvable en DB`)
 
         // Sélection par score de conditions (insurance, caution, etc.)
+        // Priorité : params fixes → fallback vars dynamiques (ex: check_insurance)
         type EmailRow = { case_key?: string; subject: string; body: string; conditions: Record<string, boolean> | null; sort_order?: number }
         const typedRows = rows as EmailRow[]
+        const emailCtx  = step.input_context ?? step.order_context ?? 'original'
         const conditions: Record<string, boolean> = {
-          insurance:      Boolean(params.insurance),
-          caution:        Boolean(params.caution),
+          insurance:      Boolean(params.insurance)       || vars[`${emailCtx}.insurance`] === 'true',
+          caution:        Boolean(params.caution)         || vars[`${emailCtx}.caution`]   === 'true',
           amountAbove500: Boolean(params.amount_above_500),
           latePayment:    Boolean(params.late_payment),
         }
@@ -644,6 +646,37 @@ export async function executeCodeStep(
         if (!subject2 || !body2) return err('send_email : paramètres "subject" et "body" requis')
         await sendEmailViaBooqable(orderId, subject2, body2, recipient2)
         return ok({ success: true, message: `✓ Email envoyé pour ${label}` })
+      }
+
+      case 'check_insurance': {
+        // Vérifie si l'assurance est présente dans les lignes de la commande.
+        // product_group_id de l'assurance : 7ade5f07-d1d4-46de-8044-77698d6173be
+        // Param optionnel : insurance_product_group_id (pour surcharger le product_group par défaut)
+        const INSURANCE_PG = String(params.insurance_product_group_id ?? '7ade5f07-d1d4-46de-8044-77698d6173be')
+        const ctx      = step.order_context ?? 'original'
+        const linesRaw = vars[`${ctx}.lines`]
+
+        type OrderLine = { product_group_id?: string | null }
+        let lines: OrderLine[] = []
+
+        if (linesRaw) {
+          try { lines = JSON.parse(linesRaw) as OrderLine[] } catch { /* ignore */ }
+        } else if (orderId) {
+          const order = await fetchOrderById(orderId)
+          lines = (order?.lines ?? []) as OrderLine[]
+        } else {
+          return err('check_insurance : order_id manquant et lignes absentes des variables (fetch_order requis avant)')
+        }
+
+        const hasInsurance = lines.some(l => l.product_group_id === INSURANCE_PG)
+        const insuranceStr = hasInsurance ? 'true' : 'false'
+        const statusEmoji  = hasInsurance ? '✅' : '❌'
+        const statusLabel  = hasInsurance ? 'OUI' : 'NON'
+
+        return ok({
+          insurance: insuranceStr,
+          message:   `${statusEmoji} Assurance : ${statusLabel} (commande ${label})`,
+        })
       }
 
       default:

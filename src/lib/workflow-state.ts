@@ -174,6 +174,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: [],
   },
+  check_insurance: {
+    label:  'Vérifier si l\'assurance est prise sur la commande',
+    reads:  ['id', 'lines'],
+    writes: ['insurance'],
+    // insurance = 'true' | 'false'
+  },
   draft_email: {
     label:  'Préparer l\'email client (template)',
     reads:  [],
