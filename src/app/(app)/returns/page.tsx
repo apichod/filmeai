@@ -37,6 +37,7 @@ type ChatMessage = {
   toolCalls?: { name: string; result?: string }[]
   emailEditor?: { subject: string; body: string }
   emailPreview?: { document_id: string; subject: string; body: string; name: string }
+  workflowDone?: boolean
 }
 
 type ReturnCase = {
@@ -483,7 +484,12 @@ function ChatPanel() {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
               if (event.workflowState !== undefined) setWorkflowState(event.workflowState ?? null)
-              if (event.workflowState?.status === 'completed' || event.workflowState?.status === 'waiting_for_input') break streamLoop
+              if (event.workflowState?.status === 'completed') {
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantId ? { ...m, workflowDone: true } : m
+                ))
+              }
+              break streamLoop
             }
             if (event.type === 'error') {
               setMessages(prev => prev.map(m =>
@@ -631,7 +637,12 @@ function ChatPanel() {
               finishedCaseId = event.caseId
               if (event.caseId) setCaseId(event.caseId)
               if (event.workflowState !== undefined) setWorkflowState(event.workflowState ?? null)
-              if (event.workflowState?.status === 'completed' || event.workflowState?.status === 'waiting_for_input') break streamLoop
+              if (event.workflowState?.status === 'completed') {
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantId ? { ...m, workflowDone: true } : m
+                ))
+              }
+              break streamLoop
             }
           } catch { /* ignore */ }
         }
@@ -1042,7 +1053,17 @@ function ChatPanel() {
                     ? 'bg-black text-white rounded-br-sm'
                     : 'bg-gray-100 text-gray-800 rounded-bl-sm'
                 }`}>
-                  {msg.content || (
+                  {msg.workflowDone ? (
+                    <div className="flex flex-col gap-2">
+                      <span className="font-medium">✅ Cas terminé !</span>
+                      <a
+                        href="/returns"
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 underline"
+                      >
+                        ↩ Retour au sommaire
+                      </a>
+                    </div>
+                  ) : msg.content || (
                     <span className="inline-flex gap-0.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
                       <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
