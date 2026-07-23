@@ -287,7 +287,9 @@ type Scenario =
 
 type Level1Key = 'retard' | 'perte' | 'vol' | 'dommage' | 'split'
 
-type SubOption = { label: string; scenario: Scenario; welcome: string }
+type ActiveWorkflow = { slug: string; name: string; description: string }
+
+type SubOption = { label: string; scenario: string; welcome: string }
 
 const LEVEL1_ITEMS: { key: Level1Key; label: string }[] = [
   { key: 'retard',  label: 'Retard' },
@@ -343,7 +345,7 @@ function ChatPanel() {
   const [emailImproving, setEmailImproving] = useState(false)
   const [emailInstruction, setEmailInstruction] = useState('')
   const [caseId, setCaseId] = useState<string | null>(null)
-  const [scenario, setScenario] = useState<Scenario | null>(null)
+  const [scenario, setScenario] = useState<string | null>(null)
   const [level1, setLevel1] = useState<Level1Key | null>(null)
   const [selectedLabel, setSelectedLabel] = useState<string>('')
   // Données client extraites du dernier fetch_order — passées à chaque requête pour éviter les placeholders IA
@@ -353,6 +355,9 @@ function ChatPanel() {
   const [workflowState, setWorkflowState] = useState<WorkflowState | null>(null)
   const [activeSteps, setActiveSteps] = useState<WorkflowStep[]>([])
   const [showSteps, setShowSteps] = useState(false)
+  // Workflows actifs depuis Supabase — pilote le menu de sélection
+  const [availableWorkflows, setAvailableWorkflows] = useState<ActiveWorkflow[]>([])
+  const [workflowsLoaded, setWorkflowsLoaded] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   // Charge les étapes du workflow actif depuis Supabase
@@ -366,6 +371,17 @@ function ChatPanel() {
       })
       .catch(() => {})
   }, [scenario])
+
+  // Charge tous les workflows actifs pour piloter le menu de sélection
+  useEffect(() => {
+    fetch('/api/returns/workflows')
+      .then(r => r.json())
+      .then((d: { workflows?: Array<{ slug: string; name: string; description: string; is_active: boolean }> }) => {
+        setAvailableWorkflows((d.workflows ?? []).filter(w => w.is_active))
+        setWorkflowsLoaded(true)
+      })
+      .catch(() => setWorkflowsLoaded(true))
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -733,6 +749,43 @@ function ChatPanel() {
     setLevel1(key)
   }
 
+  function selectOtherWorkflow(wf: ActiveWorkflow) {
+    setScenario(wf.slug)
+    setSelectedLabel(wf.name)
+    const welcome = wf.description
+      ? `${wf.description}\nDonnez-moi le numéro de la commande d'origine.`
+      : `Tâche : ${wf.name}.\nDonnez-moi le numéro de la commande d'origine.`
+    setMessages([{ id: 'welcome', role: 'assistant', content: welcome }])
+    setCaseId(null)
+    setWorkflowState(null)
+    setActiveSteps([])
+    setShowSteps(false)
+    setInput('')
+    setFetchedCustomerId(null)
+    setFetchedCustomerName(null)
+    setFetchedCustomerEmail(null)
+  }
+
+  // ── Menu dynamique piloté par Supabase ─────────────────────────────────────
+  const activeSlugSet = new Set(availableWorkflows.map(w => w.slug))
+
+  const KNOWN_SLUGS = new Set<string>([
+    'r00_return_ok',
+    'r11_21_late_open', 'r11_22_late_waived', 'r11_23_late_deposit', 'r11_24_late_billed',
+    'r12_21_missing_open', 'r12_22_missing_waived', 'r12_23_missing_deposit', 'r12_24_missing_billed',
+    'r13_21_theft_open', 'r13_22_theft_waived', 'r13_23_theft_deposit', 'r13_24_theft_billed',
+    'r14_21_damage_open', 'r14_22_damage_waived', 'r14_23_damage_deposit', 'r14_24_damage_billed',
+    'u01_split_return_order', 'late', 'late_returned', 'late_partial', 'missing', 'damage', 'split_v2',
+  ])
+
+  const otherWorkflows = availableWorkflows.filter(w => !KNOWN_SLUGS.has(w.slug))
+
+  const visibleLevel1Items = LEVEL1_ITEMS.filter(item => {
+    if (item.key === 'split') return activeSlugSet.has('u01_split_return_order')
+    const subOpts = LEVEL2_MAP[item.key as Exclude<Level1Key, 'split'>]
+    return subOpts?.some(opt => activeSlugSet.has(opt.scenario))
+  })
+
   // ── Sélecteur niveau 1 ────────────────────────────────────────────────────
   if (!scenario && !level1) return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -744,15 +797,30 @@ function ChatPanel() {
         </div>
         <p className="text-base font-bold text-gray-900 text-center">Comment puis-je t&apos;aider&nbsp;?</p>
         <div className="flex flex-wrap gap-2 justify-center">
-          {LEVEL1_ITEMS.map(item => (
-            <button
-              key={item.key}
-              onClick={() => selectLevel1(item.key)}
-              className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
-            >
-              {item.label}
-            </button>
-          ))}
+          {!workflowsLoaded ? (
+            <span className="text-xs text-gray-400">Chargement…</span>
+          ) : (
+            <>
+              {visibleLevel1Items.map(item => (
+                <button
+                  key={item.key}
+                  onClick={() => selectLevel1(item.key)}
+                  className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
+                >
+                  {item.label}
+                </button>
+              ))}
+              {otherWorkflows.map(wf => (
+                <button
+                  key={wf.slug}
+                  onClick={() => selectOtherWorkflow(wf)}
+                  className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
+                >
+                  {wf.name}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -761,7 +829,7 @@ function ChatPanel() {
   // ── Sélecteur niveau 2 ────────────────────────────────────────────────────
   if (!scenario && level1) {
     const l1Label = LEVEL1_ITEMS.find(i => i.key === level1)!.label
-    const subOptions = LEVEL2_MAP[level1 as Exclude<Level1Key, 'split'>]
+    const subOptions = LEVEL2_MAP[level1 as Exclude<Level1Key, 'split'>].filter(opt => activeSlugSet.has(opt.scenario))
     return (
       <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 gap-6">
