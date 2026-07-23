@@ -196,14 +196,6 @@ function toolSummary(name: string, result: string | undefined): string | null {
     }
   } catch { /* not JSON */ }
 
-  // check_insurance / check_deposit → { message: "..." } sans success
-  if (name === 'check_insurance' || name === 'check_deposit') {
-    try {
-      const d = JSON.parse(result) as { message?: string }
-      return d.message ?? null
-    } catch { return null }
-  }
-
   // create_sav_order retourne "✓ SAV order créée (numéro: XXXX) | id: ..."
   if (name === 'create_sav_order' && result.includes('numéro:')) {
     const m = result.match(/numéro:\s*(\S+)\)/)
@@ -270,10 +262,13 @@ function toolSummary(name: string, result: string | undefined): string | null {
     return m ? `→ ${m[0]}` : null
   }
 
-  // Fallback générique : si le résultat JSON a { success: true, message: "..." }, afficher le message
+  // Fallback générique : JSON avec message
   try {
-    const d = JSON.parse(result) as { success?: boolean; message?: string }
-    if (d.success === true && d.message) return d.message
+    const d = JSON.parse(result) as Record<string, unknown>
+    // { success: true, message: "..." } — steps IA
+    if (d.success === true && typeof d.message === 'string') return d.message
+    // { message: "..." } sans success — steps code (check_insurance, check_deposit, instruction…)
+    if (!('success' in d) && !('error' in d) && typeof d.message === 'string') return d.message
   } catch { /* not JSON */ }
 
   return null
