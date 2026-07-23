@@ -271,18 +271,6 @@ function toolSummary(name: string, result: string | undefined): string | null {
   return null
 }
 
-// ── Scénarios ──────────────────────────────────────────────────────────────────
-
-type Scenario =
-  | 'r00_return_ok'
-  | 'r11_21_late_open'  | 'r11_22_late_waived'    | 'r11_23_late_deposit'    | 'r11_24_late_billed'
-  | 'r12_21_missing_open' | 'r12_22_missing_waived' | 'r12_23_missing_deposit' | 'r12_24_missing_billed'
-  | 'r13_21_theft_open'  | 'r13_22_theft_waived'   | 'r13_23_theft_deposit'   | 'r13_24_theft_billed'
-  | 'r14_21_damage_open' | 'r14_22_damage_waived'  | 'r14_23_damage_deposit'  | 'r14_24_damage_billed'
-  | 'u01_split_return_order'
-  // legacy
-  | 'late' | 'late_returned' | 'late_partial' | 'missing' | 'damage' | 'split_v2'
-
 // ── Menu 2 niveaux ─────────────────────────────────────────────────────────────
 
 type Level1Key = 'retard' | 'perte' | 'vol' | 'dommage' | 'split'
