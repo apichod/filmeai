@@ -937,6 +937,25 @@ export default function WorkflowsPage() {
                   <optgroup label="U – Utilitaires">
                     <option value="u01_split_return_order">u01_split_return_order</option>
                   </optgroup>
+                  {(() => {
+                    const predefined = new Set([
+                      'r00_return_ok',
+                      'r11_21_late_open', 'r11_22_late_waived', 'r11_23_late_deposit', 'r11_24_late_billed',
+                      'r12_21_missing_open', 'r12_22_missing_waived', 'r12_23_missing_deposit', 'r12_24_missing_billed',
+                      'r13_21_theft_open', 'r13_22_theft_waived', 'r13_23_theft_deposit', 'r13_24_theft_billed',
+                      'r14_21_damage_open', 'r14_22_damage_waived', 'r14_23_damage_deposit', 'r14_24_damage_billed',
+                      'u01_split_return_order',
+                    ])
+                    const custom = workflows.filter(w => !predefined.has(w.slug))
+                    if (custom.length === 0) return null
+                    return (
+                      <optgroup label="Personnalisés">
+                        {custom.map(w => (
+                          <option key={w.slug} value={w.slug}>{w.slug}</option>
+                        ))}
+                      </optgroup>
+                    )
+                  })()}
                 </select>
               </div>
             </div>
