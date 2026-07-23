@@ -868,6 +868,9 @@ function ChatPanel() {
           {caseId && <p className="text-xs text-green-600 mt-0.5">Cas actif en cours de traitement</p>}
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
+            ← Retour
+          </button>
           {activeSteps.length > 0 && (
             <button
               onClick={() => setShowSteps(v => !v)}
