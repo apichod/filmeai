@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     slug: string
     name: string
+    chat_label?: string
     description?: string
     prompt?: string
     steps?: unknown[]
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
     .insert({
       slug:        body.slug,
       name:        body.name,
+      chat_label:  body.chat_label ?? null,
       description: body.description || '',
       prompt:      body.prompt || '',
       steps:       body.steps || [],
@@ -58,6 +60,7 @@ export async function PATCH(req: NextRequest) {
     id: string
     slug?: string
     name?: string
+    chat_label?: string | null
     description?: string
     prompt?: string
     steps?: unknown[]
@@ -71,6 +74,7 @@ export async function PATCH(req: NextRequest) {
 
   if (body.slug        !== undefined) patch.slug        = body.slug
   if (body.name        !== undefined) patch.name        = body.name
+  if (body.chat_label  !== undefined) patch.chat_label  = body.chat_label ?? null
   if (body.description !== undefined) patch.description = body.description
   if (body.prompt      !== undefined) patch.prompt      = body.prompt
   if (body.steps       !== undefined) patch.steps       = body.steps

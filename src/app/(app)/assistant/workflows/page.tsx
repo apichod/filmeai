@@ -183,6 +183,7 @@ type Workflow = {
   id: string
   slug: string
   name: string
+  chat_label: string | null
   description: string
   prompt: string
   steps: WorkflowStep[]
@@ -585,6 +586,7 @@ export default function WorkflowsPage() {
   // Champs en cours d'édition
   const [editSlug, setEditSlug] = useState('')
   const [editName, setEditName] = useState('')
+  const [editChatLabel, setEditChatLabel] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editPrompt, setEditPrompt] = useState('')
   const [editSteps, setEditSteps] = useState<WorkflowStep[]>([])
@@ -644,6 +646,7 @@ export default function WorkflowsPage() {
     setEditing(false)
     setEditSlug(wf.slug)
     setEditName(wf.name)
+    setEditChatLabel(wf.chat_label ?? '')
     setEditDescription(wf.description)
     setEditPrompt(wf.prompt)
     setEditSteps(wf.steps || [])
@@ -662,6 +665,7 @@ export default function WorkflowsPage() {
           id: selected.id,
           slug: editSlug,
           name: editName,
+          chat_label: editChatLabel.trim() || null,
           description: editDescription,
           prompt: editPrompt,
           steps: editSteps,
@@ -670,7 +674,7 @@ export default function WorkflowsPage() {
       })
       if (!res.ok) throw new Error('Erreur serveur')
 
-      const updated = { ...selected, slug: editSlug, name: editName, description: editDescription, prompt: editPrompt, steps: editSteps, is_active: editActive }
+      const updated = { ...selected, slug: editSlug, name: editName, chat_label: editChatLabel.trim() || null, description: editDescription, prompt: editPrompt, steps: editSteps, is_active: editActive }
       setWorkflows(prev => prev.map(w => w.id === selected.id ? updated : w))
       setSelected(updated)
       setEditing(false)
@@ -705,6 +709,7 @@ export default function WorkflowsPage() {
         body: JSON.stringify({
           slug:        `${wf.slug}_copy_${Date.now()}`,
           name:        `${wf.name} (copie)`,
+          chat_label:  wf.chat_label ?? null,
           description: wf.description,
           prompt:      wf.prompt,
           steps:       wf.steps,
@@ -874,6 +879,17 @@ export default function WorkflowsPage() {
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  Nom dans le chat <span className="text-gray-400 font-normal">(bouton affiché dans /returns — si vide, utilise le Nom)</span>
+                </label>
+                <input
+                  value={editChatLabel}
+                  onChange={e => { setEditChatLabel(e.target.value); setEditing(true) }}
+                  placeholder={editName || 'ex: Retard — créer un dossier'}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
+                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">

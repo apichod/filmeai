@@ -275,7 +275,7 @@ function toolSummary(name: string, result: string | undefined): string | null {
 
 type Level1Key = 'retard' | 'perte' | 'vol' | 'dommage' | 'split'
 
-type ActiveWorkflow = { slug: string; name: string; description: string }
+type ActiveWorkflow = { slug: string; name: string; chat_label: string | null; description: string }
 
 type SubOption = { label: string; scenario: string; welcome: string }
 
@@ -364,7 +364,7 @@ function ChatPanel() {
   useEffect(() => {
     fetch('/api/returns/workflows')
       .then(r => r.json())
-      .then((d: { workflows?: Array<{ slug: string; name: string; description: string; is_active: boolean }> }) => {
+      .then((d: { workflows?: Array<{ slug: string; name: string; chat_label: string | null; description: string; is_active: boolean }> }) => {
         setAvailableWorkflows((d.workflows ?? []).filter(w => w.is_active))
         setWorkflowsLoaded(true)
       })
@@ -739,10 +739,11 @@ function ChatPanel() {
 
   function selectOtherWorkflow(wf: ActiveWorkflow) {
     setScenario(wf.slug)
-    setSelectedLabel(wf.name)
+    const displayName = wf.chat_label || wf.name
+    setSelectedLabel(displayName)
     const welcome = wf.description
       ? `${wf.description}\nDonnez-moi le numéro de la commande d'origine.`
-      : `Tâche : ${wf.name}.\nDonnez-moi le numéro de la commande d'origine.`
+      : `Tâche : ${displayName}.\nDonnez-moi le numéro de la commande d'origine.`
     setMessages([{ id: 'welcome', role: 'assistant', content: welcome }])
     setCaseId(null)
     setWorkflowState(null)
@@ -804,7 +805,7 @@ function ChatPanel() {
                   onClick={() => selectOtherWorkflow(wf)}
                   className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
                 >
-                  {wf.name}
+                  {wf.chat_label || wf.name}
                 </button>
               ))}
             </>
