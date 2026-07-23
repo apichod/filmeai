@@ -180,6 +180,13 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes: ['insurance'],
     // insurance = 'true' | 'false'
   },
+  check_deposit: {
+    label:  'Vérifier la caution (dépôt physique + autorisation carte)',
+    reads:  ['id'],
+    writes: ['security_deposit', 'authorisation_card'],
+    // security_deposit    = 'true' | 'false'  (deposit_in_cents > 0)
+    // authorisation_card  = 'true' | 'false'  (autorisation carte active)
+  },
   draft_email: {
     label:  'Préparer l\'email client (template)',
     reads:  [],

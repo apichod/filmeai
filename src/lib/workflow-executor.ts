@@ -384,8 +384,10 @@ export async function executeCodeStep(
         const typedRows = rows as EmailRow[]
         const emailCtx  = step.input_context ?? step.order_context ?? 'original'
         const conditions: Record<string, boolean> = {
-          insurance:      Boolean(params.insurance)       || vars[`${emailCtx}.insurance`] === 'true',
-          caution:        Boolean(params.caution)         || vars[`${emailCtx}.caution`]   === 'true',
+          insurance:      Boolean(params.insurance)       || vars[`${emailCtx}.insurance`]         === 'true',
+          caution:        Boolean(params.caution)         || vars[`${emailCtx}.security_deposit`]   === 'true'
+                                                          || vars[`${emailCtx}.caution`]            === 'true',
+          caution_card:   Boolean(params.caution_card)   || vars[`${emailCtx}.authorisation_card`] === 'true',
           amountAbove500: Boolean(params.amount_above_500),
           latePayment:    Boolean(params.late_payment),
         }
@@ -646,6 +648,102 @@ export async function executeCodeStep(
         if (!subject2 || !body2) return err('send_email : paramètres "subject" et "body" requis')
         await sendEmailViaBooqable(orderId, subject2, body2, recipient2)
         return ok({ success: true, message: `✓ Email envoyé pour ${label}` })
+      }
+
+      case 'check_deposit': {
+        // Vérifie la caution sur la commande :
+        //   1. Dépôt physique  → GET /api/4/orders/{id}  (deposit_in_cents > 0)
+        //   2. Autorisation carte → GET /api/boomerang/orders/{id}?include=payments,payments.payment_method
+        //      → cherche payment_authorizations avec status=succeeded, capturable=true, non expiré
+        if (!orderId) return err('check_deposit : order_id manquant')
+
+        const BASE4_URL      = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/4`
+        const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+        const hdrs = {
+          Authorization: `Bearer ${process.env.BOOQABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        }
+
+        // ── Appels en parallèle ────────────────────────────────────────────
+        const [depositRes, authRes] = await Promise.all([
+          fetch(`${BASE4_URL}/orders/${orderId}?fields[orders]=deposit_in_cents,deposit_paid_in_cents,deposit_type,deposit_value`, {
+            headers: hdrs, signal: AbortSignal.timeout(10000),
+          }),
+          fetch(`${BASE_BOOMERANG}/orders/${orderId}?include=payments%2Cpayments.payment_method`, {
+            headers: hdrs, signal: AbortSignal.timeout(10000),
+          }),
+        ])
+
+        // ── 1. Dépôt physique ─────────────────────────────────────────────
+        let securityDeposit  = false
+        let depositInCents   = 0
+        let depositPaidInCents = 0
+        let depositType      = ''
+        if (depositRes.ok) {
+          const depositData = await depositRes.json() as { data?: { attributes?: Record<string, unknown> } }
+          const attrs = depositData.data?.attributes ?? {}
+          depositInCents     = Number(attrs.deposit_in_cents     ?? 0)
+          depositPaidInCents = Number(attrs.deposit_paid_in_cents ?? 0)
+          depositType        = String(attrs.deposit_type         ?? '')
+          securityDeposit    = depositInCents > 0
+        } else {
+          console.warn(`[check_deposit] deposit fetch failed: ${depositRes.status}`)
+        }
+
+        // ── 2. Autorisation carte ─────────────────────────────────────────
+        let cardActive          = false
+        let cardAmountCents     = 0
+        let cardCaptureBefore   = ''
+        if (authRes.ok) {
+          const authData = await authRes.json() as {
+            included?: Array<{ type: string; attributes: Record<string, unknown> }>
+          }
+          const now = new Date()
+          for (const item of authData.included ?? []) {
+            if (item.type !== 'payment_authorizations') continue
+            const a = item.attributes
+            const captureBeforeDate = a.capture_before ? new Date(String(a.capture_before)) : null
+            const isActive =
+              a.provider_method === 'card' &&
+              a.status          === 'succeeded' &&
+              a.capturable      === true &&
+              Number(a.deposit_capturable_in_cents ?? 0) > 0 &&
+              a.canceled_at     === null &&
+              a.expired_at      === null &&
+              captureBeforeDate !== null &&
+              captureBeforeDate > now
+            if (isActive) {
+              cardActive        = true
+              cardAmountCents   = Number(a.deposit_capturable_in_cents ?? 0)
+              cardCaptureBefore = String(a.capture_before ?? '')
+              break
+            }
+          }
+        } else {
+          console.warn(`[check_deposit] auth fetch failed: ${authRes.status}`)
+        }
+
+        // ── Message de statut ─────────────────────────────────────────────
+        const depositEmoji  = securityDeposit ? '✅' : '❌'
+        const depositLabel  = securityDeposit
+          ? `OUI — ${(depositInCents / 100).toFixed(2)} € (type: ${depositType || '?'}, payé: ${(depositPaidInCents / 100).toFixed(2)} €)`
+          : 'NON'
+        const cardEmoji     = cardActive ? '✅' : '❌'
+        const cardLabel     = cardActive
+          ? `OUI — ${(cardAmountCents / 100).toFixed(2)} € (capture avant ${cardCaptureBefore.slice(0, 10)})`
+          : 'NON'
+
+        const message = [
+          `💳 Dépôt physique : ${depositEmoji} ${depositLabel}`,
+          `💳 Autorisation carte : ${cardEmoji} ${cardLabel}`,
+        ].join('\n')
+
+        return ok({
+          security_deposit:   securityDeposit   ? 'true' : 'false',
+          authorisation_card: cardActive         ? 'true' : 'false',
+          message,
+        })
       }
 
       case 'check_insurance': {
