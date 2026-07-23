@@ -30,6 +30,8 @@ const BOOQABLE_TOOLS = [
   { value: 'draft_email_booqable', label: 'draft_email_booqable — aperçu template Booqable (lecture seule)' },
   { value: 'send_email_booqable',  label: 'send_email_booqable — envoyer via template Booqable (document_id)' },
   { value: 'log_case',            label: 'log_case — logger le cas FilmeAI' },
+  { value: 'check_insurance',    label: 'check_insurance — vérifier si l\'assurance est prise sur la commande' },
+  { value: 'check_deposit',      label: 'check_deposit — vérifier la caution (dépôt physique + autorisation carte)' },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -84,6 +86,8 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email:              { reads: ['subject', 'body'], writes: [] },
   draft_email_booqable:    { reads: ['id'], writes: [] },
   send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email'], writes: [] },
+  check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
+  check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
@@ -110,6 +114,8 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   add_internal_note:       'ai',
   draft_email:             'code',
   send_email:              'code',
+  check_insurance:         'code',
+  check_deposit:           'code',
 }
 
 /** Compatibilité d'exécution par outil */
@@ -142,6 +148,8 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   draft_email_booqable:    'code',
   send_email_booqable:     'code',
   log_case:                'ai',
+  check_insurance:         'code',
+  check_deposit:           'code',
 }
 
 /** Description comportement par mode (pour les outils 'both') */
