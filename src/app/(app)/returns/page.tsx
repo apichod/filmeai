@@ -883,9 +883,6 @@ function ChatPanel() {
               Étapes {workflowState ? `${workflowState.step_index + 1}/${activeSteps.length}` : `0/${activeSteps.length}`}
             </button>
           )}
-          <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
-            Nouveau cas
-          </button>
         </div>
       </div>
 
