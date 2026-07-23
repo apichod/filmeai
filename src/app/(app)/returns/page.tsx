@@ -196,6 +196,14 @@ function toolSummary(name: string, result: string | undefined): string | null {
     }
   } catch { /* not JSON */ }
 
+  // check_insurance / check_deposit → { message: "..." } sans success
+  if (name === 'check_insurance' || name === 'check_deposit') {
+    try {
+      const d = JSON.parse(result) as { message?: string }
+      return d.message ?? null
+    } catch { return null }
+  }
+
   // create_sav_order retourne "✓ SAV order créée (numéro: XXXX) | id: ..."
   if (name === 'create_sav_order' && result.includes('numéro:')) {
     const m = result.match(/numéro:\s*(\S+)\)/)
@@ -1115,7 +1123,7 @@ function ChatPanel() {
                       <span className="font-medium">✅ Cas terminé !</span>
                       <a
                         href="/returns"
-                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 underline"
+                        className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
                       >
                         ↩ Retour au sommaire
                       </a>
