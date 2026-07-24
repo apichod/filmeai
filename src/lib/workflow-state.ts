@@ -531,6 +531,63 @@ CONSIGNE : Affiche la liste ci-dessus (format : "Qty x Produit ID-X"), puis dema
 N'appelle AUCUN outil. Attends la réponse tapée par l'opérateur.${context}`
     }
 
+    // ── Cas spécial : log_case → mapping explicite des vars sur les paramètres ──
+    if (step.booqable_action === 'log_case') {
+      const toolArgs = buildToolArgs(step, vars)
+      const v = vars
+
+      const insurance       = v['return.insurance']        ?? v['original.insurance']        ?? ''
+      const caution         = v['return.authorisation_card'] ?? v['original.authorisation_card'] ?? ''
+      const secDeposit      = v['return.security_deposit']  ?? v['original.security_deposit']  ?? ''
+      const grandTotal      = v['return.grand_total_euros'] ?? ''
+      const invoiceNum      = v['return.invoice_number']    ?? ''
+      const stripeCharge    = v['return.stripe_charge_id']  ?? ''
+      const capturedCents   = v['return.captured_amount']   ?? ''
+      const paymentChargeId = v['return.payment_charge_id'] ?? ''
+      const checkoutUrl     = v['return.checkout_url']      ?? ''
+      const origNumber      = v['original.number']          ?? ''
+      const origId          = v['original.id']              ?? ''
+      const returnId        = v['return.id']                ?? ''
+
+      const stripeAmountEuros = capturedCents ? (parseFloat(capturedCents) / 100).toFixed(2) : ''
+
+      const casLabel = `${insurance === 'true' ? 'I' : 'NI'} ${caution === 'true' ? 'D' : 'ND'}`
+
+      const varsSummary = [
+        `  origin_order       → "${origNumber}"  (original.number)`,
+        `  origin_order_id    → "${origId}"  (original.id)`,
+        `  sav_order_id       → "${returnId}"  (return.id)`,
+        `  metadata.insurance          → ${insurance} (return.insurance)`,
+        `  metadata.caution            → ${caution} (return.authorisation_card)`,
+        `  metadata.security_deposit   → ${secDeposit} (return.security_deposit)`,
+        grandTotal      ? `  metadata.grand_total_euros  → ${grandTotal}` : '',
+        invoiceNum      ? `  metadata.invoice_number     → "${invoiceNum}"` : '',
+        stripeCharge    ? `  metadata.stripe_charged     → true` : `  metadata.stripe_charged     → false`,
+        stripeCharge    ? `  metadata.stripe_charge_id   → "${stripeCharge}"` : '',
+        stripeAmountEuros ? `  metadata.stripe_amount_euros → ${stripeAmountEuros}` : '',
+        checkoutUrl     ? `  metadata.payment_link_created → true` : `  metadata.payment_link_created → false`,
+        checkoutUrl     ? `  metadata.checkout_url       → "${checkoutUrl}"` : '',
+        `  metadata.cas                → "${casLabel}"`,
+      ].filter(Boolean).join('\n')
+
+      return `══════════════════════════════════════════
+ÉTAPE ${stepIndex + 1}/${totalSteps} — ACTION : ${step.title}
+${orderRef}
+══════════════════════════════════════════
+Appelle UNIQUEMENT l'outil "log_case" en utilisant EXACTEMENT ces valeurs :
+
+${varsSummary}
+
+Paramètres injectés par le système :
+${JSON.stringify(toolArgs, null, 2)}
+
+INTERDIT ABSOLU :
+- N'émets AUCUN texte (ni avant ni après l'appel outil).
+- N'appelle pas d'autres outils que "log_case".
+- Ne pose pas de questions, ne résume pas, ne fais pas de commentaires.
+- Utilise les valeurs ci-dessus telles quelles — ne les invente pas.${context}`
+    }
+
     const toolArgs   = buildToolArgs(step, vars)
     const ctx = step.order_context ?? 'parent'
     const chosenTag = vars[`${ctx}.sav_tag`]
