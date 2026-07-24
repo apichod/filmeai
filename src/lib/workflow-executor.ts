@@ -892,9 +892,23 @@ export async function executeCodeStep(
         if (!amountEuros || amountEuros <= 0) return err('capture_stripe_deposit : amount_euros manquant ou invalide')
         const amountCents = Math.round(amountEuros * 100)
 
-        const descriptionParam = params.description ? String(params.description) : undefined
-        const savOrderNumber   = params.sav_order_number ? String(params.sav_order_number) : undefined
-        const reason           = params.reason ? String(params.reason) : undefined
+        // Numéro de commande depuis order_context (commande SAV courante)
+        const orderCtx        = step.order_context ?? 'sav'
+        const orderNumberAuto = vars[`${orderCtx}.number`] ?? ''
+
+        // Description : paramètre explicite > auto depuis order_context ("Order #xxxx")
+        const descriptionParam = params.description
+          ? String(params.description)
+          : orderNumberAuto
+            ? `Order #${orderNumberAuto}`
+            : undefined
+
+        // sav_order_number : paramètre explicite > order_context
+        const savOrderNumber = params.sav_order_number
+          ? String(params.sav_order_number)
+          : orderNumberAuto || undefined
+
+        const reason = params.reason ? String(params.reason) : undefined
 
         const metadata: Record<string, string> = {}
         if (savOrderNumber) metadata['sav_order'] = savOrderNumber
