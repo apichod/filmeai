@@ -32,6 +32,8 @@ import {
   setLineReplacementPrice,
   removeOrderDiscount,
   finalizeInvoice,
+  renderBooqableEmailTemplateWithInvoice,
+  sendEmailWithInvoiceViaBooqable,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -506,6 +508,52 @@ export async function executeCodeStep(
         // Envoie avec customer_id + document_ids pour l'historique Booqable
         await sendEmailViaBooqable(orderId, rendered.subject, rendered.body, recipientEmail, customerId, emailTemplateId)
         return ok({ success: true, message: `✓ Email template envoyé pour ${label}` })
+      }
+
+      case 'draft_email_with_invoice_booqable': {
+        // Comme draft_email_booqable mais inclut document_id (facture) dans le rendu
+        const emailTemplateId = String(params.document_id ?? '')
+        if (!emailTemplateId) return err('draft_email_with_invoice_booqable : document_id (email_template_id) manquant')
+        if (!orderId)         return err('draft_email_with_invoice_booqable : order_id manquant')
+        const inputCtx   = step.input_context ?? step.order_context ?? 'return'
+        const invoiceDocId = String(vars[`${inputCtx}.document_id`] ?? params.invoice_document_id ?? '')
+        if (!invoiceDocId) return err('draft_email_with_invoice_booqable : document_id facture introuvable dans vars — exécutez finalize_invoice avant')
+        const rendered = await renderBooqableEmailTemplateWithInvoice(emailTemplateId, orderId, invoiceDocId)
+        if (!rendered) return err(`draft_email_with_invoice_booqable : rendu template ${emailTemplateId} échoué`)
+        return ok({
+          __type__:           'email_preview',
+          document_id:        emailTemplateId,
+          active_document_id: emailTemplateId,
+          name:               emailTemplateId,
+          subject:            rendered.subject,
+          body:               rendered.body,
+        })
+      }
+
+      case 'send_email_with_invoice_booqable': {
+        // Comme send_email_booqable mais joint la facture (document_ids)
+        if (!orderId) return err('send_email_with_invoice_booqable : order_id manquant')
+        const inputCtx      = step.input_context ?? step.order_context ?? 'return'
+        const emailTemplateId = String(vars[`${inputCtx}.active_document_id`] ?? params.document_id ?? '')
+        if (!emailTemplateId) return err('send_email_with_invoice_booqable : template manquant — exécutez draft_email_with_invoice_booqable avant')
+        const invoiceDocId = String(vars[`${inputCtx}.document_id`] ?? params.invoice_document_id ?? '')
+        if (!invoiceDocId) return err('send_email_with_invoice_booqable : document_id facture introuvable — exécutez finalize_invoice avant')
+
+        let customerId     = String(vars[`${inputCtx}.customer_id`]    ?? '')
+        let recipientEmail = String(vars[`${inputCtx}.customer_email`] ?? '')
+        if (!customerId || !recipientEmail) {
+          const fetchedOrder = await fetchOrderById(orderId)
+          if (!customerId)     customerId    = fetchedOrder?.customer_id ?? ''
+          if (!recipientEmail) recipientEmail = fetchedOrder?.customer?.email ?? ''
+        }
+        if (!customerId)     return err('send_email_with_invoice_booqable : customer_id introuvable')
+        if (!recipientEmail) return err('send_email_with_invoice_booqable : email client introuvable')
+
+        const rendered = await renderBooqableEmailTemplateWithInvoice(emailTemplateId, orderId, invoiceDocId)
+        if (!rendered) return err(`send_email_with_invoice_booqable : rendu template ${emailTemplateId} échoué`)
+
+        await sendEmailWithInvoiceViaBooqable(orderId, rendered.subject, rendered.body, recipientEmail, customerId, emailTemplateId, invoiceDocId)
+        return ok({ success: true, message: `✓ Email avec facture envoyé pour ${label}` })
       }
 
       case 'add_missing_lines': {

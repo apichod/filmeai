@@ -34,7 +34,9 @@ const BOOQABLE_TOOLS = [
   { value: 'check_deposit',      label: 'check_deposit — vérifier la caution (dépôt physique + autorisation carte)' },
   { value: 'set_replacement_price', label: 'set_replacement_price — fixer le prix de remplacement d\'une ligne' },
   { value: 'remove_discount',       label: 'remove_discount — supprimer la remise de la commande' },
-  { value: 'finalize_invoice',      label: 'finalize_invoice — finaliser la facture de la commande' },
+  { value: 'finalize_invoice',               label: 'finalize_invoice — finaliser la facture de la commande' },
+  { value: 'draft_email_with_invoice_booqable', label: 'draft_email_with_invoice_booqable — aperçu template + facture jointe' },
+  { value: 'send_email_with_invoice_booqable',  label: 'send_email_with_invoice_booqable — envoyer email avec facture en pièce jointe' },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -93,7 +95,9 @@ const TOOL_IO: Record<string, ToolIO> = {
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
   check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
   remove_discount:         { reads: ['id'],              writes: [] },
-  finalize_invoice:        { reads: ['id'],              writes: ['document_id', 'invoice_number'] },
+  finalize_invoice:                   { reads: ['id'],                                                       writes: ['document_id', 'invoice_number'] },
+  draft_email_with_invoice_booqable:  { reads: ['id', 'document_id'],                                        writes: ['active_document_id'] },
+  send_email_with_invoice_booqable:   { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
   set_replacement_price:   { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
 }
 
@@ -124,8 +128,10 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   check_insurance:         'code',
   check_deposit:           'code',
   remove_discount:         'code',
-  finalize_invoice:        'code',
-  set_replacement_price:   'ai',   // l'IA demande le prix à l'utilisateur ligne par ligne
+  finalize_invoice:                  'code',
+  draft_email_with_invoice_booqable: 'code',
+  send_email_with_invoice_booqable:  'code',
+  set_replacement_price:             'ai',
 }
 
 /** Compatibilité d'exécution par outil */
@@ -161,8 +167,10 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   check_insurance:         'code',
   check_deposit:           'code',
   remove_discount:         'code',
-  finalize_invoice:        'code',
-  set_replacement_price:   'ai',
+  finalize_invoice:                  'code',
+  draft_email_with_invoice_booqable: 'code',
+  send_email_with_invoice_booqable:  'code',
+  set_replacement_price:             'ai',
 }
 
 /** Description comportement par mode (pour les outils 'both') */

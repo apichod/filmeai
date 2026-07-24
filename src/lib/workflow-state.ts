@@ -140,6 +140,16 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: ['document_id', 'invoice_number'],
   },
+  draft_email_with_invoice_booqable: {
+    label:  'Aperçu template Booqable avec facture jointe',
+    reads:  ['id', 'document_id'],
+    writes: ['active_document_id'],
+  },
+  send_email_with_invoice_booqable: {
+    label:  'Envoyer email Booqable avec facture en pièce jointe',
+    reads:  ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'],
+    writes: [],
+  },
   set_replacement_price: {
     label:  'Fixer le prix de remplacement d\'une ligne',
     reads:  ['id', 'lines'],

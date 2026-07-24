@@ -1861,6 +1861,77 @@ export async function stopOrder(orderId: string): Promise<void> {
   throw new Error(`Booqable stopOrder error ${r2.status}: ${r2.text}`)
 }
 
+// ── renderBooqableEmailTemplateWithInvoice ────────────────────────────────────
+// Comme renderBooqableEmailTemplate mais inclut document_id (facture) dans le rendu.
+export async function renderBooqableEmailTemplateWithInvoice(
+  emailTemplateId: string,
+  orderId: string,
+  documentId: string,
+): Promise<{ subject: string; body: string } | null> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(`${BASE_BOOMERANG}/rendered_emails`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'rendered_emails',
+        attributes: {
+          order_id:          orderId,
+          email_template_id: emailTemplateId,
+          document_id:       documentId,
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    console.error(`[renderBooqableEmailTemplateWithInvoice] error ${res.status}: ${text}`)
+    return null
+  }
+  const data = await res.json() as { data?: { attributes?: { subject?: string; body?: string } } }
+  const attrs = data.data?.attributes
+  if (!attrs) return null
+  return { subject: String(attrs.subject ?? ''), body: String(attrs.body ?? '') }
+}
+
+// ── sendEmailWithInvoiceViaBooqable ───────────────────────────────────────────
+// Envoie un email via Booqable avec la facture en pièce jointe (document_ids).
+export async function sendEmailWithInvoiceViaBooqable(
+  orderId: string,
+  subject: string,
+  body: string,
+  recipientEmail: string,
+  customerId: string,
+  emailTemplateId: string,
+  invoiceDocumentId: string,
+): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(`${BASE_BOOMERANG}/emails`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'emails',
+        attributes: {
+          order_id:          orderId,
+          subject,
+          body,
+          recipients:        recipientEmail,
+          customer_id:       customerId,
+          email_template_id: emailTemplateId,
+          document_ids:      [invoiceDocumentId],
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`sendEmailWithInvoiceViaBooqable error ${res.status}: ${text}`)
+  }
+}
+
 // ── renderBooqableEmailTemplate ───────────────────────────────────────────────
 // Appelle /api/boomerang/rendered_emails : Booqable résout toutes les {{variables}}
 // côté serveur et retourne le subject + body finaux prêts à l'envoi.
