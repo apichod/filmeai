@@ -37,6 +37,7 @@ const BOOQABLE_TOOLS = [
   { value: 'finalize_invoice',               label: 'finalize_invoice — finaliser la facture de la commande' },
   { value: 'draft_email_with_invoice_booqable', label: 'draft_email_with_invoice_booqable — aperçu template + facture jointe' },
   { value: 'send_email_with_invoice_booqable',  label: 'send_email_with_invoice_booqable — envoyer email avec facture en pièce jointe' },
+  { value: 'capture_stripe_deposit',            label: 'capture_stripe_deposit — débiter l\'autorisation bancaire Stripe (caution)' },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -98,7 +99,8 @@ const TOOL_IO: Record<string, ToolIO> = {
   finalize_invoice:                   { reads: ['id'],                                                       writes: ['document_id', 'invoice_number'] },
   draft_email_with_invoice_booqable:  { reads: ['id', 'document_id'],                                        writes: ['active_document_id'] },
   send_email_with_invoice_booqable:   { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
-  set_replacement_price:   { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
+  set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
+  capture_stripe_deposit:   { reads: ['provider_id'],    writes: ['stripe_charge_id', 'captured_amount'] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
@@ -132,6 +134,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   draft_email_with_invoice_booqable: 'code',
   send_email_with_invoice_booqable:  'code',
   set_replacement_price:             'ai',
+  capture_stripe_deposit:            'code',
 }
 
 /** Compatibilité d'exécution par outil */
@@ -171,6 +174,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   draft_email_with_invoice_booqable: 'code',
   send_email_with_invoice_booqable:  'code',
   set_replacement_price:             'ai',
+  capture_stripe_deposit:            'code',
 }
 
 /** Description comportement par mode (pour les outils 'both') */

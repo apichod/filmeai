@@ -34,6 +34,7 @@ import {
   finalizeInvoice,
   renderBooqableEmailTemplateWithInvoice,
   sendEmailWithInvoiceViaBooqable,
+  captureStripeDeposit,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -871,6 +872,46 @@ export async function executeCodeStep(
         return ok({
           insurance: insuranceStr,
           message:   `${statusEmoji} Assurance : ${statusLabel} (commande ${label})`,
+        })
+      }
+
+      case 'capture_stripe_deposit': {
+        // Capture une autorisation bancaire Stripe (PaymentIntent en requires_capture).
+        // Lit provider_id depuis les vars (écrit par check_deposit).
+        // Params :
+        //   amount_euros    (requis) – montant à capturer
+        //   description     (optionnel) – libellé Stripe (ex: "SAV #9412 – caution #9396")
+        //   sav_order_number (optionnel) – ajouté en metadata
+        //   reason           (optionnel) – ex: "damage", "theft", "late" – ajouté en metadata
+
+        const inputCtx    = step.input_context ?? 'original'
+        const providerId  = vars[`${inputCtx}.provider_id`] ?? ''
+        if (!providerId) return err('capture_stripe_deposit : provider_id manquant — exécuter check_deposit avant')
+
+        const amountEuros = parseFloat(String(params.amount_euros ?? '0'))
+        if (!amountEuros || amountEuros <= 0) return err('capture_stripe_deposit : amount_euros manquant ou invalide')
+        const amountCents = Math.round(amountEuros * 100)
+
+        const descriptionParam = params.description ? String(params.description) : undefined
+        const savOrderNumber   = params.sav_order_number ? String(params.sav_order_number) : undefined
+        const reason           = params.reason ? String(params.reason) : undefined
+
+        const metadata: Record<string, string> = {}
+        if (savOrderNumber) metadata['sav_order'] = savOrderNumber
+        if (reason)         metadata['reason']     = reason
+
+        const { chargeId, amountCaptured } = await captureStripeDeposit({
+          providerId,
+          amountCents,
+          description: descriptionParam,
+          metadata:    Object.keys(metadata).length > 0 ? metadata : undefined,
+        })
+
+        const amountFormatted = (amountCaptured / 100).toFixed(2)
+        return ok({
+          stripe_charge_id: chargeId,
+          captured_amount:  String(amountCaptured),
+          message: `✅ Caution capturée : ${amountFormatted} € — charge Stripe : ${chargeId}`,
         })
       }
 

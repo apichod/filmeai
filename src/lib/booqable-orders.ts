@@ -1624,6 +1624,73 @@ export async function removeOrderDiscount(orderId: string): Promise<void> {
   }
 }
 
+// ── captureStripeDeposit ──────────────────────────────────────────────────────
+// Capture (débite) une autorisation bancaire Stripe (PaymentIntent en requires_capture).
+// Optionnellement met à jour la description et les métadonnées avant la capture.
+export async function captureStripeDeposit(opts: {
+  providerId:      string            // pi_xxx
+  amountCents:     number            // montant à capturer en centimes
+  description?:    string            // libellé Stripe (ex: "SAV #9412 – caution #9396")
+  metadata?:       Record<string, string>
+}): Promise<{ chargeId: string; amountCaptured: number }> {
+  const { providerId, amountCents, description, metadata } = opts
+  const STRIPE_KEY = process.env.STRIPE_SECRET_KEY
+  if (!STRIPE_KEY) throw new Error('STRIPE_SECRET_KEY manquant dans les variables d\'environnement')
+
+  const stripeHeaders = {
+    'Authorization': `Bearer ${STRIPE_KEY}`,
+    'Content-Type':  'application/x-www-form-urlencoded',
+  }
+
+  // 1. Mise à jour optionnelle de la description / métadonnées
+  if (description || metadata) {
+    const updateBody = new URLSearchParams()
+    if (description) updateBody.set('description', description)
+    if (metadata) {
+      for (const [k, v] of Object.entries(metadata)) {
+        updateBody.set(`metadata[${k}]`, v)
+      }
+    }
+    const updateRes = await fetch(`https://api.stripe.com/v1/payment_intents/${providerId}`, {
+      method:  'POST',
+      headers: stripeHeaders,
+      body:    updateBody.toString(),
+      signal:  AbortSignal.timeout(10000),
+    })
+    if (!updateRes.ok) {
+      const text = await updateRes.text()
+      throw new Error(`captureStripeDeposit update error ${updateRes.status}: ${text}`)
+    }
+  }
+
+  // 2. Capture
+  const captureBody = new URLSearchParams()
+  captureBody.set('amount_to_capture', String(amountCents))
+
+  const captureRes = await fetch(`https://api.stripe.com/v1/payment_intents/${providerId}/capture`, {
+    method:  'POST',
+    headers: stripeHeaders,
+    body:    captureBody.toString(),
+    signal:  AbortSignal.timeout(15000),
+  })
+  if (!captureRes.ok) {
+    const text = await captureRes.text()
+    throw new Error(`captureStripeDeposit capture error ${captureRes.status}: ${text}`)
+  }
+
+  const data = await captureRes.json() as {
+    id:     string
+    status: string
+    latest_charge?: string
+    amount_received?: number
+  }
+
+  return {
+    chargeId:      data.latest_charge ?? data.id,
+    amountCaptured: data.amount_received ?? amountCents,
+  }
+}
+
 // ── removeProductLine ─────────────────────────────────────────────────────────
 // Supprime une ligne d'une commande par son ID de ligne.
 export async function removeProductLine(lineId: string): Promise<void> {

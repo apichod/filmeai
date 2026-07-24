@@ -215,6 +215,14 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // payment_authorization_id   = UUID Booqable de l'autorisation (pour capture Stripe)
     // provider_id                = ID Stripe (payment_intent) — pour débiter directement
   },
+  capture_stripe_deposit: {
+    label:  'Capturer la caution Stripe (débiter l\'autorisation bancaire)',
+    reads:  ['provider_id'],
+    writes: ['stripe_charge_id', 'captured_amount'],
+    // provider_id      = pi_xxx (lu depuis le contexte de la commande d'origine)
+    // stripe_charge_id = ch_xxx (ID de la charge Stripe créée)
+    // captured_amount  = montant capturé en centimes
+  },
   draft_email: {
     label:  'Préparer l\'email client (template)',
     reads:  [],
