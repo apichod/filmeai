@@ -18,6 +18,7 @@ type WorkflowStep = {
   booqable_action?: string
   order_context?: string
   parameters?: Record<string, unknown>
+  condition?: string
 }
 
 type StreamEvent =
@@ -945,6 +946,12 @@ function ChatPanel() {
                       {step.order_context && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${stepContextColor(step.order_context)}`}>
                           {step.order_context}
+                        </span>
+                      )}
+                      {/* condition */}
+                      {step.condition && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-600 border-amber-200 font-mono">
+                          if {step.condition}
                         </span>
                       )}
                     </div>

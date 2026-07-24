@@ -48,6 +48,7 @@ type WorkflowStep = {
   output_context?: 'parent' | 'child' | 'original' | 'return'
   execution?: 'code' | 'ai'
   variable?: string
+  condition?: string
 }
 
 // ── Registre I/O des outils (pour affichage éditeur) ──────────────────────────
@@ -472,6 +473,28 @@ function StepList({
                 </div>
               )
             })()}
+          </div>
+
+          {/* condition — optionnelle, step sauté si non satisfaite */}
+          <div className="pl-7">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-400 shrink-0">Condition</label>
+              <input
+                value={step.condition ?? ''}
+                onChange={e => updateStep(idx, { condition: e.target.value || undefined })}
+                placeholder="ex: original.insurance == 'true' AND original.security_deposit == 'true'"
+                className={`flex-1 border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-amber-300 ${
+                  step.condition
+                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                    : 'border-gray-200 bg-white text-gray-400'
+                }`}
+              />
+            </div>
+            {step.condition && (
+              <p className="mt-0.5 ml-[4.5rem] text-[10px] text-amber-600">
+                ⚡ Step sauté si condition fausse — variables disponibles : <span className="font-mono">original.insurance</span>, <span className="font-mono">original.security_deposit</span>, <span className="font-mono">original.authorisation_card</span>
+              </p>
+            )}
           </div>
 
           {/* execution — mode d'exécution */}

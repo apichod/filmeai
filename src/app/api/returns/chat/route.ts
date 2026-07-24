@@ -6,6 +6,7 @@ import {
   buildToolArgs,
   extractVarsFromResult,
   advanceStep,
+  evaluateCondition,
   type WorkflowStep,
   type WorkflowState,
 } from '@/lib/workflow-state'
@@ -1378,6 +1379,12 @@ Affiche les {{...}} littéralement, toujours.`
             const codeStep = activeSteps[wfState.step_index] as WorkflowStep
             if (codeStep.execution !== 'code' && codeStep.type !== 'instruction') break
 
+            // ── Condition : si non satisfaite, on saute ce step silencieusement ──
+            if (!evaluateCondition(codeStep.condition, wfState.vars)) {
+              wfState = advanceStep(wfState, activeSteps.length)
+              continue
+            }
+
             codeStepRan = true
             const toolName    = codeStep.booqable_action ?? 'code_step'
             const displayName = codeStep.title ?? toolName
@@ -1697,6 +1704,13 @@ Affiche les {{...}} littéralement, toujours.`
             while (wfState.status === 'running' && wfState.step_index < activeSteps.length) {
               const postCodeStep = activeSteps[wfState.step_index] as WorkflowStep
               if (postCodeStep.execution !== 'code' && postCodeStep.type !== 'instruction') break
+
+              // ── Condition : si non satisfaite, on saute ce step silencieusement ──
+              if (!evaluateCondition(postCodeStep.condition, wfState.vars)) {
+                wfState = advanceStep(wfState, activeSteps.length)
+                continue
+              }
+
               const codeId   = `code_post_${codeTs}_${codeSeq++}`
               const codeArgs = buildToolArgs(postCodeStep, wfState.vars)
               const postDisplayName = postCodeStep.title ?? postCodeStep.booqable_action ?? 'code_step'

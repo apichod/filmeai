@@ -39,6 +39,7 @@ export type WorkflowStep = {
   order_context?:  OrderContext   // target order : commande Booqable ciblée (injecte l'order_id)
   output_context?: OrderContext   // destination  : préfixe des vars écrites (défaut: order_context)
   execution?:      'code' | 'ai'
+  condition?:      string         // ex: "original.insurance == 'true' AND original.security_deposit == 'true'"
 }
 
 // ── Registre des outils ───────────────────────────────────────────────────────
@@ -214,6 +215,38 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['selected_ids', 'lines'],
     writes: ['kept_product_names', 'sav_tag'],
   },
+}
+
+// ── Évaluateur de conditions ──────────────────────────────────────────────────
+//
+// Syntaxe supportée :
+//   "original.insurance == 'true'"
+//   "original.security_deposit != 'false'"
+//   "original.insurance == 'true' AND original.security_deposit == 'true'"
+//   "original.insurance == 'true' OR original.authorisation_card == 'true'"
+//
+// Si la condition est vide ou undefined → true (step exécuté normalement).
+
+export function evaluateCondition(condition: string | undefined, vars: WorkflowVars): boolean {
+  if (!condition || condition.trim() === '') return true
+
+  // Découpe en clauses AND (priorité supérieure à OR)
+  const orClauses = condition.split(/\bOR\b/i)
+  return orClauses.some(orClause => {
+    const andClauses = orClause.split(/\bAND\b/i)
+    return andClauses.every(clause => evaluateSingleClause(clause.trim(), vars))
+  })
+}
+
+function evaluateSingleClause(clause: string, vars: WorkflowVars): boolean {
+  // Format: "{varname} {op} '{value}'" ou "{varname} {op} {value}"
+  const m = clause.match(/^([\w.]+)\s*(==|!=)\s*'?([^']*)'?$/)
+  if (!m) return true // clause non parseable → on ne bloque pas
+  const [, varName, op, expected] = m
+  const actual = vars[varName] ?? ''
+  if (op === '==') return actual === expected
+  if (op === '!=') return actual !== expected
+  return true
 }
 
 // ── Supabase CRUD ─────────────────────────────────────────────────────────────
