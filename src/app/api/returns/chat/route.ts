@@ -318,15 +318,16 @@ function buildTools(
     type: 'function',
     function: {
       name: 'set_replacement_price',
-      description: 'Fixe le prix de remplacement d\'une ligne Booqable. Demander le prix à l\'utilisateur pour chaque article cassé, puis appeler ce tool une fois par ligne.',
+      description: 'Fixe le prix de remplacement d\'une ligne Booqable. Demander le prix à l\'utilisateur pour chaque article, puis appeler ce tool une fois par ligne.',
       parameters: {
         type: 'object',
         properties: {
           line_id:      { type: 'string', description: 'UUID de la ligne Booqable (champ "line_id" dans les lignes de fetch_order)' },
+          product_name: { type: 'string', description: 'Nom de l\'article (champ "product_name" dans les lignes de fetch_order)' },
           price_euros:  { type: 'number', description: 'Prix de remplacement en euros (ex: 45 pour 45€)' },
           charge_label: { type: 'string', description: 'Libellé de la ligne (défaut : "Prix de remplacement")' },
         },
-        required: ['line_id', 'price_euros'],
+        required: ['line_id', 'product_name', 'price_euros'],
       },
     },
   },
@@ -1129,6 +1130,9 @@ Affiche les {{...}} littéralement, toujours.`
   // État courant : envoyé par le client, ou initialisation à l'étape 0
   let wfState: WorkflowState = clientWorkflowState ?? { step_index: 0, vars: {}, status: 'running' }
 
+  // Accumulateur pour set_replacement_price → construit kept_product_names après le step AI
+  const replacementLines: string[] = []
+
   // Si on attendait une réponse → capturer le choix/confirmation et avancer
   if (activeSteps.length > 0 && wfState.status === 'waiting_for_input') {
     const leavingStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
@@ -1359,6 +1363,12 @@ Affiche les {{...}} littéralement, toujours.`
               }
             }
           }
+          // set_replacement_price → flush kept_product_names dans vars
+          if (leavingStep2?.booqable_action === 'set_replacement_price' && replacementLines.length > 0) {
+            const ctx2 = leavingStep2.output_context ?? leavingStep2.order_context ?? 'return'
+            wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.kept_product_names`]: replacementLines.join('\n') } }
+          }
+
           wfState = advanceStep(wfState, activeSteps.length)
         }
 
@@ -1658,6 +1668,11 @@ Affiche les {{...}} littéralement, toujours.`
 
             const { result, caseId: newCaseId } = await executeTool(entry.name, args)
             if (newCaseId) currentCaseId = newCaseId
+
+            // Accumulation set_replacement_price → kept_product_names
+            if (entry.name === 'set_replacement_price' && args.product_name && args.price_euros) {
+              replacementLines.push(`${String(args.product_name)} : ${Number(args.price_euros)}€`)
+            }
 
             // ── Mise à jour de l'état workflow ──────────────────────────────
             if (activeSteps.length > 0) {

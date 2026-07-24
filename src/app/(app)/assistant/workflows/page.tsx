@@ -92,7 +92,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
   check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
   remove_discount:         { reads: ['id'],              writes: [] },
-  set_replacement_price:   { reads: ['id', 'lines'],    writes: [] },  // l'IA lit les lignes pour demander le prix de chaque article
+  set_replacement_price:   { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
