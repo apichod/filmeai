@@ -65,13 +65,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'],
   },
   fetch_original_from_field: {
-    label:  'Charger la commande originale depuis un champ custom (ex: order_sav)',
+    label:  'Résoudre l\'ID d\'une commande liée via un champ custom (ex: order_sav)',
     reads:  ['id'],
-    writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'],
-    // order_context:  commande de retour (ex: 'return') contenant le champ custom
-    // output_context: contexte de destination (ex: 'original') → écrit original.id, original.number…
+    writes: ['id'],
+    // order_context:  commande source contenant le champ custom (ex: 'return')
+    // output_context: commande cible (ex: 'original') → écrit original.id
     // Param optionnel : field_name (défaut: 'order_sav')
-    // Après ce module, check_insurance / check_deposit peuvent utiliser order_context: 'original'
   },
   duplicate_order: {
     label:       'Dupliquer une commande',

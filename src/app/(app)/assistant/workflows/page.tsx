@@ -71,7 +71,7 @@ const NO_TARGET_ORDER = new Set(['create_new_return_order'])
 
 const TOOL_IO: Record<string, ToolIO> = {
   fetch_order:                  { reads: ['id'],  writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'] },
-  fetch_original_from_field:    { reads: ['id'],  writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'] },
+  fetch_original_from_field:    { reads: ['id'],  writes: ['id'] },
   duplicate_order:         { reads: ['id'],           writes: ['id', 'number'], outputCtx: 'child' },
   revert_to_concept:       { reads: ['id'],           writes: [] },
   clear_tags:              { reads: ['id'],           writes: [] },
