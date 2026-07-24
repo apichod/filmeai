@@ -676,6 +676,7 @@ export default function WorkflowsPage() {
       if (s.output_context)  step.output_context  = s.output_context
       if (s.booqable_action) step.booqable_action  = s.booqable_action
       if (s.parameters && Object.keys(s.parameters).length > 0) step.parameters = s.parameters
+      if (s.condition)  step.condition = s.condition
       return step
     })
     return JSON.stringify({
