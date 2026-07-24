@@ -237,10 +237,10 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // provider_id       = pi_xxx (depuis read_stripe_deposit, output_context: return)
     // grand_total_euros = total TTC (depuis fetch_order_amount, order_context: return)
     // number            = numéro de commande return (pour la description Stripe)
-    writes: ['stripe_charge_id', 'captured_amount'],
-    // provider_id      = pi_xxx (lu depuis le contexte de la commande d'origine)
-    // stripe_charge_id = ch_xxx (ID de la charge Stripe créée)
-    // captured_amount  = montant capturé en centimes
+    writes: ['stripe_charge_id', 'payment_charge_id', 'captured_amount'],
+    // stripe_charge_id  = ch_xxx (charge Stripe créée)
+    // payment_charge_id = UUID du paiement manuel enregistré dans Booqable (order_context)
+    // captured_amount   = montant capturé en centimes
   },
   draft_email: {
     label:  'Préparer l\'email client (template)',

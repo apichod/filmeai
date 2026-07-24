@@ -1624,6 +1624,40 @@ export async function removeOrderDiscount(orderId: string): Promise<void> {
   }
 }
 
+// ── createManualPaymentCharge ─────────────────────────────────────────────────
+// Enregistre un paiement manuel dans Booqable sur une commande donnée.
+// Utilisé après une capture Stripe directe pour garder Booqable en sync.
+export async function createManualPaymentCharge(opts: {
+  orderId:      string
+  amountCents:  number
+  succeededAt?: string   // ISO 8601 — défaut : maintenant
+}): Promise<{ paymentChargeId: string }> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const succeededAt = opts.succeededAt ?? new Date().toISOString()
+  const body = {
+    payment_charge: {
+      mode:             'manual',
+      order_id:         opts.orderId,
+      amount_in_cents:  opts.amountCents,
+      deposit_in_cents: 0,
+      provider_method:  'other',
+      succeeded_at:     succeededAt,
+    },
+  }
+  const res = await fetch(`${BASE_BOOMERANG}/payment_charges`, {
+    method:  'POST',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+    signal:  AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`createManualPaymentCharge error ${res.status}: ${text}`)
+  }
+  const data = await res.json() as { data?: { id: string } }
+  return { paymentChargeId: data.data?.id ?? '' }
+}
+
 // ── fetchOrderAmount ──────────────────────────────────────────────────────────
 // Récupère le total TTC (grand_total_in_cents) d'une commande Booqable.
 export async function fetchOrderAmount(orderId: string): Promise<{

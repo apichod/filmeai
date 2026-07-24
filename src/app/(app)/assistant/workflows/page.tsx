@@ -104,7 +104,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email_with_invoice_booqable:   { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
   set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
   fetch_order_amount:        { reads: ['id'],                                        writes: ['grand_total_euros', 'price_euros', 'deposit_euros'] },
-  capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'captured_amount'] },
+  capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'payment_charge_id', 'captured_amount'] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */

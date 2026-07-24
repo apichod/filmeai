@@ -36,6 +36,7 @@ import {
   sendEmailWithInvoiceViaBooqable,
   captureStripeDeposit,
   fetchOrderAmount,
+  createManualPaymentCharge,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -964,11 +965,19 @@ export async function executeCodeStep(
           metadata:    Object.keys(metadata).length > 0 ? metadata : undefined,
         })
 
+        // Enregistrement du paiement manuel dans Booqable (order_context)
+        if (!orderId) return err('capture_stripe_deposit : order_id manquant pour le paiement manuel Booqable')
+        const { paymentChargeId } = await createManualPaymentCharge({
+          orderId,
+          amountCents: amountCaptured,
+        })
+
         const amountFormatted = (amountCaptured / 100).toFixed(2)
         return ok({
-          stripe_charge_id: chargeId,
-          captured_amount:  String(amountCaptured),
-          message: `✅ Caution capturée : ${amountFormatted} € — charge Stripe : ${chargeId}`,
+          stripe_charge_id:   chargeId,
+          payment_charge_id:  paymentChargeId,
+          captured_amount:    String(amountCaptured),
+          message: `✅ Caution capturée : ${amountFormatted} € — Stripe : ${chargeId} — Booqable : ${paymentChargeId}`,
         })
       }
 
