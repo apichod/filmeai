@@ -1429,8 +1429,11 @@ Affiche les {{...}} littéralement, toujours.`
             const codeStep = activeSteps[wfState.step_index] as WorkflowStep
             if (codeStep.execution !== 'code' && codeStep.type !== 'instruction') break
 
-            // ── Condition : si non satisfaite, on saute ce step silencieusement ──
+            // ── Condition : si non satisfaite, on log le skip et on saute ──
             if (!evaluateCondition(codeStep.condition, wfState.vars)) {
+              const skipName = codeStep.title ?? codeStep.booqable_action ?? 'step'
+              send(JSON.stringify({ type: 'tool_call', name: skipName }))
+              send(JSON.stringify({ type: 'tool_result', name: skipName, result: `⏭ Sauté — condition non remplie : ${codeStep.condition}` }))
               wfState = advanceStep(wfState, activeSteps.length)
               continue
             }
@@ -1760,8 +1763,11 @@ Affiche les {{...}} littéralement, toujours.`
               const postCodeStep = activeSteps[wfState.step_index] as WorkflowStep
               if (postCodeStep.execution !== 'code' && postCodeStep.type !== 'instruction') break
 
-              // ── Condition : si non satisfaite, on saute ce step silencieusement ──
+              // ── Condition : si non satisfaite, on log le skip et on saute ──
               if (!evaluateCondition(postCodeStep.condition, wfState.vars)) {
+                const skipName = postCodeStep.title ?? postCodeStep.booqable_action ?? 'step'
+                send(JSON.stringify({ type: 'tool_call', name: skipName }))
+                send(JSON.stringify({ type: 'tool_result', name: skipName, result: `⏭ Sauté — condition non remplie : ${postCodeStep.condition}` }))
                 wfState = advanceStep(wfState, activeSteps.length)
                 continue
               }
