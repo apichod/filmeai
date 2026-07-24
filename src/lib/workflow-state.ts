@@ -231,6 +231,14 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // price_euros       = HT
     // deposit_euros     = montant de la caution Booqable
   },
+  create_payment_link: {
+    label:  'Créer un lien de paiement et le stocker dans le champ custom lien_paiement',
+    reads:  ['id', 'grand_total_euros'],
+    writes: ['payment_charge_id', 'checkout_url'],
+    // amount lu depuis input_context.grand_total_euros ou params.amount_euros
+    // checkout_url = URL du lien de paiement Booqable
+    // payment_charge_id = UUID du payment_charge créé
+  },
   capture_stripe_deposit: {
     label:  'Capturer la caution Stripe (débiter l\'autorisation bancaire)',
     reads:  ['provider_id', 'grand_total_euros', 'number'],

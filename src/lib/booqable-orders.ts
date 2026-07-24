@@ -1624,6 +1624,72 @@ export async function removeOrderDiscount(orderId: string): Promise<void> {
   }
 }
 
+// ── createPaymentLink ─────────────────────────────────────────────────────────
+// Crée un lien de paiement (mode: "request") sur une commande Booqable,
+// puis stocke l'URL dans le champ custom "lien_paiement" de la commande.
+export async function createPaymentLink(opts: {
+  orderId:         string
+  amountCents:     number
+  customFieldName?: string   // identifiant du champ custom (défaut: 'lien_paiement')
+  customFieldLabel?: string  // label affiché (défaut: 'Lien paiement')
+}): Promise<{ paymentChargeId: string; checkoutUrl: string }> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const BASE1          = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/1`
+  const { orderId, amountCents } = opts
+  const fieldId    = opts.customFieldName  ?? 'lien_paiement'
+  const fieldLabel = opts.customFieldLabel ?? 'Lien paiement'
+
+  // 1. Créer le payment charge en mode "request"
+  const chargeBody = {
+    payment_charge: {
+      mode:             'request',
+      order_id:         orderId,
+      amount_in_cents:  amountCents,
+      deposit_in_cents: 0,
+    },
+  }
+  const chargeRes = await fetch(`${BASE_BOOMERANG}/payment_charges`, {
+    method:  'POST',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body:    JSON.stringify(chargeBody),
+    signal:  AbortSignal.timeout(10000),
+  })
+  if (!chargeRes.ok) {
+    const text = await chargeRes.text()
+    throw new Error(`createPaymentLink charge error ${chargeRes.status}: ${text}`)
+  }
+  const chargeData = await chargeRes.json() as {
+    data?: { id: string; attributes: Record<string, unknown> }
+  }
+  const chargeId    = chargeData.data?.id ?? ''
+  const checkoutUrl = String(
+    chargeData.data?.attributes?.checkout_url ??
+    chargeData.data?.attributes?.public_url   ??
+    chargeData.data?.attributes?.url          ?? ''
+  )
+  if (!checkoutUrl) throw new Error('createPaymentLink : URL de paiement absente dans la réponse Booqable')
+
+  // 2. Stocker l'URL dans le champ custom de la commande
+  const updateRes = await fetch(`${BASE1}/orders/${orderId}`, {
+    method:  'PUT',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      order: {
+        properties_attributes: [
+          { name: fieldLabel, identifier: fieldId, value: checkoutUrl },
+        ],
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!updateRes.ok) {
+    const text = await updateRes.text()
+    throw new Error(`createPaymentLink update field error ${updateRes.status}: ${text}`)
+  }
+
+  return { paymentChargeId: chargeId, checkoutUrl }
+}
+
 // ── createManualPaymentCharge ─────────────────────────────────────────────────
 // Enregistre un paiement manuel dans Booqable sur une commande donnée.
 // Utilisé après une capture Stripe directe pour garder Booqable en sync.

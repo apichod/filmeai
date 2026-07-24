@@ -37,6 +37,7 @@ import {
   captureStripeDeposit,
   fetchOrderAmount,
   createManualPaymentCharge,
+  createPaymentLink,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -978,6 +979,37 @@ export async function executeCodeStep(
           payment_charge_id:  paymentChargeId,
           captured_amount:    String(amountCaptured),
           message: `✅ Caution capturée : ${amountFormatted} € — Stripe : ${chargeId} — Booqable : ${paymentChargeId}`,
+        })
+      }
+
+      case 'create_payment_link': {
+        // Crée un lien de paiement Booqable (mode: "request") et le stocke
+        // dans le champ custom "lien_paiement" de la commande order_context.
+        // Params :
+        //   amount_euros      (requis) – montant du lien ; si absent lit input_context.grand_total_euros
+        //   field_name        (optionnel) – identifiant du champ custom (défaut: 'lien_paiement')
+        //   field_label       (optionnel) – label affiché (défaut: 'Lien paiement')
+        if (!orderId) return err('create_payment_link : order_id manquant — exécuter fetch_order avant')
+
+        const inputCtx       = step.input_context ?? 'return'
+        const amountFromVars = parseFloat(String(vars[`${inputCtx}.grand_total_euros`] ?? '0'))
+        const amountEuros    = amountFromVars > 0
+          ? amountFromVars
+          : parseFloat(String(params.amount_euros ?? '0'))
+        if (!amountEuros || amountEuros <= 0) return err('create_payment_link : montant introuvable — utiliser fetch_order_amount avant ou passer amount_euros en paramètre')
+        const amountCents = Math.round(amountEuros * 100)
+
+        const { paymentChargeId, checkoutUrl } = await createPaymentLink({
+          orderId,
+          amountCents,
+          customFieldName:  params.field_name  ? String(params.field_name)  : undefined,
+          customFieldLabel: params.field_label ? String(params.field_label) : undefined,
+        })
+
+        return ok({
+          payment_charge_id: paymentChargeId,
+          checkout_url:      checkoutUrl,
+          message: `✅ Lien de paiement créé : ${checkoutUrl}`,
         })
       }
 

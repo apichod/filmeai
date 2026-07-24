@@ -39,6 +39,7 @@ const BOOQABLE_TOOLS = [
   { value: 'draft_email_with_invoice_booqable', label: 'draft_email_with_invoice_booqable — aperçu template + facture jointe' },
   { value: 'send_email_with_invoice_booqable',  label: 'send_email_with_invoice_booqable — envoyer email avec facture en pièce jointe' },
   { value: 'fetch_order_amount',                label: 'fetch_order_amount — récupérer le montant total TTC de la commande' },
+  { value: 'create_payment_link',               label: 'create_payment_link — créer un lien de paiement et le stocker dans lien_paiement' },
   { value: 'capture_stripe_deposit',            label: 'capture_stripe_deposit — débiter l\'autorisation bancaire Stripe (caution)' },
 ]
 
@@ -104,6 +105,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email_with_invoice_booqable:   { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
   set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
   fetch_order_amount:        { reads: ['id'],                                        writes: ['grand_total_euros', 'price_euros', 'deposit_euros'] },
+  create_payment_link:       { reads: ['id', 'grand_total_euros'],                   writes: ['payment_charge_id', 'checkout_url'] },
   capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'payment_charge_id', 'captured_amount'] },
 }
 
@@ -140,6 +142,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   send_email_with_invoice_booqable:  'code',
   set_replacement_price:             'ai',
   fetch_order_amount:                'code',
+  create_payment_link:               'code',
   capture_stripe_deposit:            'code',
 }
 
@@ -182,6 +185,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   send_email_with_invoice_booqable:  'code',
   set_replacement_price:             'ai',
   fetch_order_amount:                'code',
+  create_payment_link:               'code',
   capture_stripe_deposit:            'code',
 }
 
