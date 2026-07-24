@@ -31,6 +31,7 @@ import {
   addSAVLine,
   setLineReplacementPrice,
   removeOrderDiscount,
+  finalizeInvoice,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -304,6 +305,17 @@ export async function executeCodeStep(
         if (!orderId) return err('remove_discount : order_id manquant')
         await removeOrderDiscount(orderId)
         return ok({ success: true, message: `✓ Remise supprimée sur ${label}` })
+      }
+
+      case 'finalize_invoice': {
+        if (!orderId) return err('finalize_invoice : order_id manquant')
+        const { document_id, number } = await finalizeInvoice(orderId)
+        return ok({
+          success:     true,
+          document_id,
+          invoice_number: number,
+          message: `✓ Facture${number ? ` #${number}` : ''} finalisée`,
+        })
       }
 
       case 'set_replacement_price': {

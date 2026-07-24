@@ -135,6 +135,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: [],
   },
+  finalize_invoice: {
+    label:  'Finaliser la facture de la commande',
+    reads:  ['id'],
+    writes: ['document_id', 'invoice_number'],
+  },
   set_replacement_price: {
     label:  'Fixer le prix de remplacement d\'une ligne',
     reads:  ['id', 'lines'],

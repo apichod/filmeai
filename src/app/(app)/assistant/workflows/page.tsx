@@ -34,6 +34,7 @@ const BOOQABLE_TOOLS = [
   { value: 'check_deposit',      label: 'check_deposit — vérifier la caution (dépôt physique + autorisation carte)' },
   { value: 'set_replacement_price', label: 'set_replacement_price — fixer le prix de remplacement d\'une ligne' },
   { value: 'remove_discount',       label: 'remove_discount — supprimer la remise de la commande' },
+  { value: 'finalize_invoice',      label: 'finalize_invoice — finaliser la facture de la commande' },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
   check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
   remove_discount:         { reads: ['id'],              writes: [] },
+  finalize_invoice:        { reads: ['id'],              writes: ['document_id', 'invoice_number'] },
   set_replacement_price:   { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
 }
 
@@ -122,6 +124,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   check_insurance:         'code',
   check_deposit:           'code',
   remove_discount:         'code',
+  finalize_invoice:        'code',
   set_replacement_price:   'ai',   // l'IA demande le prix à l'utilisateur ligne par ligne
 }
 
@@ -158,6 +161,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   check_insurance:         'code',
   check_deposit:           'code',
   remove_discount:         'code',
+  finalize_invoice:        'code',
   set_replacement_price:   'ai',
 }
 

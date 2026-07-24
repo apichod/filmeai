@@ -1558,6 +1558,46 @@ export async function setLineReplacementPrice(
   }
 }
 
+// ── finalizeInvoice ───────────────────────────────────────────────────────────
+// Récupère le document de type "invoice" d'une commande, puis le finalise.
+export async function finalizeInvoice(orderId: string): Promise<{ document_id: string; number: string }> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+
+  // 1. Récupérer les documents de la commande
+  const docsRes = await fetch(
+    `${BASE_BOOMERANG}/documents?filter[order_id]=${orderId}&filter[type]=invoice&page[size]=10`,
+    { headers: headers(), signal: AbortSignal.timeout(10000) }
+  )
+  if (!docsRes.ok) {
+    const text = await docsRes.text()
+    throw new Error(`finalizeInvoice fetch documents error ${docsRes.status}: ${text}`)
+  }
+  const docsData = await docsRes.json() as { data: Array<{ id: string; attributes: { number?: string; finalized?: boolean } }> }
+  const invoice = docsData.data?.[0]
+  if (!invoice) throw new Error('finalizeInvoice : aucune facture trouvée pour cette commande')
+
+  const documentId = invoice.id
+
+  // 2. Finaliser la facture
+  const finalRes = await fetch(`${BASE_BOOMERANG}/invoice_finalizations`, {
+    method:  'POST',
+    headers: headers(),
+    signal:  AbortSignal.timeout(10000),
+    body: JSON.stringify({
+      data: {
+        type: 'invoice_finalizations',
+        attributes: { document_id: documentId },
+      },
+    }),
+  })
+  if (!finalRes.ok) {
+    const text = await finalRes.text()
+    throw new Error(`finalizeInvoice POST error ${finalRes.status}: ${text}`)
+  }
+
+  return { document_id: documentId, number: String(invoice.attributes?.number ?? '') }
+}
+
 // ── removeOrderDiscount ───────────────────────────────────────────────────────
 // Supprime la remise appliquée sur une commande (remet discount_value à 0).
 export async function removeOrderDiscount(orderId: string): Promise<void> {
