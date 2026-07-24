@@ -64,6 +64,15 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'],
   },
+  fetch_original_from_field: {
+    label:  'Lire la commande originale depuis un champ custom (ex: order_sav)',
+    reads:  ['id'],
+    writes: ['number'],
+    // order_context:  commande de retour (ex: 'return') qui contient le champ custom
+    // output_context: contexte de la commande originale (ex: 'original') → écrit original.number
+    // Param optionnel : field_name (défaut: 'order_sav')
+    // Puis exécuter fetch_order (order_context: 'original') pour charger original.id et le reste
+  },
   duplicate_order: {
     label:       'Dupliquer une commande',
     reads:       ['id'],

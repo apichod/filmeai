@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 
 const BOOQABLE_TOOLS = [
-  { value: 'fetch_order',         label: 'fetch_order — récupérer la commande' },
+  { value: 'fetch_order',                label: 'fetch_order — récupérer la commande' },
+  { value: 'fetch_original_from_field',  label: 'fetch_original_from_field — lire la commande originale depuis un champ custom (ex: order_sav)' },
   { value: 'search_products',     label: 'search_products — identifier les articles (bulk/trackable/custom)' },
   { value: 'add_internal_note',   label: 'add_internal_note — note interne' },
   { value: 'create_new_return_order', label: 'create_new_return_order — créer la commande de retour' },
@@ -69,7 +70,8 @@ type ToolIO = { reads: string[]; writes: string[]; outputCtx?: string }
 const NO_TARGET_ORDER = new Set(['create_new_return_order'])
 
 const TOOL_IO: Record<string, ToolIO> = {
-  fetch_order:             { reads: ['id'],           writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'] },
+  fetch_order:                  { reads: ['id'],  writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'] },
+  fetch_original_from_field:    { reads: ['id'],  writes: ['number'] },
   duplicate_order:         { reads: ['id'],           writes: ['id', 'number'], outputCtx: 'child' },
   revert_to_concept:       { reads: ['id'],           writes: [] },
   clear_tags:              { reads: ['id'],           writes: [] },
@@ -107,8 +109,9 @@ const TOOL_IO: Record<string, ToolIO> = {
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
 const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
-  fetch_order:             'code',
-  duplicate_order:         'code',
+  fetch_order:                 'code',
+  fetch_original_from_field:   'code',
+  duplicate_order:             'code',
   revert_to_concept:       'code',
   clear_tags:              'code',
   add_tag:                 'code',
@@ -143,8 +146,9 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
 /** Compatibilité d'exécution par outil */
 type ToolCompat = 'code' | 'ai' | 'both'
 const TOOL_COMPAT: Record<string, ToolCompat> = {
-  fetch_order:             'code',
-  search_products:         'ai',
+  fetch_order:                 'code',
+  fetch_original_from_field:   'code',
+  search_products:             'ai',
   add_internal_note:       'ai',
   create_new_return_order: 'code',
   add_new_product_line:    'both',

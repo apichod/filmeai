@@ -132,6 +132,22 @@ export async function executeCodeStep(
         })
       }
 
+      case 'fetch_original_from_field': {
+        // Lit un custom field sur la commande order_context (ex: 'return')
+        // et range sa valeur (numéro de commande originale) dans output_context.number (ex: 'original.number').
+        // Param optionnel : field_name (défaut: 'order_sav')
+        if (!orderId) return err('fetch_original_from_field : order_id manquant — exécuter fetch_order avant')
+        const fieldName = String(params.field_name ?? 'order_sav')
+        const order = await fetchOrderById(orderId)
+        if (!order) return err(`fetch_original_from_field : commande introuvable`)
+        const fieldValue = String(order.properties_attributes?.[fieldName] ?? '').trim()
+        if (!fieldValue) return err(`fetch_original_from_field : champ "${fieldName}" vide ou absent sur la commande`)
+        return ok({
+          number:  fieldValue,
+          message: `✅ Commande originale trouvée via champ "${fieldName}" : #${fieldValue}`,
+        })
+      }
+
       case 'duplicate_order': {
         if (!orderId) return err('duplicate_order : order_id manquant dans les variables')
         const { newOrderId, newOrderNumber } = await duplicateOrder(orderId)
