@@ -36,7 +36,6 @@ import {
   sendEmailWithInvoiceViaBooqable,
   captureStripeDeposit,
   fetchOrderAmount,
-  readStripeAuthorization,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -877,27 +876,6 @@ export async function executeCodeStep(
         })
       }
 
-      case 'read_stripe_deposit': {
-        // Lit l'autorisation bancaire Stripe active.
-        // order_context: 'original' → lit sur la commande d'origine
-        // output_context: 'return'  → écrit return.provider_id, return.security_deposit, etc.
-        if (!orderId) return err('read_stripe_deposit : order_id manquant — exécuter fetch_order (original) avant')
-        const auth = await readStripeAuthorization(orderId)
-        const cardActive  = auth !== null
-        const amountEuros = auth ? (auth.amountCents / 100).toFixed(2) : '0'
-        const cardEmoji   = cardActive ? '✅' : '❌'
-        const cardLabel   = cardActive
-          ? `OUI — ${amountEuros} € (capture avant ${auth!.captureBefore.slice(0, 10)})`
-          : 'NON'
-        return ok({
-          security_deposit:          'false',   // dépôt physique non vérifié ici
-          authorisation_card:        cardActive ? 'true' : 'false',
-          payment_authorization_id:  auth?.paymentAuthorizationId ?? '',
-          provider_id:               auth?.providerId ?? '',
-          auth_amount_euros:         amountEuros,
-          message: `${cardEmoji} Autorisation carte : ${cardLabel}`,
-        })
-      }
 
       case 'fetch_order_amount': {
         // Récupère le total TTC d'une commande (grand_total_in_cents via Boomerang).

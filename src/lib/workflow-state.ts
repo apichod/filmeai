@@ -215,15 +215,6 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // payment_authorization_id   = UUID Booqable de l'autorisation (pour capture Stripe)
     // provider_id                = ID Stripe (payment_intent) — pour débiter directement
   },
-  read_stripe_deposit: {
-    label:  'Lire l\'autorisation bancaire Stripe (commande originale → retour)',
-    reads:  ['id'],   // order_context: 'original'
-    writes: ['security_deposit', 'authorisation_card', 'payment_authorization_id', 'provider_id', 'auth_amount_euros'],
-    // output_context: 'return' → toutes les vars écrites dans le namespace return.*
-    // provider_id              = pi_xxx (Stripe PaymentIntent)
-    // payment_authorization_id = UUID Booqable de l'autorisation
-    // auth_amount_euros        = montant autorisé en euros
-  },
   fetch_order_amount: {
     label:  'Récupérer le montant total de la commande',
     reads:  ['id'],
