@@ -93,7 +93,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   draft_email_booqable:    { reads: ['id'], writes: ['active_document_id'] },
   send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id'], writes: [] },
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
-  check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
+  check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card', 'payment_authorization_id', 'provider_id'] },
   remove_discount:         { reads: ['id'],              writes: [] },
   finalize_invoice:                   { reads: ['id'],                                                       writes: ['document_id', 'invoice_number'] },
   draft_email_with_invoice_booqable:  { reads: ['id', 'document_id'],                                        writes: ['active_document_id'] },

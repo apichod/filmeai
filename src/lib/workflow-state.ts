@@ -209,9 +209,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   check_deposit: {
     label:  'Vérifier la caution (dépôt physique + autorisation carte)',
     reads:  ['id'],
-    writes: ['security_deposit', 'authorisation_card'],
-    // security_deposit    = 'true' | 'false'  (deposit_in_cents > 0)
-    // authorisation_card  = 'true' | 'false'  (autorisation carte active)
+    writes: ['security_deposit', 'authorisation_card', 'payment_authorization_id', 'provider_id'],
+    // security_deposit           = 'true' | 'false'
+    // authorisation_card         = 'true' | 'false'
+    // payment_authorization_id   = UUID Booqable de l'autorisation (pour capture Stripe)
+    // provider_id                = ID Stripe (payment_intent) — pour débiter directement
   },
   draft_email: {
     label:  'Préparer l\'email client (template)',

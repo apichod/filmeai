@@ -783,12 +783,14 @@ export async function executeCodeStep(
         }
 
         // ── 2. Autorisation carte ─────────────────────────────────────────
-        let cardActive          = false
-        let cardAmountCents     = 0
-        let cardCaptureBefore   = ''
+        let cardActive               = false
+        let cardAmountCents          = 0
+        let cardCaptureBefore        = ''
+        let paymentAuthorizationId   = ''   // ID Booqable de l'autorisation
+        let providerId               = ''   // ID Stripe (payment_intent ou charge)
         if (authRes.ok) {
           const authData = await authRes.json() as {
-            included?: Array<{ type: string; attributes: Record<string, unknown> }>
+            included?: Array<{ type: string; id: string; attributes: Record<string, unknown> }>
           }
           const now = new Date()
           for (const item of authData.included ?? []) {
@@ -805,9 +807,11 @@ export async function executeCodeStep(
               captureBeforeDate !== null &&
               captureBeforeDate > now
             if (isActive) {
-              cardActive        = true
-              cardAmountCents   = Number(a.deposit_capturable_in_cents ?? 0)
-              cardCaptureBefore = String(a.capture_before ?? '')
+              cardActive             = true
+              cardAmountCents        = Number(a.deposit_capturable_in_cents ?? 0)
+              cardCaptureBefore      = String(a.capture_before ?? '')
+              paymentAuthorizationId = item.id
+              providerId             = String(a.provider_id ?? '')
               break
             }
           }
@@ -831,8 +835,10 @@ export async function executeCodeStep(
         ].join('\n')
 
         return ok({
-          security_deposit:   securityDeposit   ? 'true' : 'false',
-          authorisation_card: cardActive         ? 'true' : 'false',
+          security_deposit:          securityDeposit ? 'true' : 'false',
+          authorisation_card:        cardActive       ? 'true' : 'false',
+          payment_authorization_id:  paymentAuthorizationId,
+          provider_id:               providerId,
           message,
         })
       }
