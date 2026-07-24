@@ -132,9 +132,9 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   },
   set_replacement_price: {
     label:  'Fixer le prix de remplacement d\'une ligne',
-    reads:  [],
+    reads:  ['id', 'lines'],  // l'IA lit les lignes pour demander le prix de chaque article cassé
     writes: [],
-    // Paramètres requis : line_id, price_euros, charge_label (optionnel)
+    // Paramètres injectés par l'IA : line_id, price_euros, charge_label (optionnel)
   },
   create_new_return_order: {
     label:       'Créer une return order',

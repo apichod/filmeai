@@ -90,7 +90,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id'], writes: [] },
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
   check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
-  set_replacement_price:   { reads: [],                 writes: [] },  // params: line_id, price_euros, charge_label
+  set_replacement_price:   { reads: ['id', 'lines'],    writes: [] },  // l'IA lit les lignes pour demander le prix de chaque article
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
