@@ -302,9 +302,15 @@ export async function executeCodeStep(
         if (!orderId) return err('add_sav_comment : order_id manquant')
         const originNum = String(params.origin_order_number ?? vars['original.number'] ?? vars['parent.number'] ?? orderNum ?? '')
 
-        // Construction automatique du commentaire depuis le tag problème + produits conservés
+        // Construction du commentaire
         let comment = String(params.comment ?? '')
-        if (!comment) {
+        if (comment) {
+          // Préfixe fourni en paramètre → appende kept_product_names si disponible
+          const productCtx = step.input_context ?? step.order_context ?? 'parent'
+          const products   = vars[`${productCtx}.kept_product_names`] ?? ''
+          if (products) comment = comment + products
+        } else {
+          // Auto-build depuis le tag problème + produits conservés
           const ctx = step.order_context ?? 'parent'
           const tag       = vars[`${ctx}.sav_tag`]  ?? ''
           const products  = vars[`${ctx}.kept_product_names`] ?? ''
@@ -410,11 +416,12 @@ export async function executeCodeStep(
         const rendered = await renderBooqableEmailTemplate(emailTemplateId, orderId)
         if (!rendered) return err(`draft_email_booqable : rendu template ${emailTemplateId} échoué`)
         return ok({
-          __type__:    'email_preview',
-          document_id: emailTemplateId,
-          name:        emailTemplateId,
-          subject:     rendered.subject,
-          body:        rendered.body,
+          __type__:           'email_preview',
+          document_id:        emailTemplateId,
+          active_document_id: emailTemplateId,   // permet à send_email_booqable de le pick up via vars
+          name:               emailTemplateId,
+          subject:            rendered.subject,
+          body:               rendered.body,
         })
       }
 
@@ -440,8 +447,11 @@ export async function executeCodeStep(
         // 2. Envoie le contenu rendu via /emails
         if (!orderId) return err('send_email_booqable : order_id manquant')
         const inputCtx      = step.input_context ?? step.order_context ?? 'parent'
-        const emailTemplateId = String(params.document_id ?? '')
-        if (!emailTemplateId) return err('send_email_booqable : document_id (email_template_id) manquant')
+        // Priorité : active_document_id stocké par draft_email_booqable dans vars > params.document_id
+        const emailTemplateId = String(
+          vars[`${inputCtx}.active_document_id`] ?? params.document_id ?? ''
+        )
+        if (!emailTemplateId) return err('send_email_booqable : document_id (email_template_id) manquant — spécifiez-le en paramètre ou exécutez draft_email_booqable avant')
 
         // Récupère l'email du client
         let customerId     = String(vars[`${inputCtx}.customer_id`]    ?? '')

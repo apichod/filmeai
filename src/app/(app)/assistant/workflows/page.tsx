@@ -85,7 +85,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   add_internal_note:       { reads: ['id'],           writes: [] },
   draft_email:             { reads: [],               writes: ['subject', 'body'] },
   send_email:              { reads: ['subject', 'body'], writes: [] },
-  draft_email_booqable:    { reads: ['id'], writes: [] },
+  draft_email_booqable:    { reads: ['id'], writes: ['active_document_id'] },
   send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email'], writes: [] },
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
   check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
