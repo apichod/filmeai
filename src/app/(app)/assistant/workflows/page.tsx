@@ -670,11 +670,10 @@ export default function WorkflowsPage() {
         description: s.description,
         execution:   s.execution ?? 'ai',
       }
-      step.input_context  = s.input_context  ?? null
-      step.order_context  = (!s.booqable_action || !NO_TARGET_ORDER.has(s.booqable_action))
-        ? (s.order_context ?? null)
-        : null
-      step.output_context = s.output_context ?? null
+      const effectiveOrder  = (!s.booqable_action || !NO_TARGET_ORDER.has(s.booqable_action)) ? (s.order_context ?? null) : null
+      step.input_context  = s.input_context  ?? effectiveOrder
+      step.order_context  = effectiveOrder
+      step.output_context = s.output_context ?? (s.booqable_action ? (TOOL_IO[s.booqable_action]?.outputCtx ?? null) : null) ?? effectiveOrder
       if (s.booqable_action) step.booqable_action  = s.booqable_action
       if (s.parameters && Object.keys(s.parameters).length > 0) step.parameters = s.parameters
       if (s.condition)  step.condition = s.condition
