@@ -167,8 +167,8 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   },
   set_original_order: {
     label:  'Renseigner la commande d\'origine',
-    reads:  ['id', 'number'],  // lit return.id + original.number
-    writes: [],
+    reads:  ['number'],   // lit input_context.number (la commande source)
+    writes: [],           // modifie order_context (la return order)
   },
   add_internal_note: {
     label:  'Ajouter une note interne',
@@ -206,7 +206,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   },
   send_email_booqable: {
     label:  'Envoyer via template Booqable (document_id)',
-    reads:  ['id', 'customer_id', 'customer_email'],
+    reads:  ['id', 'customer_id', 'customer_email', 'active_document_id'],
     writes: [],
     // Paramètre requis dans le step : document_id (UUID du template Booqable)
   },

@@ -81,12 +81,12 @@ const TOOL_IO: Record<string, ToolIO> = {
   add_sav_comment:         { reads: ['id', 'number'], writes: [] },
   create_new_return_order: { reads: ['customer_id'],  writes: ['id', 'number'], outputCtx: 'return' },
   zero_out_order_lines:    { reads: ['id'],           writes: [] },
-  set_original_order:      { reads: ['id'],           writes: [] },
+  set_original_order:      { reads: ['number'],       writes: [] },   // input_context.number → order_context (return)
   add_internal_note:       { reads: ['id'],           writes: [] },
   draft_email:             { reads: [],               writes: ['subject', 'body'] },
   send_email:              { reads: ['subject', 'body'], writes: [] },
   draft_email_booqable:    { reads: ['id'], writes: ['active_document_id'] },
-  send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email'], writes: [] },
+  send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id'], writes: [] },
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
   check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
 }

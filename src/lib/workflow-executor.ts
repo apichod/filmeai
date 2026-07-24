@@ -351,11 +351,12 @@ export async function executeCodeStep(
       }
 
       case 'set_original_order': {
-        // return.id = le step cible la commande de retour (order_context: 'return')
-        // original.number = le numéro de la commande d'origine
+        // order_context = la return order (cible du champ Commande Origine)
+        // input_context = la commande source dont on lit le numéro (défaut: 'original')
         if (!orderId) return err('set_original_order : return order_id manquant')
-        const originalNumber = vars['original.number']
-        if (!originalNumber) return err('set_original_order : original.number manquant dans les variables')
+        const srcCtx = step.input_context ?? 'original'
+        const originalNumber = vars[`${srcCtx}.number`]
+        if (!originalNumber) return err(`set_original_order : ${srcCtx}.number manquant dans les variables`)
         await setOriginalOrder(orderId, originalNumber)
         return ok({ success: true, message: `✓ Commande d'origine #${originalNumber} renseignée sur ${label}` })
       }
