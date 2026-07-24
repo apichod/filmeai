@@ -37,6 +37,8 @@ const BOOQABLE_TOOLS = [
   { value: 'finalize_invoice',               label: 'finalize_invoice — finaliser la facture de la commande' },
   { value: 'draft_email_with_invoice_booqable', label: 'draft_email_with_invoice_booqable — aperçu template + facture jointe' },
   { value: 'send_email_with_invoice_booqable',  label: 'send_email_with_invoice_booqable — envoyer email avec facture en pièce jointe' },
+  { value: 'read_stripe_deposit',               label: 'read_stripe_deposit — lire l\'autorisation bancaire Stripe (commande originale)' },
+  { value: 'fetch_order_amount',                label: 'fetch_order_amount — récupérer le montant total TTC de la commande' },
   { value: 'capture_stripe_deposit',            label: 'capture_stripe_deposit — débiter l\'autorisation bancaire Stripe (caution)' },
 ]
 
@@ -100,7 +102,9 @@ const TOOL_IO: Record<string, ToolIO> = {
   draft_email_with_invoice_booqable:  { reads: ['id', 'document_id'],                                        writes: ['active_document_id'] },
   send_email_with_invoice_booqable:   { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
   set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
-  capture_stripe_deposit:   { reads: ['provider_id'],    writes: ['stripe_charge_id', 'captured_amount'] },
+  read_stripe_deposit:       { reads: ['id'],                                        writes: ['security_deposit', 'authorisation_card', 'payment_authorization_id', 'provider_id', 'auth_amount_euros'] },
+  fetch_order_amount:        { reads: ['id'],                                        writes: ['grand_total_euros', 'price_euros', 'deposit_euros'] },
+  capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros'],          writes: ['stripe_charge_id', 'captured_amount'] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
@@ -134,6 +138,8 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   draft_email_with_invoice_booqable: 'code',
   send_email_with_invoice_booqable:  'code',
   set_replacement_price:             'ai',
+  read_stripe_deposit:               'code',
+  fetch_order_amount:                'code',
   capture_stripe_deposit:            'code',
 }
 
@@ -174,6 +180,8 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   draft_email_with_invoice_booqable: 'code',
   send_email_with_invoice_booqable:  'code',
   set_replacement_price:             'ai',
+  read_stripe_deposit:               'code',
+  fetch_order_amount:                'code',
   capture_stripe_deposit:            'code',
 }
 

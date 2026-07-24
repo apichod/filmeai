@@ -215,9 +215,26 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // payment_authorization_id   = UUID Booqable de l'autorisation (pour capture Stripe)
     // provider_id                = ID Stripe (payment_intent) — pour débiter directement
   },
+  read_stripe_deposit: {
+    label:  'Lire l\'autorisation bancaire Stripe (commande originale → retour)',
+    reads:  ['id'],   // order_context: 'original'
+    writes: ['security_deposit', 'authorisation_card', 'payment_authorization_id', 'provider_id', 'auth_amount_euros'],
+    // output_context: 'return' → toutes les vars écrites dans le namespace return.*
+    // provider_id              = pi_xxx (Stripe PaymentIntent)
+    // payment_authorization_id = UUID Booqable de l'autorisation
+    // auth_amount_euros        = montant autorisé en euros
+  },
+  fetch_order_amount: {
+    label:  'Récupérer le montant total de la commande',
+    reads:  ['id'],
+    writes: ['grand_total_euros', 'price_euros', 'deposit_euros'],
+    // grand_total_euros = total TTC (string, ex: "150.00")
+    // price_euros       = HT
+    // deposit_euros     = montant de la caution Booqable
+  },
   capture_stripe_deposit: {
     label:  'Capturer la caution Stripe (débiter l\'autorisation bancaire)',
-    reads:  ['provider_id'],
+    reads:  ['grand_total_euros'],  // lit original.provider_id (hardcodé) + return.grand_total_euros (via input_context)
     writes: ['stripe_charge_id', 'captured_amount'],
     // provider_id      = pi_xxx (lu depuis le contexte de la commande d'origine)
     // stripe_charge_id = ch_xxx (ID de la charge Stripe créée)

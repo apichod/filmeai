@@ -1624,6 +1624,77 @@ export async function removeOrderDiscount(orderId: string): Promise<void> {
   }
 }
 
+// ── readStripeAuthorization ───────────────────────────────────────────────────
+// Extrait le provider_id (PaymentIntent Stripe) de la commande originale.
+// Cherche la première payment_authorization active (status=succeeded, capturable=true, non expirée).
+export async function readStripeAuthorization(orderId: string): Promise<{
+  providerId:             string
+  paymentAuthorizationId: string
+  amountCents:            number
+  captureBefore:          string
+} | null> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(
+    `${BASE_BOOMERANG}/orders/${encodeURIComponent(orderId)}?include=payment_authorizations`,
+    { headers: headers(), signal: AbortSignal.timeout(10000) }
+  )
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`readStripeAuthorization error ${res.status}: ${text}`)
+  }
+  const data = await res.json() as {
+    included?: Array<{
+      type:       string
+      id:         string
+      attributes: Record<string, unknown>
+    }>
+  }
+  const now = new Date()
+  const auth = (data.included ?? [])
+    .filter(r => r.type === 'payment_authorizations')
+    .find(a => {
+      const attrs    = a.attributes
+      const status   = String(attrs.status     ?? '')
+      const captBef  = String(attrs.capture_before_in ?? attrs.capture_before ?? '')
+      const expired  = captBef ? new Date(captBef) < now : false
+      return status === 'succeeded' && !expired
+    })
+  if (!auth) return null
+  return {
+    providerId:             String(auth.attributes.provider_id ?? ''),
+    paymentAuthorizationId: auth.id,
+    amountCents:            Number(auth.attributes.amount_in_cents ?? 0),
+    captureBefore:          String(auth.attributes.capture_before_in ?? auth.attributes.capture_before ?? ''),
+  }
+}
+
+// ── fetchOrderAmount ──────────────────────────────────────────────────────────
+// Récupère le total TTC (grand_total_in_cents) d'une commande Booqable.
+export async function fetchOrderAmount(orderId: string): Promise<{
+  grandTotalCents: number
+  priceCents:      number
+  depositCents:    number
+}> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(
+    `${BASE_BOOMERANG}/orders?filter[id]=${encodeURIComponent(orderId)}&per=1`,
+    { headers: headers(), signal: AbortSignal.timeout(10000) }
+  )
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`fetchOrderAmount error ${res.status}: ${text}`)
+  }
+  const data = await res.json() as {
+    data?: Array<{ attributes: Record<string, unknown> }>
+  }
+  const attrs = data.data?.[0]?.attributes ?? {}
+  return {
+    grandTotalCents: Number(attrs.grand_total_in_cents ?? 0),
+    priceCents:      Number(attrs.price_in_cents       ?? 0),
+    depositCents:    Number(attrs.deposit_in_cents     ?? 0),
+  }
+}
+
 // ── captureStripeDeposit ──────────────────────────────────────────────────────
 // Capture (débite) une autorisation bancaire Stripe (PaymentIntent en requires_capture).
 // Optionnellement met à jour la description et les métadonnées avant la capture.

@@ -35,6 +35,8 @@ import {
   renderBooqableEmailTemplateWithInvoice,
   sendEmailWithInvoiceViaBooqable,
   captureStripeDeposit,
+  fetchOrderAmount,
+  readStripeAuthorization,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -875,6 +877,44 @@ export async function executeCodeStep(
         })
       }
 
+      case 'read_stripe_deposit': {
+        // Lit l'autorisation bancaire Stripe active.
+        // order_context: 'original' → lit sur la commande d'origine
+        // output_context: 'return'  → écrit return.provider_id, return.security_deposit, etc.
+        if (!orderId) return err('read_stripe_deposit : order_id manquant — exécuter fetch_order (original) avant')
+        const auth = await readStripeAuthorization(orderId)
+        const cardActive  = auth !== null
+        const amountEuros = auth ? (auth.amountCents / 100).toFixed(2) : '0'
+        const cardEmoji   = cardActive ? '✅' : '❌'
+        const cardLabel   = cardActive
+          ? `OUI — ${amountEuros} € (capture avant ${auth!.captureBefore.slice(0, 10)})`
+          : 'NON'
+        return ok({
+          security_deposit:          'false',   // dépôt physique non vérifié ici
+          authorisation_card:        cardActive ? 'true' : 'false',
+          payment_authorization_id:  auth?.paymentAuthorizationId ?? '',
+          provider_id:               auth?.providerId ?? '',
+          auth_amount_euros:         amountEuros,
+          message: `${cardEmoji} Autorisation carte : ${cardLabel}`,
+        })
+      }
+
+      case 'fetch_order_amount': {
+        // Récupère le total TTC d'une commande (grand_total_in_cents via Boomerang).
+        // Utilise order_context pour cibler la commande.
+        if (!orderId) return err('fetch_order_amount : order_id manquant — exécuter fetch_order avant')
+        const { grandTotalCents, priceCents, depositCents } = await fetchOrderAmount(orderId)
+        const grandTotalEuros = grandTotalCents / 100
+        const priceEuros      = priceCents      / 100
+        const depositEuros    = depositCents    / 100
+        return ok({
+          grand_total_euros: grandTotalEuros.toFixed(2),
+          price_euros:       priceEuros.toFixed(2),
+          deposit_euros:     depositEuros.toFixed(2),
+          message: `💰 Total commande ${label} : ${grandTotalEuros.toFixed(2)} € TTC (HT: ${priceEuros.toFixed(2)} €, caution: ${depositEuros.toFixed(2)} €)`,
+        })
+      }
+
       case 'capture_stripe_deposit': {
         // Capture une autorisation bancaire Stripe (PaymentIntent en requires_capture).
         // Lit provider_id depuis les vars (écrit par check_deposit).
@@ -884,16 +924,23 @@ export async function executeCodeStep(
         //   sav_order_number (optionnel) – ajouté en metadata
         //   reason           (optionnel) – ex: "damage", "theft", "late" – ajouté en metadata
 
-        const inputCtx    = step.input_context ?? 'original'
-        const providerId  = vars[`${inputCtx}.provider_id`] ?? ''
-        if (!providerId) return err('capture_stripe_deposit : provider_id manquant — exécuter check_deposit avant')
+        // provider_id + grand_total_euros : tous deux lus depuis input_context (default: 'return')
+        // → read_stripe_deposit (order_context: original, output_context: return) écrit return.provider_id
+        // → fetch_order_amount  (order_context: return,   output_context: return) écrit return.grand_total_euros
+        const inputCtx   = step.input_context ?? 'return'
+        const providerId = vars[`${inputCtx}.provider_id`] ?? ''
+        if (!providerId) return err('capture_stripe_deposit : provider_id manquant — exécuter read_stripe_deposit (output_context: return) avant')
 
-        const amountEuros = parseFloat(String(params.amount_euros ?? '0'))
-        if (!amountEuros || amountEuros <= 0) return err('capture_stripe_deposit : amount_euros manquant ou invalide')
+        // Montant : vars[input_context.grand_total_euros] > params.amount_euros
+        const amountFromVars = parseFloat(String(vars[`${inputCtx}.grand_total_euros`] ?? '0'))
+        const amountEuros    = amountFromVars > 0
+          ? amountFromVars
+          : parseFloat(String(params.amount_euros ?? '0'))
+        if (!amountEuros || amountEuros <= 0) return err('capture_stripe_deposit : montant introuvable — exécuter fetch_order_amount (return) avant ou passer amount_euros en paramètre')
         const amountCents = Math.round(amountEuros * 100)
 
-        // Numéro de commande depuis order_context (commande SAV courante)
-        const orderCtx        = step.order_context ?? 'sav'
+        // Numéro de commande depuis order_context (commande de retour / SAV)
+        const orderCtx        = step.order_context ?? 'return'
         const orderNumberAuto = vars[`${orderCtx}.number`] ?? ''
 
         // Description : paramètre explicite > auto depuis order_context ("Order #xxxx")
