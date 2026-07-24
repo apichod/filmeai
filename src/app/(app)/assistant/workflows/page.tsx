@@ -33,6 +33,7 @@ const BOOQABLE_TOOLS = [
   { value: 'check_insurance',    label: 'check_insurance — vérifier si l\'assurance est prise sur la commande' },
   { value: 'check_deposit',      label: 'check_deposit — vérifier la caution (dépôt physique + autorisation carte)' },
   { value: 'set_replacement_price', label: 'set_replacement_price — fixer le prix de remplacement d\'une ligne' },
+  { value: 'remove_discount',       label: 'remove_discount — supprimer la remise de la commande' },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -90,6 +91,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id'], writes: [] },
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
   check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
+  remove_discount:         { reads: ['id'],              writes: [] },
   set_replacement_price:   { reads: ['id', 'lines'],    writes: [] },  // l'IA lit les lignes pour demander le prix de chaque article
 }
 
@@ -119,6 +121,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   send_email:              'code',
   check_insurance:         'code',
   check_deposit:           'code',
+  remove_discount:         'code',
   set_replacement_price:   'ai',   // l'IA demande le prix à l'utilisateur ligne par ligne
 }
 
@@ -154,6 +157,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   log_case:                'ai',
   check_insurance:         'code',
   check_deposit:           'code',
+  remove_discount:         'code',
   set_replacement_price:   'ai',
 }
 

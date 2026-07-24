@@ -130,6 +130,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'number', 'kept_product_names'],
     writes: [],
   },
+  remove_discount: {
+    label:  'Supprimer la remise de la commande',
+    reads:  ['id'],
+    writes: [],
+  },
   set_replacement_price: {
     label:  'Fixer le prix de remplacement d\'une ligne',
     reads:  ['id', 'lines'],  // l'IA lit les lignes pour demander le prix de chaque article cassé

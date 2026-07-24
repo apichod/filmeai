@@ -1558,6 +1558,32 @@ export async function setLineReplacementPrice(
   }
 }
 
+// ── removeOrderDiscount ───────────────────────────────────────────────────────
+// Supprime la remise appliquée sur une commande (remet discount_value à 0).
+export async function removeOrderDiscount(orderId: string): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const res = await fetch(`${BASE_BOOMERANG}/orders/${orderId}`, {
+    method:  'PATCH',
+    headers: headers(),
+    signal:  AbortSignal.timeout(10000),
+    body: JSON.stringify({
+      data: {
+        type: 'orders',
+        id:   orderId,
+        attributes: {
+          discount_type:  'percentage',
+          coupon_id:      null,
+          discount_value: 0,
+        },
+      },
+    }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`removeOrderDiscount error ${res.status}: ${text}`)
+  }
+}
+
 // ── removeProductLine ─────────────────────────────────────────────────────────
 // Supprime une ligne d'une commande par son ID de ligne.
 export async function removeProductLine(lineId: string): Promise<void> {

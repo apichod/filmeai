@@ -30,6 +30,7 @@ import {
   addSAVComment,
   addSAVLine,
   setLineReplacementPrice,
+  removeOrderDiscount,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -297,6 +298,12 @@ export async function executeCodeStep(
         if (!lineId) return err('remove_product_line : line_id manquant dans parameters')
         await removeProductLine(lineId)
         return ok({ success: true, message: `✓ Ligne ${lineId} supprimée` })
+      }
+
+      case 'remove_discount': {
+        if (!orderId) return err('remove_discount : order_id manquant')
+        await removeOrderDiscount(orderId)
+        return ok({ success: true, message: `✓ Remise supprimée sur ${label}` })
       }
 
       case 'set_replacement_price': {
