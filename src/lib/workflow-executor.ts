@@ -133,18 +133,28 @@ export async function executeCodeStep(
       }
 
       case 'fetch_original_from_field': {
-        // Lit un custom field sur la commande order_context (ex: 'return')
-        // et range sa valeur (numéro de commande originale) dans output_context.number (ex: 'original.number').
+        // Lit un custom field sur la commande order_context (ex: 'return'),
+        // récupère la commande originale par son numéro, et écrit ses données
+        // dans output_context (ex: 'original') pour que check_insurance / check_deposit
+        // puissent trouver original.id.
         // Param optionnel : field_name (défaut: 'order_sav')
         if (!orderId) return err('fetch_original_from_field : order_id manquant — exécuter fetch_order avant')
         const fieldName = String(params.field_name ?? 'order_sav')
-        const order = await fetchOrderById(orderId)
-        if (!order) return err(`fetch_original_from_field : commande introuvable`)
-        const fieldValue = String(order.properties_attributes?.[fieldName] ?? '').trim()
-        if (!fieldValue) return err(`fetch_original_from_field : champ "${fieldName}" vide ou absent sur la commande`)
+        const returnOrder = await fetchOrderById(orderId)
+        if (!returnOrder) return err('fetch_original_from_field : commande introuvable')
+        const originalNumber = String(returnOrder.properties_attributes?.[fieldName] ?? '').trim()
+        if (!originalNumber) return err(`fetch_original_from_field : champ "${fieldName}" vide ou absent sur la commande`)
+        const originalOrder = await fetchOrderByNumber(originalNumber)
+        if (!originalOrder) return err(`fetch_original_from_field : commande originale #${originalNumber} introuvable`)
         return ok({
-          number:  fieldValue,
-          message: `✅ Commande originale trouvée via champ "${fieldName}" : #${fieldValue}`,
+          id:             originalOrder.id,
+          number:         originalOrder.number,
+          status:         originalOrder.status,
+          customer_id:    originalOrder.customer_id,
+          customer_email: originalOrder.customer?.email ?? '',
+          tags:           originalOrder.tags,
+          lines:          originalOrder.lines,
+          message: `✅ Commande originale #${originalOrder.number} chargée depuis champ "${fieldName}"`,
         })
       }
 
