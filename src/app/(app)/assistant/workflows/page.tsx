@@ -68,7 +68,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   clear_tags:              { reads: ['id'],           writes: [] },
   add_tag:                 { reads: ['id'],           writes: [] },
   choose_article:          { reads: ['lines'],         writes: ['selected_ids', 'chosen_lines'] },
-  add_new_product_line:    { reads: ['selected_ids', 'chosen_lines'],  writes: ['kept_product_names', 'sav_tag'] },
+  add_new_product_line:    { reads: ['selected_ids', 'chosen_lines'],  writes: ['kept_product_names'] },
   remove_other_lines:      { reads: ['lines', 'selected_ids'], writes: [] },
   choose_problem_tag:      { reads: ['id'],           writes: ['sav_tag'] },
   reserve_order:           { reads: ['id'],           writes: [] },
@@ -78,7 +78,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   update_return_date:      { reads: ['id'],           writes: [] },
   list_order:              { reads: ['lines'],         writes: [] },
   remove_product_line:     { reads: [],               writes: [] },
-  add_sav_comment:         { reads: ['id', 'number'], writes: [] },
+  add_sav_comment:         { reads: ['id', 'number', 'kept_product_names'], writes: [] },
   create_new_return_order: { reads: ['customer_id'],  writes: ['id', 'number'], outputCtx: 'return' },
   zero_out_order_lines:    { reads: ['id'],           writes: [] },
   set_original_order:      { reads: ['number'],       writes: [] },   // input_context.number → order_context (return)

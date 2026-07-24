@@ -127,7 +127,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   },
   add_sav_comment: {
     label:  'Ajouter un commentaire SAV',
-    reads:  ['id', 'number'],
+    reads:  ['id', 'number', 'kept_product_names'],
     writes: [],
   },
   create_new_return_order: {
@@ -146,8 +146,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   add_new_product_line: {
     label:  'Ajouter les articles sélectionnés à la commande de retour',
     reads:  ['selected_ids', 'chosen_lines'],
-    writes: ['kept_product_names', 'sav_tag'],
-    // sav_tag = 'r11_late' (préfixe pour add_sav_comment)
+    writes: ['kept_product_names'],
     // order_id injecté depuis order_context (return.id)
   },
   add_new_product: {

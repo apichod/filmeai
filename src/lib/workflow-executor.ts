@@ -526,9 +526,8 @@ export async function executeCodeStep(
 
         return ok({
           success:            true,
-          kept_product_names: formatted,   // → parent.kept_product_names (pour add_sav_comment)
-          sav_tag:            'r11_late',  // → parent.chosen_tag (pour le préfixe "Manquant")
-          message: `✓ ${addedCount} article(s) manquant(s) ajouté(s) à la commande de retour`,
+          kept_product_names: formatted,   // → output_context.kept_product_names (pour add_sav_comment)
+          message: `✓ ${addedCount} article(s) ajouté(s) à la commande de retour`,
         })
       }
 
@@ -646,7 +645,6 @@ export async function executeCodeStep(
         return ok({
           success:            true,
           kept_product_names: added.join('\n'),
-          sav_tag:            'r11_late',
           message:            `✓ ${added.length} article(s) ajouté(s) à la commande de retour`,
         })
       }
