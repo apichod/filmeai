@@ -32,6 +32,7 @@ const BOOQABLE_TOOLS = [
   { value: 'log_case',            label: 'log_case — logger le cas FilmeAI' },
   { value: 'check_insurance',    label: 'check_insurance — vérifier si l\'assurance est prise sur la commande' },
   { value: 'check_deposit',      label: 'check_deposit — vérifier la caution (dépôt physique + autorisation carte)' },
+  { value: 'set_replacement_price', label: 'set_replacement_price — fixer le prix de remplacement d\'une ligne' },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id'], writes: [] },
   check_insurance:         { reads: ['id', 'lines'],   writes: ['insurance'] },
   check_deposit:           { reads: ['id'],             writes: ['security_deposit', 'authorisation_card'] },
+  set_replacement_price:   { reads: [],                 writes: [] },  // params: line_id, price_euros, charge_label
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
@@ -117,6 +119,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   send_email:              'code',
   check_insurance:         'code',
   check_deposit:           'code',
+  set_replacement_price:   'ai',   // l'IA demande le prix à l'utilisateur ligne par ligne
 }
 
 /** Compatibilité d'exécution par outil */
@@ -151,6 +154,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   log_case:                'ai',
   check_insurance:         'code',
   check_deposit:           'code',
+  set_replacement_price:   'ai',
 }
 
 /** Description comportement par mode (pour les outils 'both') */

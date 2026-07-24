@@ -1528,6 +1528,36 @@ export async function setLineQuantity(lineId: string, qty: number): Promise<void
   }
 }
 
+// ── setLineReplacementPrice ───────────────────────────────────────────────────
+// Met à jour le charge_label et le prix d'une ligne via l'API Boomerang.
+export async function setLineReplacementPrice(
+  lineId:      string,
+  priceEuros:  number,
+  chargeLabel: string = 'Prix de remplacement',
+): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const priceInCents   = Math.round(priceEuros * 100)
+  const res = await fetch(`${BASE_BOOMERANG}/lines/${lineId}`, {
+    method:  'PATCH',
+    headers: headers(),
+    signal:  AbortSignal.timeout(10000),
+    body: JSON.stringify({
+      data: {
+        type: 'lines',
+        id:   lineId,
+        attributes: {
+          charge_label:        chargeLabel,
+          price_each_in_cents: priceInCents,
+        },
+      },
+    }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`setLineReplacementPrice error ${res.status}: ${text}`)
+  }
+}
+
 // ── removeProductLine ─────────────────────────────────────────────────────────
 // Supprime une ligne d'une commande par son ID de ligne.
 export async function removeProductLine(lineId: string): Promise<void> {

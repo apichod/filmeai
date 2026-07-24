@@ -130,6 +130,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'number', 'kept_product_names'],
     writes: [],
   },
+  set_replacement_price: {
+    label:  'Fixer le prix de remplacement d\'une ligne',
+    reads:  [],
+    writes: [],
+    // Paramètres requis : line_id, price_euros, charge_label (optionnel)
+  },
   create_new_return_order: {
     label:       'Créer une return order',
     reads:       ['customer_id'],  // lit customer_id depuis le contexte parent/original

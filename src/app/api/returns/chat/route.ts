@@ -27,6 +27,7 @@ import {
   reserveOrder,
   cancelOrder,
   removeProductLine,
+  setLineReplacementPrice,
   revertToConcept,
   clearTags,
   duplicateOrder,
@@ -316,6 +317,22 @@ function buildTools(
   {
     type: 'function',
     function: {
+      name: 'set_replacement_price',
+      description: 'Fixe le prix de remplacement d\'une ligne Booqable. Demander le prix à l\'utilisateur pour chaque article cassé, puis appeler ce tool une fois par ligne.',
+      parameters: {
+        type: 'object',
+        properties: {
+          line_id:      { type: 'string', description: 'UUID de la ligne Booqable (champ "line_id" dans les lignes de fetch_order)' },
+          price_euros:  { type: 'number', description: 'Prix de remplacement en euros (ex: 45 pour 45€)' },
+          charge_label: { type: 'string', description: 'Libellé de la ligne (défaut : "Prix de remplacement")' },
+        },
+        required: ['line_id', 'price_euros'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'reserve_order',
       description: 'Passe une commande Booqable de "concept" à "reserved".',
       parameters: {
@@ -551,6 +568,13 @@ async function executeTool(
       case 'remove_product_line': {
         await removeProductLine(String(args.line_id))
         return { result: `✓ Ligne ${args.line_id} supprimée` }
+      }
+
+      case 'set_replacement_price': {
+        const priceEuros  = Number(args.price_euros)
+        const chargeLabel = String(args.charge_label ?? 'Prix de remplacement')
+        await setLineReplacementPrice(String(args.line_id), priceEuros, chargeLabel)
+        return { result: `✓ Prix de remplacement fixé à ${priceEuros}€ (libellé : "${chargeLabel}")` }
       }
 
       case 'reserve_order': {

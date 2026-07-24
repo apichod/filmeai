@@ -29,6 +29,7 @@ import {
   searchProducts,
   addSAVComment,
   addSAVLine,
+  setLineReplacementPrice,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -296,6 +297,20 @@ export async function executeCodeStep(
         if (!lineId) return err('remove_product_line : line_id manquant dans parameters')
         await removeProductLine(lineId)
         return ok({ success: true, message: `✓ Ligne ${lineId} supprimée` })
+      }
+
+      case 'set_replacement_price': {
+        // Met à jour le prix et le libellé d'une ligne Booqable
+        // params.line_id    : UUID de la ligne à modifier
+        // params.price_euros : prix en euros (converti en centimes)
+        // params.charge_label : libellé optionnel (défaut : "Prix de remplacement")
+        const lineId       = String(params.line_id ?? '')
+        const priceEuros   = Number(params.price_euros ?? 0)
+        const chargeLabel  = String(params.charge_label ?? 'Prix de remplacement')
+        if (!lineId)       return err('set_replacement_price : line_id manquant dans parameters')
+        if (!priceEuros)   return err('set_replacement_price : price_euros manquant ou nul dans parameters')
+        await setLineReplacementPrice(lineId, priceEuros, chargeLabel)
+        return ok({ success: true, message: `✓ Prix de remplacement fixé à ${priceEuros}€ sur la ligne ${lineId}` })
       }
 
       case 'add_sav_comment': {
