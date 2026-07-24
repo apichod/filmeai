@@ -234,7 +234,10 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   },
   capture_stripe_deposit: {
     label:  'Capturer la caution Stripe (débiter l\'autorisation bancaire)',
-    reads:  ['grand_total_euros'],  // lit original.provider_id (hardcodé) + return.grand_total_euros (via input_context)
+    reads:  ['provider_id', 'grand_total_euros', 'number'],
+    // provider_id       = pi_xxx (depuis read_stripe_deposit, output_context: return)
+    // grand_total_euros = total TTC (depuis fetch_order_amount, order_context: return)
+    // number            = numéro de commande return (pour la description Stripe)
     writes: ['stripe_charge_id', 'captured_amount'],
     // provider_id      = pi_xxx (lu depuis le contexte de la commande d'origine)
     // stripe_charge_id = ch_xxx (ID de la charge Stripe créée)

@@ -104,7 +104,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
   read_stripe_deposit:       { reads: ['id'],                                        writes: ['security_deposit', 'authorisation_card', 'payment_authorization_id', 'provider_id', 'auth_amount_euros'] },
   fetch_order_amount:        { reads: ['id'],                                        writes: ['grand_total_euros', 'price_euros', 'deposit_euros'] },
-  capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros'],          writes: ['stripe_charge_id', 'captured_amount'] },
+  capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'captured_amount'] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
