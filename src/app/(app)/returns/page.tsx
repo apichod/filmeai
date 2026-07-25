@@ -1545,6 +1545,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailError, setEmailError]     = useState<string | null>(null)
   const [authExpiry,  setAuthExpiry]  = useState<Record<string, { daysLeft: number | null }>>({})
+  const [lastEmails,  setLastEmails]  = useState<Record<string, string | null>>({})
   const PAGE_SIZE = 50
   const [page, setPage] = useState(1)
 
@@ -1565,7 +1566,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
         if (cancelled) break
         const batch = visible.slice(i, i + BATCH)
         await Promise.all(batch.map(async o => {
-          // Auth expiry — sur la commande d'origine
+          // Auth expiry + UUID commande d'origine
           if (o.order_sav) {
             try {
               const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
@@ -1573,6 +1574,13 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                 const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
                 if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
               }
+            } catch { /* silencieux */ }
+          }
+          // Dernier email — pour affichage Date suivi SAV
+          if (o.id) {
+            try {
+              const data = await fetch(`/api/returns/booqable-last-email?order_id=${encodeURIComponent(o.id)}`).then(r => r.json()) as { found?: boolean; createdAt?: string | null }
+              setLastEmails(prev => ({ ...prev, [o.id]: data.found ? (data.createdAt ?? null) : null }))
             } catch { /* silencieux */ }
           }
         }))
@@ -1584,7 +1592,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
     return () => { cancelled = true }
   }, [allRows, filterTag, page])
 
-  async function openEmail(orderId: string, orderNum: string | number, currentDateSav?: string) {
+  async function openEmail(orderId: string, orderNum: string | number, currentDateSav?: string, originalOrderNum?: string) {
     setEmailModal({ orderId, orderNum })
     setEmailData(null)
     setEmailError(null)
@@ -1595,28 +1603,32 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
       if (data.error) { setEmailError(data.error); return }
       const email = data.emails?.[0] ?? null
       setEmailData(email)
-      // Auto-update date_sav si l'email est plus récent
-      if (email) {
+      // Auto-update date_sav sur la commande d'origine si l'email est plus récent
+      if (email && originalOrderNum) {
         const rawDate = email.sent_at ?? email.created_at
         if (rawDate) {
           const emailDateStr = rawDate.split('T')[0] // YYYY-MM-DD
-          // Normalise date_sav en YYYY-MM-DD pour comparaison (peut arriver en DD-MM-YYYY depuis Booqable)
+          // Normalise currentDateSav en YYYY-MM-DD (peut arriver en DD-MM-YYYY depuis Booqable)
           const frMatch = currentDateSav?.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
           const normalizedCurrent = frMatch
             ? `${frMatch[3]}-${frMatch[2].padStart(2, '0')}-${frMatch[1].padStart(2, '0')}`
             : (currentDateSav?.split('T')[0] ?? null)
           if (!normalizedCurrent || emailDateStr > normalizedCurrent) {
             try {
-              const patchRes = await fetch('/api/returns/booqable-set-sav-date', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ order_id: orderId, date: emailDateStr }),
-              })
-              if (!patchRes.ok) {
-                const patchErr = await patchRes.json() as { error?: string }
-                console.error('[date_sav patch]', patchErr.error)
-              } else {
-                setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
+              // Résoudre l'UUID de la commande d'origine
+              const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(originalOrderNum)}`).then(r => r.json()) as { id?: string }
+              if (uuidData.id) {
+                const patchRes = await fetch('/api/returns/booqable-set-sav-date', {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body:    JSON.stringify({ order_id: uuidData.id, date: emailDateStr }),
+                })
+                if (!patchRes.ok) {
+                  const patchErr = await patchRes.json() as { error?: string }
+                  console.error('[date_sav patch]', patchErr.error)
+                } else {
+                  setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
+                }
               }
             } catch (patchEx) {
               console.error('[date_sav patch exception]', patchEx)
@@ -1798,9 +1810,12 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                       ) : <span className="font-mono text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 w-56 max-w-56 whitespace-pre-wrap break-words text-xs text-gray-600">{o.notes_sav || '—'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">
-                      {o.date_sav ? fmtDate(o.date_sav) : '—'}
-                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{(() => {
+                      const savDate   = o.date_sav        ? parseFrDate(o.date_sav)        : null
+                      const emailDate = lastEmails[o.id]  ? parseFrDate(lastEmails[o.id]!) : null
+                      const effective = savDate && emailDate ? (emailDate > savDate ? emailDate : savDate) : emailDate ?? savDate
+                      return effective ? fmtDate(effective.toISOString()) : '—'
+                    })()}</td>
                     <td className="px-4 py-3"><AuthBadge daysLeft={authExpiry[o.id]?.daysLeft ?? null} /></td>
                     <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-gray-900">{formatPrice(o.grand_total_in_cents)}</td>
                     {hasPayment && (
@@ -1817,7 +1832,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                     )}
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => openEmail(o.id, o.number, o.date_sav)}
+                        onClick={() => openEmail(o.id, o.number, o.date_sav, o.order_sav)}
                         title="Voir le dernier email Booqable"
                         className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
                       >
@@ -1950,6 +1965,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailError, setEmailError]     = useState<string | null>(null)
   const [authExpiry,  setAuthExpiry]  = useState<Record<string, { daysLeft: number | null }>>({})
+  const [lastEmails,  setLastEmails]  = useState<Record<string, string | null>>({})
 
   // Reset page quand l'onglet actif change
   useEffect(() => { setPage(1) }, [activeTag])
@@ -1967,7 +1983,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
         if (cancelled) break
         const batch = visible.slice(i, i + BATCH)
         await Promise.all(batch.map(async o => {
-          // Auth expiry — sur la commande d'origine
+          // Auth expiry + UUID commande d'origine
           if (o.order_sav) {
             try {
               const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
@@ -1975,6 +1991,13 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                 const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
                 if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
               }
+            } catch { /* silencieux */ }
+          }
+          // Dernier email — pour affichage Date suivi SAV
+          if (o.id) {
+            try {
+              const data = await fetch(`/api/returns/booqable-last-email?order_id=${encodeURIComponent(o.id)}`).then(r => r.json()) as { found?: boolean; createdAt?: string | null }
+              setLastEmails(prev => ({ ...prev, [o.id]: data.found ? (data.createdAt ?? null) : null }))
             } catch { /* silencieux */ }
           }
         }))
@@ -1986,7 +2009,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
     return () => { cancelled = true }
   }, [allRows, activeTag, page])
 
-  async function openEmail(orderId: string, orderNum: string | number, currentDateSav?: string) {
+  async function openEmail(orderId: string, orderNum: string | number, currentDateSav?: string, originalOrderNum?: string) {
     setEmailModal({ orderId, orderNum })
     setEmailData(null)
     setEmailError(null)
@@ -1997,28 +2020,31 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
       if (data.error) { setEmailError(data.error); return }
       const email = data.emails?.[0] ?? null
       setEmailData(email)
-      // Auto-update date_sav si l'email est plus récent
-      if (email) {
+      // Auto-update date_sav sur la commande d'origine si l'email est plus récent
+      if (email && originalOrderNum) {
         const rawDate = email.sent_at ?? email.created_at
         if (rawDate) {
           const emailDateStr = rawDate.split('T')[0] // YYYY-MM-DD
-          // Normalise date_sav en YYYY-MM-DD pour comparaison (peut arriver en DD-MM-YYYY depuis Booqable)
+          // Normalise currentDateSav en YYYY-MM-DD (peut arriver en DD-MM-YYYY depuis Booqable)
           const frMatch = currentDateSav?.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
           const normalizedCurrent = frMatch
             ? `${frMatch[3]}-${frMatch[2].padStart(2, '0')}-${frMatch[1].padStart(2, '0')}`
             : (currentDateSav?.split('T')[0] ?? null)
           if (!normalizedCurrent || emailDateStr > normalizedCurrent) {
             try {
-              const patchRes = await fetch('/api/returns/booqable-set-sav-date', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ order_id: orderId, date: emailDateStr }),
-              })
-              if (!patchRes.ok) {
-                const patchErr = await patchRes.json() as { error?: string }
-                console.error('[date_sav patch]', patchErr.error)
-              } else {
-                setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
+              const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(originalOrderNum)}`).then(r => r.json()) as { id?: string }
+              if (uuidData.id) {
+                const patchRes = await fetch('/api/returns/booqable-set-sav-date', {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body:    JSON.stringify({ order_id: uuidData.id, date: emailDateStr }),
+                })
+                if (!patchRes.ok) {
+                  const patchErr = await patchRes.json() as { error?: string }
+                  console.error('[date_sav patch]', patchErr.error)
+                } else {
+                  setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
+                }
               }
             } catch (patchEx) {
               console.error('[date_sav patch exception]', patchEx)
@@ -2200,9 +2226,12 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                       ) : <span className="font-mono text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs w-56 max-w-56 whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                      {o.date_sav ? fmtDate(o.date_sav) : '—'}
-                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{(() => {
+                      const savDate   = o.date_sav        ? parseFrDate(o.date_sav)        : null
+                      const emailDate = lastEmails[o.id]  ? parseFrDate(lastEmails[o.id]!) : null
+                      const effective = savDate && emailDate ? (emailDate > savDate ? emailDate : savDate) : emailDate ?? savDate
+                      return effective ? fmtDate(effective.toISOString()) : '—'
+                    })()}</td>
                     <td className="px-4 py-3"><AuthBadge daysLeft={authExpiry[o.id]?.daysLeft ?? null} /></td>
                     <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                     {showPaymentMethod && (
@@ -2218,7 +2247,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                     {showPaymentStatus && (
                       <td className="px-4 py-3 text-right">
                         <button
-                          onClick={() => openEmail(o.id, o.number, o.date_sav)}
+                          onClick={() => openEmail(o.id, o.number, o.date_sav, o.order_sav)}
                           title="Voir le dernier email Booqable"
                           className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
                         >
