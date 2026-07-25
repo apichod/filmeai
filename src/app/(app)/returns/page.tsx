@@ -1546,17 +1546,25 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [emailError, setEmailError]     = useState<string | null>(null)
   const [authExpiry,  setAuthExpiry]  = useState<Record<string, { daysLeft: number | null }>>({})
   const [lastEmails,  setLastEmails]  = useState<Record<string, string | null>>({})  // o.id → ISO date
+  const PAGE_SIZE = 50
+  const [page, setPage] = useState(1)
+
+  // Reset page quand le filtre change
+  useEffect(() => { setPage(1) }, [filterTag])
 
   useEffect(() => {
     if (allRows.length === 0) return
+    const filtered = filterTag ? allRows.filter(o => o.tag_list.includes(filterTag)) : allRows
+    const visible  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    if (visible.length === 0) return
     const BATCH = 5
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
     let cancelled = false
 
     async function fetchBatched() {
-      for (let i = 0; i < allRows.length; i += BATCH) {
+      for (let i = 0; i < visible.length; i += BATCH) {
         if (cancelled) break
-        const batch = allRows.slice(i, i + BATCH)
+        const batch = visible.slice(i, i + BATCH)
         await Promise.all(batch.map(async o => {
           // Auth expiry — sur la commande d'origine
           if (o.order_sav) {
@@ -1576,13 +1584,13 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
             } catch { /* silencieux */ }
           }
         }))
-        if (i + BATCH < allRows.length) await delay(300)
+        if (i + BATCH < visible.length) await delay(300)
       }
     }
 
     fetchBatched()
     return () => { cancelled = true }
-  }, [allRows])
+  }, [allRows, filterTag, page])
 
   async function openEmail(orderId: string, orderNum: string | number) {
     setEmailModal({ orderId, orderNum })
@@ -1637,6 +1645,9 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const rows = filterTag
     ? allRows.filter(o => o.tag_list.includes(filterTag))
     : allRows
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const pagedRows  = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function fmtDate(iso: string) {
     const d = parseFrDate(iso)
@@ -1724,7 +1735,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {rows.map(o => {
+              {pagedRows.map(o => {
                 const st = getStatusTag(o)
                 const bgClass   = st?.bgClass   ?? 'bg-orange-50'
                 const textClass = st?.textClass ?? 'text-orange-700'
@@ -1802,6 +1813,25 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Pagination ── */}
+      {synced && !loading && totalPages > 1 && (
+        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/30">
+          <span className="text-xs text-gray-500">Page {page} / {totalPages} · {rows.length} orders</span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-30 transition-colors"
+            >← Préc.</button>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-30 transition-colors"
+            >Suiv. →</button>
+          </div>
         </div>
       )}
 
@@ -1891,6 +1921,11 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   // Filtre côté client — même pattern que CategoryTable
   const rows = allRows.filter(o => o.tagConfig.tag === activeTag)
 
+  const PAGE_SIZE  = 50
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const pagedRows  = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   // Modal dernier email
   const [emailModal, setEmailModal]     = useState<{ orderId: string; orderNum: string | number } | null>(null)
   const [emailData, setEmailData]       = useState<EmailData | null>(null)
@@ -1899,16 +1934,21 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   const [authExpiry,  setAuthExpiry]  = useState<Record<string, { daysLeft: number | null }>>({})
   const [lastEmails,  setLastEmails]  = useState<Record<string, string | null>>({})  // o.id → ISO date
 
+  // Reset page quand l'onglet actif change
+  useEffect(() => { setPage(1) }, [activeTag])
+
   useEffect(() => {
     if (allRows.length === 0) return
+    const visible = allRows.filter(o => o.tagConfig.tag === activeTag).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    if (visible.length === 0) return
     const BATCH = 5
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
     let cancelled = false
 
     async function fetchBatched() {
-      for (let i = 0; i < allRows.length; i += BATCH) {
+      for (let i = 0; i < visible.length; i += BATCH) {
         if (cancelled) break
-        const batch = allRows.slice(i, i + BATCH)
+        const batch = visible.slice(i, i + BATCH)
         await Promise.all(batch.map(async o => {
           // Auth expiry — sur la commande d'origine
           if (o.order_sav) {
@@ -1928,13 +1968,13 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
             } catch { /* silencieux */ }
           }
         }))
-        if (i + BATCH < allRows.length) await delay(300)
+        if (i + BATCH < visible.length) await delay(300)
       }
     }
 
     fetchBatched()
     return () => { cancelled = true }
-  }, [allRows])
+  }, [allRows, activeTag, page])
 
   async function openEmail(orderId: string, orderNum: string | number) {
     setEmailModal({ orderId, orderNum })
@@ -2072,7 +2112,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {rows.map(o => {
+              {pagedRows.map(o => {
                 const ps = showPaymentStatus ? paymentStatusDisplay(o.payment_status) : null
                 // Couleur du badge Statut : dépend du payment_status si paymentColored
                 const badgeBg   = o.tagConfig.paymentColored
@@ -2157,6 +2197,25 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Pagination ── */}
+      {synced && !loading && totalPages > 1 && (
+        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/30">
+          <span className="text-xs text-gray-500">Page {page} / {totalPages} · {rows.length} orders</span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-30 transition-colors"
+            >← Préc.</button>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-2.5 py-1 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-30 transition-colors"
+            >Suiv. →</button>
+          </div>
         </div>
       )}
 
