@@ -67,6 +67,20 @@ function sortBySavOrderDesc(a: BooqableOrderRow, b: BooqableOrderRow) {
   return orderNum(b.number) - orderNum(a.number)
 }
 
+function AuthBadge({ daysLeft }: { daysLeft: number | null }) {
+  if (daysLeft === null) return null
+  const color = daysLeft <= 1
+    ? 'bg-red-100 text-red-700 border-red-200'
+    : daysLeft <= 3
+    ? 'bg-orange-100 text-orange-700 border-orange-200'
+    : 'bg-yellow-100 text-yellow-700 border-yellow-200'
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${color} whitespace-nowrap`}>
+      ⚠ J-{daysLeft}
+    </span>
+  )
+}
+
 function formatPrice(cents: number | null) {
   if (cents === null || cents === undefined) return '—'
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(cents / 100)
@@ -1527,6 +1541,20 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [emailData, setEmailData]       = useState<EmailData | null>(null)
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailError, setEmailError]     = useState<string | null>(null)
+  const [authExpiry, setAuthExpiry]     = useState<Record<string, { daysLeft: number | null }>>({})
+
+  useEffect(() => {
+    if (allRows.length === 0) return
+    allRows.forEach(o => {
+      if (!o.id) return
+      fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(o.id)}`)
+        .then(r => r.json())
+        .then((data: { found?: boolean; daysLeft?: number | null }) => {
+          if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
+        })
+        .catch(() => { /* silencieux */ })
+    })
+  }, [allRows])
 
   async function openEmail(orderId: string, orderNum: string | number) {
     setEmailModal({ orderId, orderNum })
@@ -1660,6 +1688,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Commande<br />d&apos;origine</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 w-56 max-w-56">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Date suivi SAV</th>
+                <th className="px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Caution</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Prix</th>
                 {hasPayment && <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Moyen de paiement</th>}
                 {hasPayment && <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 whitespace-nowrap">Paiement</th>}
@@ -1709,6 +1738,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                     </td>
                     <td className="px-4 py-3 w-56 max-w-56 whitespace-pre-wrap break-words text-xs text-gray-600">{o.notes_sav || '—'}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
+                    <td className="px-4 py-3"><AuthBadge daysLeft={authExpiry[o.id]?.daysLeft ?? null} /></td>
                     <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-gray-900">{formatPrice(o.grand_total_in_cents)}</td>
                     {hasPayment && (
                       <td className="px-4 py-3 text-xs text-gray-500">{st?.paymentMethod ?? '—'}</td>
@@ -1832,6 +1862,20 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   const [emailData, setEmailData]       = useState<EmailData | null>(null)
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailError, setEmailError]     = useState<string | null>(null)
+  const [authExpiry, setAuthExpiry]     = useState<Record<string, { daysLeft: number | null }>>({})
+
+  useEffect(() => {
+    if (allRows.length === 0) return
+    allRows.forEach(o => {
+      if (!o.id) return
+      fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(o.id)}`)
+        .then(r => r.json())
+        .then((data: { found?: boolean; daysLeft?: number | null }) => {
+          if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
+        })
+        .catch(() => { /* silencieux */ })
+    })
+  }, [allRows])
 
   async function openEmail(orderId: string, orderNum: string | number) {
     setEmailModal({ orderId, orderNum })
@@ -1961,6 +2005,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Commande<br />d&apos;origine</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Notes SAV</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Date suivi SAV</th>
+                <th className="px-4 py-3 text-xs font-medium text-gray-400">Caution</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-400">Prix</th>
                 {showPaymentMethod && <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Moyen de paiement</th>}
                 {showPaymentStatus && <th className="text-left px-4 py-3 text-xs font-medium text-gray-400">Paiement</th>}
@@ -2017,6 +2062,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs w-56 max-w-56 whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{o.date_sav ? fmtDate(o.date_sav) : '—'}</td>
+                    <td className="px-4 py-3"><AuthBadge daysLeft={authExpiry[o.id]?.daysLeft ?? null} /></td>
                     <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                     {showPaymentMethod && (
                       <td className="px-4 py-3 text-xs text-gray-600">
