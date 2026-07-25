@@ -16,8 +16,8 @@ function bqHeaders() {
  * POST /api/returns/booqable-set-sav-date
  * Body: { order_id: string, date: string } — date au format YYYY-MM-DD
  *
- * 1. GET order?include=properties → récupère l'ID de l'instance "date_sav"
- * 2. PATCH avec l'ID et la valeur en ISO datetime (format exact du frontend Booqable)
+ * 1. GET /api/boomerang/properties?filter[owner_id]= → trouve l'ID de l'instance date_sav
+ * 2. PATCH order avec cet ID + valeur ISO datetime (format exact du frontend Booqable)
  */
 export async function POST(req: NextRequest) {
   const body = await req.json() as { order_id?: string; date?: string }
@@ -27,64 +27,59 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'order_id et date requis' }, { status: 400 })
   }
 
-  // ── Étape 1 : récupérer l'ID de la property date_sav sur cet order ───────────
-  const getRes = await fetch(`${BASE}/orders/${order_id}?include=properties`, {
+  // ── Étape 1 : récupérer la liste des properties de cet order ─────────────────
+  const propsUrl =
+    `${BASE}/properties` +
+    `?filter[owner_id]=${encodeURIComponent(order_id)}` +
+    `&filter[owner_type]=Order`
+
+  const propsRes = await fetch(propsUrl, {
     headers: bqHeaders(),
     signal:  AbortSignal.timeout(10000),
   })
-  if (!getRes.ok) {
-    const text = await getRes.text()
-    return NextResponse.json({ error: `GET order ${getRes.status}: ${text}` }, { status: 502 })
+
+  if (!propsRes.ok) {
+    const text = await propsRes.text()
+    return NextResponse.json({ error: `GET properties ${propsRes.status}: ${text}` }, { status: 502 })
   }
 
-  const getJson = await getRes.json() as Record<string, unknown>
-  // Log temporaire pour debug — à retirer une fois le format confirmé
-  console.log('[setSavDate] GET keys:', Object.keys(getJson))
-  const includedRaw = Array.isArray(getJson.included) ? getJson.included : []
-  console.log('[setSavDate] included:', JSON.stringify(includedRaw.slice(0, 3), null, 2))
-  if (getJson.data && typeof getJson.data === 'object') {
-    const d = getJson.data as Record<string, unknown>
-    console.log('[setSavDate] data.attributes keys:', Object.keys((d.attributes as Record<string, unknown>) ?? {}))
-    console.log('[setSavDate] data.relationships keys:', Object.keys((d.relationships as Record<string, unknown>) ?? {}))
+  type PropData = {
+    id: string
+    attributes: {
+      identifier?:    string
+      name?:          string
+      property_type?: string
+      show_on?:       string[]
+      value?:         unknown
+    }
   }
+  const propsJson = await propsRes.json() as { data?: PropData[] }
 
-  type PropItem = { id: string; attributes?: { identifier?: string; name?: string }; identifier?: string; name?: string }
-
-  // Cherche dans included (JSON:API) OU dans data.attributes.properties (boomerang flat)
-  const included = (getJson.included ?? []) as PropItem[]
-  const dateSavProp = included.find(
+  const dateSavProp = (propsJson.data ?? []).find(
     p => p.attributes?.identifier === 'date_sav' || p.attributes?.name === 'Date suivi SAV'
-         || p.identifier === 'date_sav' || p.name === 'Date suivi SAV'
   )
 
-  // Fallback : cherche dans data.relationships.properties si disponible
   if (!dateSavProp) {
     return NextResponse.json({
-      error:  'Propriété date_sav introuvable — voir logs Vercel pour la structure',
-      debug:  {
-        keys:     Object.keys(getJson),
-        included: Array.isArray(getJson.included) ? getJson.included.slice(0, 2) : [],
-      }
+      error:  'Propriété date_sav introuvable',
+      debug:  { count: propsJson.data?.length ?? 0, props: propsJson.data?.map(p => p.attributes?.identifier ?? p.attributes?.name) },
     }, { status: 404 })
   }
 
-  // ── Étape 2 : PATCH avec l'ID et la valeur en ISO datetime ───────────────────
-  const valueISO = `${date}T12:00:00.000Z`
+  // ── Étape 2 : PATCH order avec l'ID exact de la property ─────────────────────
   const propEntry = {
     id:            dateSavProp.id,
-    property_type: 'date_field',
-    name:          'Date suivi SAV',
-    show_on:       [] as string[],
-    value:         valueISO,
+    property_type: dateSavProp.attributes.property_type ?? 'date_field',
+    name:          dateSavProp.attributes.name ?? 'Date suivi SAV',
+    show_on:       dateSavProp.attributes.show_on ?? [],
+    value:         `${date}T12:00:00.000Z`,
   }
 
   const patchRes = await fetch(`${BASE}/orders/${order_id}`, {
     method:  'PATCH',
     headers: bqHeaders(),
-    body: JSON.stringify({
-      order: { properties_attributes: [propEntry] },
-    }),
-    signal: AbortSignal.timeout(10000),
+    body:    JSON.stringify({ order: { properties_attributes: [propEntry] } }),
+    signal:  AbortSignal.timeout(10000),
   })
 
   if (!patchRes.ok) {

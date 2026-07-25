@@ -926,24 +926,24 @@ export async function setOriginalOrder(
 
 /**
  * Inscrit la date du jour dans le champ `date_sav` de la commande.
- * 1. GET order?include=properties → récupère l'ID de l'instance date_sav
- * 2. PATCH avec cet ID + valeur ISO datetime (format exact du frontend Booqable)
+ * 1. GET /api/boomerang/properties?filter[owner_id]= → trouve l'ID de l'instance date_sav
+ * 2. PATCH order avec cet ID + valeur ISO datetime (format exact du frontend Booqable)
  */
 export async function setSavDate(orderId: string): Promise<void> {
   const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
 
-  // Étape 1 : récupérer l'ID de la property
-  type PropItem = { id: string; attributes: { identifier?: string; name?: string } }
-  const getRes = await fetch(`${BASE}/orders/${orderId}?include=properties`, {
-    headers: headers(),
-    signal:  AbortSignal.timeout(10000),
-  })
-  if (!getRes.ok) {
-    const text = await getRes.text()
-    throw new Error(`setSavDate GET error ${getRes.status}: ${text}`)
+  // Étape 1 : récupérer la property date_sav
+  type PropData = { id: string; attributes: { identifier?: string; name?: string; property_type?: string; show_on?: string[] } }
+  const propsRes = await fetch(
+    `${BASE}/properties?filter[owner_id]=${encodeURIComponent(orderId)}&filter[owner_type]=Order`,
+    { headers: headers(), signal: AbortSignal.timeout(10000) }
+  )
+  if (!propsRes.ok) {
+    const text = await propsRes.text()
+    throw new Error(`setSavDate GET properties ${propsRes.status}: ${text}`)
   }
-  const getJson = await getRes.json() as { included?: PropItem[] }
-  const dateSavProp = (getJson.included ?? []).find(
+  const propsJson = await propsRes.json() as { data?: PropData[] }
+  const dateSavProp = (propsJson.data ?? []).find(
     p => p.attributes?.identifier === 'date_sav' || p.attributes?.name === 'Date suivi SAV'
   )
   if (!dateSavProp) throw new Error('setSavDate: propriété date_sav introuvable')
@@ -951,9 +951,9 @@ export async function setSavDate(orderId: string): Promise<void> {
   // Étape 2 : PATCH
   const propEntry = {
     id:            dateSavProp.id,
-    property_type: 'date_field',
-    name:          'Date suivi SAV',
-    show_on:       [] as string[],
+    property_type: dateSavProp.attributes.property_type ?? 'date_field',
+    name:          dateSavProp.attributes.name ?? 'Date suivi SAV',
+    show_on:       dateSavProp.attributes.show_on ?? [] as string[],
     value:         `${today}T12:00:00.000Z`,
   }
   const patchRes = await fetch(`${BASE}/orders/${orderId}`, {
@@ -964,7 +964,7 @@ export async function setSavDate(orderId: string): Promise<void> {
   })
   if (!patchRes.ok) {
     const text = await patchRes.text()
-    throw new Error(`setSavDate PATCH error ${patchRes.status}: ${text}`)
+    throw new Error(`setSavDate PATCH ${patchRes.status}: ${text}`)
   }
 }
 
