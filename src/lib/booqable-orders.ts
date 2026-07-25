@@ -929,8 +929,7 @@ export async function setOriginalOrder(
  * Même approche que addSAVComment mais avec property_type date_field et valeur ISO datetime.
  */
 export async function setSavDate(orderId: string): Promise<void> {
-  const today   = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-  const valueISO = `${today}T12:00:00.000Z`
+  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
 
   const res = await fetch(`${BASE}/orders/${orderId}`, {
     method:  'PATCH',
@@ -939,11 +938,9 @@ export async function setSavDate(orderId: string): Promise<void> {
       order: {
         properties_attributes: [
           {
-            identifier:    'date_sav',
-            name:          'Date suivi SAV',
-            property_type: 'date_field',
-            show_on:       [],
-            value:         valueISO,
+            identifier: 'date_sav',
+            name:       'Date suivi SAV',
+            value:      today,
           },
         ],
       },
