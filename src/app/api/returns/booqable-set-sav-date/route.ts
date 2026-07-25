@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
 
   // Cherche dans included (JSON:API) OU dans data.attributes.properties (boomerang flat)
   const included = (getJson.included ?? []) as PropItem[]
-  let dateSavProp = included.find(
+  const dateSavProp = included.find(
     p => p.attributes?.identifier === 'date_sav' || p.attributes?.name === 'Date suivi SAV'
          || p.identifier === 'date_sav' || p.name === 'Date suivi SAV'
   )
