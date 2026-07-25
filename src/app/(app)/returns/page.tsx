@@ -1600,15 +1600,27 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
         const rawDate = email.sent_at ?? email.created_at
         if (rawDate) {
           const emailDateStr = rawDate.split('T')[0] // YYYY-MM-DD
-          if (!currentDateSav || emailDateStr > currentDateSav) {
+          // Normalise date_sav en YYYY-MM-DD pour comparaison (peut arriver en DD-MM-YYYY depuis Booqable)
+          const frMatch = currentDateSav?.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+          const normalizedCurrent = frMatch
+            ? `${frMatch[3]}-${frMatch[2].padStart(2, '0')}-${frMatch[1].padStart(2, '0')}`
+            : (currentDateSav?.split('T')[0] ?? null)
+          if (!normalizedCurrent || emailDateStr > normalizedCurrent) {
             try {
-              await fetch('/api/returns/booqable-set-sav-date', {
+              const patchRes = await fetch('/api/returns/booqable-set-sav-date', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ order_id: orderId, date: emailDateStr }),
               })
-              setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
-            } catch { /* silencieux */ }
+              if (!patchRes.ok) {
+                const patchErr = await patchRes.json() as { error?: string }
+                console.error('[date_sav patch]', patchErr.error)
+              } else {
+                setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
+              }
+            } catch (patchEx) {
+              console.error('[date_sav patch exception]', patchEx)
+            }
           }
         }
       }
@@ -1990,15 +2002,27 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
         const rawDate = email.sent_at ?? email.created_at
         if (rawDate) {
           const emailDateStr = rawDate.split('T')[0] // YYYY-MM-DD
-          if (!currentDateSav || emailDateStr > currentDateSav) {
+          // Normalise date_sav en YYYY-MM-DD pour comparaison (peut arriver en DD-MM-YYYY depuis Booqable)
+          const frMatch = currentDateSav?.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+          const normalizedCurrent = frMatch
+            ? `${frMatch[3]}-${frMatch[2].padStart(2, '0')}-${frMatch[1].padStart(2, '0')}`
+            : (currentDateSav?.split('T')[0] ?? null)
+          if (!normalizedCurrent || emailDateStr > normalizedCurrent) {
             try {
-              await fetch('/api/returns/booqable-set-sav-date', {
+              const patchRes = await fetch('/api/returns/booqable-set-sav-date', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ order_id: orderId, date: emailDateStr }),
               })
-              setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
-            } catch { /* silencieux */ }
+              if (!patchRes.ok) {
+                const patchErr = await patchRes.json() as { error?: string }
+                console.error('[date_sav patch]', patchErr.error)
+              } else {
+                setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
+              }
+            } catch (patchEx) {
+              console.error('[date_sav patch exception]', patchEx)
+            }
           }
         }
       }
