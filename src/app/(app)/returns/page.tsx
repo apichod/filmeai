@@ -1961,6 +1961,36 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   const [emailError, setEmailError]     = useState<string | null>(null)
   const [authExpiry,  setAuthExpiry]  = useState<Record<string, { daysLeft: number | null }>>({})
 
+  // Modal liste achats IA
+  const [shoppingModal, setShoppingModal] = useState(false)
+  const [shoppingList,  setShoppingList]  = useState<string | null>(null)
+  const [shoppingLoading, setShoppingLoading] = useState(false)
+  const [shoppingError,   setShoppingError]   = useState<string | null>(null)
+
+  async function openShoppingList() {
+    setShoppingModal(true)
+    setShoppingList(null)
+    setShoppingError(null)
+    setShoppingLoading(true)
+    try {
+      const r33Rows = allRows.filter(o => o.tagConfig.tag === 'r33_replace_needed')
+      const res = await fetch('/api/returns/shopping-list', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orders: r33Rows.map(o => ({ number: o.number, customer_name: o.customer_name, notes_sav: o.notes_sav })),
+        }),
+      })
+      const data = await res.json() as { list?: string; error?: string }
+      if (data.error) { setShoppingError(data.error); return }
+      setShoppingList(data.list ?? null)
+    } catch (e) {
+      setShoppingError(e instanceof Error ? e.message : 'Erreur réseau')
+    } finally {
+      setShoppingLoading(false)
+    }
+  }
+
   // Reset page quand l'onglet actif change
   useEffect(() => { setPage(1) }, [activeTag])
 
@@ -2124,21 +2154,71 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
             </span>
           )}
         </div>
-        <button
-          onClick={sync}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
-        >
-          {loading ? (
-            <span className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-          ) : (
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-            </svg>
+        <div className="flex items-center gap-2">
+          {activeTag === 'r33_replace_needed' && synced && (
+            <button
+              onClick={openShoppingList}
+              disabled={shoppingLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              Liste achats IA
+            </button>
           )}
-          Sync
-        </button>
+          <button
+            onClick={sync}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+          >
+            {loading ? (
+              <span className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+            ) : (
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            )}
+            Sync
+          </button>
+        </div>
       </div>
+
+      {/* Modal liste achats IA */}
+      {shoppingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShoppingModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Liste achats IA</h2>
+                <p className="text-xs text-gray-400 mt-0.5">{new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              </div>
+              <button onClick={() => setShoppingModal(false)} className="text-gray-400 hover:text-gray-700 p-1 transition-colors">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {shoppingLoading && (
+                <div className="flex items-center gap-3 text-sm text-gray-400">
+                  <span className="w-4 h-4 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin flex-shrink-0" />
+                  Analyse des notes SAV en cours…
+                </div>
+              )}
+              {shoppingError && (
+                <p className="text-sm text-red-500">{shoppingError}</p>
+              )}
+              {shoppingList && (
+                <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                  {shoppingList}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="px-5 py-3 bg-red-50 text-red-600 text-xs border-b border-red-100">{error}</div>
