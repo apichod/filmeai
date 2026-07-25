@@ -38,6 +38,7 @@ import {
   fetchOrderAmount,
   createManualPaymentCharge,
   createPaymentLink,
+  setSavDate,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -406,6 +407,13 @@ export async function executeCodeStep(
         if (!orderId) return err('zero_out_order_lines : order_id manquant')
         await zeroOutOrderLines(orderId)
         return ok({ success: true, message: `✓ Lignes remises à 0 sur ${label}` })
+      }
+
+      case 'set_sav_date': {
+        if (!orderId) return err('set_sav_date : order_id manquant')
+        await setSavDate(orderId)
+        const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+        return ok({ success: true, message: `✓ Date SAV inscrite (${today}) sur ${label}` })
       }
 
       case 'set_original_order': {

@@ -922,6 +922,32 @@ export async function setOriginalOrder(
   }
 }
 
+// ── Set SAV date ───────────────────────────────────────────────────────────────
+
+/**
+ * Inscrit la date du jour (YYYY-MM-DD) dans le champ custom `date_sav` de la commande.
+ * Utilise l'API v4 avec custom_fields.
+ */
+export async function setSavDate(orderId: string): Promise<void> {
+  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+  const res = await fetch(`${BASE4}/orders/${orderId}`, {
+    method: 'PATCH',
+    headers: { ...headers(), 'Content-Type': 'application/vnd.api+json' },
+    body: JSON.stringify({
+      data: {
+        type:       'orders',
+        id:         orderId,
+        attributes: { custom_fields: { date_sav: today } },
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`setSavDate error ${res.status}: ${text}`)
+  }
+}
+
 // ── Add SAV comment ────────────────────────────────────────────────────────────
 
 /**

@@ -198,6 +198,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: [],
   },
+  set_sav_date: {
+    label:  'Inscrire la date du jour dans date_sav',
+    reads:  ['id'],
+    writes: [],
+  },
   set_original_order: {
     label:  'Renseigner la commande d\'origine',
     reads:  ['number'],   // lit input_context.number (la commande source)
