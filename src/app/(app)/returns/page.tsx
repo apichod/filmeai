@@ -1545,7 +1545,6 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailError, setEmailError]     = useState<string | null>(null)
   const [authExpiry,  setAuthExpiry]  = useState<Record<string, { daysLeft: number | null }>>({})
-  const [lastEmails,  setLastEmails]  = useState<Record<string, string | null>>({})
   const PAGE_SIZE = 50
   const [page, setPage] = useState(1)
 
@@ -1566,7 +1565,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
         if (cancelled) break
         const batch = visible.slice(i, i + BATCH)
         await Promise.all(batch.map(async o => {
-          // Auth expiry + UUID commande d'origine
+          // Auth expiry — sur la commande d'origine
           if (o.order_sav) {
             try {
               const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
@@ -1574,13 +1573,6 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                 const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
                 if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
               }
-            } catch { /* silencieux */ }
-          }
-          // Dernier email — pour affichage Date suivi SAV
-          if (o.id) {
-            try {
-              const data = await fetch(`/api/returns/booqable-last-email?order_id=${encodeURIComponent(o.id)}`).then(r => r.json()) as { found?: boolean; createdAt?: string | null }
-              setLastEmails(prev => ({ ...prev, [o.id]: data.found ? (data.createdAt ?? null) : null }))
             } catch { /* silencieux */ }
           }
         }))
@@ -1810,12 +1802,9 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                       ) : <span className="font-mono text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 w-56 max-w-56 whitespace-pre-wrap break-words text-xs text-gray-600">{o.notes_sav || '—'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{(() => {
-                      const savDate   = o.date_sav        ? parseFrDate(o.date_sav)        : null
-                      const emailDate = lastEmails[o.id]  ? parseFrDate(lastEmails[o.id]!) : null
-                      const effective = savDate && emailDate ? (emailDate > savDate ? emailDate : savDate) : emailDate ?? savDate
-                      return effective ? fmtDate(effective.toISOString()) : '—'
-                    })()}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">
+                      {o.date_sav ? fmtDate(o.date_sav) : '—'}
+                    </td>
                     <td className="px-4 py-3"><AuthBadge daysLeft={authExpiry[o.id]?.daysLeft ?? null} /></td>
                     <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-gray-900">{formatPrice(o.grand_total_in_cents)}</td>
                     {hasPayment && (
@@ -1965,7 +1954,6 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailError, setEmailError]     = useState<string | null>(null)
   const [authExpiry,  setAuthExpiry]  = useState<Record<string, { daysLeft: number | null }>>({})
-  const [lastEmails,  setLastEmails]  = useState<Record<string, string | null>>({})
 
   // Reset page quand l'onglet actif change
   useEffect(() => { setPage(1) }, [activeTag])
@@ -1983,7 +1971,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
         if (cancelled) break
         const batch = visible.slice(i, i + BATCH)
         await Promise.all(batch.map(async o => {
-          // Auth expiry + UUID commande d'origine
+          // Auth expiry — sur la commande d'origine
           if (o.order_sav) {
             try {
               const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
@@ -1991,13 +1979,6 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                 const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
                 if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
               }
-            } catch { /* silencieux */ }
-          }
-          // Dernier email — pour affichage Date suivi SAV
-          if (o.id) {
-            try {
-              const data = await fetch(`/api/returns/booqable-last-email?order_id=${encodeURIComponent(o.id)}`).then(r => r.json()) as { found?: boolean; createdAt?: string | null }
-              setLastEmails(prev => ({ ...prev, [o.id]: data.found ? (data.createdAt ?? null) : null }))
             } catch { /* silencieux */ }
           }
         }))
@@ -2226,12 +2207,9 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                       ) : <span className="font-mono text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs w-56 max-w-56 whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{(() => {
-                      const savDate   = o.date_sav        ? parseFrDate(o.date_sav)        : null
-                      const emailDate = lastEmails[o.id]  ? parseFrDate(lastEmails[o.id]!) : null
-                      const effective = savDate && emailDate ? (emailDate > savDate ? emailDate : savDate) : emailDate ?? savDate
-                      return effective ? fmtDate(effective.toISOString()) : '—'
-                    })()}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                      {o.date_sav ? fmtDate(o.date_sav) : '—'}
+                    </td>
                     <td className="px-4 py-3"><AuthBadge daysLeft={authExpiry[o.id]?.daysLeft ?? null} /></td>
                     <td className="px-4 py-3 text-right text-gray-700 text-sm font-medium tabular-nums whitespace-nowrap">{formatPrice(o.grand_total_in_cents)}</td>
                     {showPaymentMethod && (
