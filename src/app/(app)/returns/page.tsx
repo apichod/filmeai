@@ -1546,11 +1546,16 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   useEffect(() => {
     if (allRows.length === 0) return
     allRows.forEach(o => {
-      if (!o.id) return
-      fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(o.id)}`)
+      if (!o.order_sav) return
+      fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`)
         .then(r => r.json())
-        .then((data: { found?: boolean; daysLeft?: number | null }) => {
-          if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
+        .then((uuidData: { id?: string }) => {
+          if (!uuidData.id) return
+          return fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`)
+            .then(r => r.json())
+            .then((data: { found?: boolean; daysLeft?: number | null }) => {
+              if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
+            })
         })
         .catch(() => { /* silencieux */ })
     })
@@ -1867,11 +1872,16 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   useEffect(() => {
     if (allRows.length === 0) return
     allRows.forEach(o => {
-      if (!o.id) return
-      fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(o.id)}`)
+      if (!o.order_sav) return
+      fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`)
         .then(r => r.json())
-        .then((data: { found?: boolean; daysLeft?: number | null }) => {
-          if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
+        .then((uuidData: { id?: string }) => {
+          if (!uuidData.id) return
+          return fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`)
+            .then(r => r.json())
+            .then((data: { found?: boolean; daysLeft?: number | null }) => {
+              if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
+            })
         })
         .catch(() => { /* silencieux */ })
     })
