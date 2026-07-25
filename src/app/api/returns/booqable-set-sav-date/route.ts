@@ -16,8 +16,8 @@ function bqHeaders() {
  * POST /api/returns/booqable-set-sav-date
  * Body: { order_id: string, date: string } — date au format YYYY-MM-DD
  *
- * 1. GET /api/boomerang/properties?filter[owner_id]= → trouve l'ID de l'instance date_sav
- * 2. PATCH order avec cet ID + valeur ISO datetime (format exact du frontend Booqable)
+ * PATCH /api/boomerang/orders/{id} avec properties_attributes par identifier
+ * (même approche que addSAVComment, adapté pour un champ date_field)
  */
 export async function POST(req: NextRequest) {
   const body = await req.json() as { order_id?: string; date?: string }
@@ -27,64 +27,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'order_id et date requis' }, { status: 400 })
   }
 
-  // ── Étape 1 : récupérer la liste des properties de cet order ─────────────────
-  const propsUrl =
-    `${BASE}/properties` +
-    `?filter[owner_id]=${encodeURIComponent(order_id)}` +
-    `&filter[owner_type]=Order`
+  // Valeur ISO datetime attendue par Booqable pour un date_field
+  const valueISO = `${date}T12:00:00.000Z`
 
-  const propsRes = await fetch(propsUrl, {
-    headers: bqHeaders(),
-    signal:  AbortSignal.timeout(10000),
-  })
-
-  if (!propsRes.ok) {
-    const text = await propsRes.text()
-    return NextResponse.json({ error: `GET properties ${propsRes.status}: ${text}` }, { status: 502 })
-  }
-
-  type PropData = {
-    id: string
-    attributes: {
-      identifier?:    string
-      name?:          string
-      property_type?: string
-      show_on?:       string[]
-      value?:         unknown
-    }
-  }
-  const propsJson = await propsRes.json() as { data?: PropData[] }
-
-  const dateSavProp = (propsJson.data ?? []).find(
-    p => p.attributes?.identifier === 'date_sav' || p.attributes?.name === 'Date suivi SAV'
-  )
-
-  if (!dateSavProp) {
-    return NextResponse.json({
-      error:  'Propriété date_sav introuvable',
-      debug:  { count: propsJson.data?.length ?? 0, props: propsJson.data?.map(p => p.attributes?.identifier ?? p.attributes?.name) },
-    }, { status: 404 })
-  }
-
-  // ── Étape 2 : PATCH order avec l'ID exact de la property ─────────────────────
-  const propEntry = {
-    id:            dateSavProp.id,
-    property_type: dateSavProp.attributes.property_type ?? 'date_field',
-    name:          dateSavProp.attributes.name ?? 'Date suivi SAV',
-    show_on:       dateSavProp.attributes.show_on ?? [],
-    value:         `${date}T12:00:00.000Z`,
-  }
-
-  const patchRes = await fetch(`${BASE}/orders/${order_id}`, {
+  const res = await fetch(`${BASE}/orders/${order_id}`, {
     method:  'PATCH',
     headers: bqHeaders(),
-    body:    JSON.stringify({ order: { properties_attributes: [propEntry] } }),
-    signal:  AbortSignal.timeout(10000),
+    body: JSON.stringify({
+      order: {
+        properties_attributes: [
+          {
+            identifier:    'date_sav',
+            name:          'Date suivi SAV',
+            property_type: 'date_field',
+            show_on:       [],
+            value:         valueISO,
+          },
+        ],
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
   })
 
-  if (!patchRes.ok) {
-    const text = await patchRes.text()
-    return NextResponse.json({ error: `PATCH order ${patchRes.status}: ${text}` }, { status: 502 })
+  if (!res.ok) {
+    const text = await res.text()
+    return NextResponse.json({ error: `Booqable ${res.status}: ${text}` }, { status: 502 })
   }
 
   return NextResponse.json({ ok: true, date })

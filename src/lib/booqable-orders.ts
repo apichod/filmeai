@@ -926,45 +926,33 @@ export async function setOriginalOrder(
 
 /**
  * Inscrit la date du jour dans le champ `date_sav` de la commande.
- * 1. GET /api/boomerang/properties?filter[owner_id]= → trouve l'ID de l'instance date_sav
- * 2. PATCH order avec cet ID + valeur ISO datetime (format exact du frontend Booqable)
+ * Même approche que addSAVComment mais avec property_type date_field et valeur ISO datetime.
  */
 export async function setSavDate(orderId: string): Promise<void> {
-  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+  const today   = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+  const valueISO = `${today}T12:00:00.000Z`
 
-  // Étape 1 : récupérer la property date_sav
-  type PropData = { id: string; attributes: { identifier?: string; name?: string; property_type?: string; show_on?: string[] } }
-  const propsRes = await fetch(
-    `${BASE}/properties?filter[owner_id]=${encodeURIComponent(orderId)}&filter[owner_type]=Order`,
-    { headers: headers(), signal: AbortSignal.timeout(10000) }
-  )
-  if (!propsRes.ok) {
-    const text = await propsRes.text()
-    throw new Error(`setSavDate GET properties ${propsRes.status}: ${text}`)
-  }
-  const propsJson = await propsRes.json() as { data?: PropData[] }
-  const dateSavProp = (propsJson.data ?? []).find(
-    p => p.attributes?.identifier === 'date_sav' || p.attributes?.name === 'Date suivi SAV'
-  )
-  if (!dateSavProp) throw new Error('setSavDate: propriété date_sav introuvable')
-
-  // Étape 2 : PATCH
-  const propEntry = {
-    id:            dateSavProp.id,
-    property_type: dateSavProp.attributes.property_type ?? 'date_field',
-    name:          dateSavProp.attributes.name ?? 'Date suivi SAV',
-    show_on:       dateSavProp.attributes.show_on ?? [] as string[],
-    value:         `${today}T12:00:00.000Z`,
-  }
-  const patchRes = await fetch(`${BASE}/orders/${orderId}`, {
+  const res = await fetch(`${BASE}/orders/${orderId}`, {
     method:  'PATCH',
     headers: headers(),
-    body:    JSON.stringify({ order: { properties_attributes: [propEntry] } }),
-    signal:  AbortSignal.timeout(10000),
+    body: JSON.stringify({
+      order: {
+        properties_attributes: [
+          {
+            identifier:    'date_sav',
+            name:          'Date suivi SAV',
+            property_type: 'date_field',
+            show_on:       [],
+            value:         valueISO,
+          },
+        ],
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
   })
-  if (!patchRes.ok) {
-    const text = await patchRes.text()
-    throw new Error(`setSavDate PATCH ${patchRes.status}: ${text}`)
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`setSavDate error ${res.status}: ${text}`)
   }
 }
 
