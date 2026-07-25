@@ -926,18 +926,22 @@ export async function setOriginalOrder(
 
 /**
  * Inscrit la date du jour (YYYY-MM-DD) dans le champ custom `date_sav` de la commande.
- * Utilise l'API v4 avec properties.
+ * Utilise l'API Boomerang avec properties_attributes (même approche que addSAVComment).
  */
 export async function setSavDate(orderId: string): Promise<void> {
   const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-  const res = await fetch(`${BASE4}/orders/${orderId}`, {
+  const res = await fetch(`${BASE}/orders/${orderId}`, {
     method: 'PATCH',
-    headers: { ...headers(), 'Content-Type': 'application/vnd.api+json' },
+    headers: headers(),
     body: JSON.stringify({
       data: {
         type:       'orders',
         id:         orderId,
-        attributes: { properties: { date_sav: today } },
+        attributes: {
+          properties_attributes: [
+            { identifier: 'date_sav', value: today },
+          ],
+        },
       },
     }),
     signal: AbortSignal.timeout(10000),

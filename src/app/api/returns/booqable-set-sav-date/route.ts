@@ -7,7 +7,8 @@ const SUBDOMAIN = process.env.BOOQABLE_SUBDOMAIN || ''
  * POST /api/returns/booqable-set-sav-date
  * Body: { order_id: string, date: string } — date au format YYYY-MM-DD
  *
- * Patch le custom field date_sav d'un order Booqable.
+ * Patch le champ date_sav via l'API Boomerang (même endpoint que la lecture).
+ * L'API v4 n'expose pas les properties en écriture directe.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json() as { order_id?: string; date?: string }
@@ -17,12 +18,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'order_id et date requis' }, { status: 400 })
   }
 
-  const url = `https://${SUBDOMAIN}.booqable.com/api/4/orders/${encodeURIComponent(order_id)}`
+  const url = `https://${SUBDOMAIN}.booqable.com/api/boomerang/orders/${encodeURIComponent(order_id)}`
   const payload = {
     data: {
       type: 'orders',
       id:   order_id,
-      attributes: { properties: { date_sav: date } },
+      attributes: {
+        properties_attributes: [
+          { identifier: 'date_sav', value: date },
+        ],
+      },
     },
   }
 
@@ -30,8 +35,8 @@ export async function POST(req: NextRequest) {
     method:  'PATCH',
     headers: {
       Authorization:  `Bearer ${KEY}`,
-      'Content-Type': 'application/vnd.api+json',
-      Accept:         'application/vnd.api+json',
+      'Content-Type': 'application/json',
+      Accept:         'application/json',
     },
     body: JSON.stringify(payload),
   })
