@@ -850,15 +850,18 @@ function ChatPanel() {
             <p className="text-xs text-gray-400 mt-1">{l1Label}</p>
           </div>
           <div className="flex flex-wrap gap-2 justify-center">
-            {subOptions.map(opt => (
-              <button
-                key={opt.label}
-                onClick={() => selectSubOption(opt, `${l1Label} — ${opt.label}`)}
-                className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
-              >
-                {opt.label}
-              </button>
-            ))}
+            {subOptions.map(opt => {
+              const wfLabel = availableWorkflows.find(w => w.slug === opt.scenario)?.chat_label || opt.label
+              return (
+                <button
+                  key={opt.label}
+                  onClick={() => selectSubOption(opt, `${l1Label} — ${wfLabel}`)}
+                  className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
+                >
+                  {wfLabel}
+                </button>
+              )
+            })}
           </div>
           <button onClick={() => setLevel1(null)} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
             ← Retour
