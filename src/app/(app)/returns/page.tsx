@@ -1564,17 +1564,20 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
       for (let i = 0; i < visible.length; i += BATCH) {
         if (cancelled) break
         const batch = visible.slice(i, i + BATCH)
+        const MS_14_DAYS = 14 * 24 * 60 * 60 * 1000
+        const now = Date.now()
         await Promise.all(batch.map(async o => {
-          // Auth expiry — sur la commande d'origine
-          if (o.order_sav) {
-            try {
-              const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
-              if (uuidData.id) {
-                const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
-                if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
-              }
-            } catch { /* silencieux */ }
-          }
+          // Auth expiry — seulement si starts_at < 14 jours (limiter les requêtes API)
+          if (!o.order_sav) return
+          const startsAt = o.starts_at ? new Date(o.starts_at).getTime() : null
+          if (!startsAt || now - startsAt > MS_14_DAYS) return
+          try {
+            const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
+            if (uuidData.id) {
+              const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
+              if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
+            }
+          } catch { /* silencieux */ }
         }))
         if (i + BATCH < visible.length) await delay(300)
       }
@@ -1973,17 +1976,20 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
       for (let i = 0; i < visible.length; i += BATCH) {
         if (cancelled) break
         const batch = visible.slice(i, i + BATCH)
+        const MS_14_DAYS = 14 * 24 * 60 * 60 * 1000
+        const now = Date.now()
         await Promise.all(batch.map(async o => {
-          // Auth expiry — sur la commande d'origine
-          if (o.order_sav) {
-            try {
-              const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
-              if (uuidData.id) {
-                const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
-                if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
-              }
-            } catch { /* silencieux */ }
-          }
+          // Auth expiry — seulement si starts_at < 14 jours (limiter les requêtes API)
+          if (!o.order_sav) return
+          const startsAt = o.starts_at ? new Date(o.starts_at).getTime() : null
+          if (!startsAt || now - startsAt > MS_14_DAYS) return
+          try {
+            const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
+            if (uuidData.id) {
+              const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
+              if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
+            }
+          } catch { /* silencieux */ }
         }))
         if (i + BATCH < visible.length) await delay(300)
       }
