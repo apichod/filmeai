@@ -1515,9 +1515,9 @@ const TAG_LABELS: Record<string, string> = {
   r22_waived:       'Gracié',
   r23_deposit:      'Caution débitée',
   r24_billed:       'Facturé',
-  r31_repair_needed:'À réparer',
+  r31_repair_needed:'Réparations',
   r32_repaired:     'Réparé',
-  r33_replace_needed:'À remplacer',
+  r33_replace_needed:'Achats',
   r34_replaced:     'Remplacé',
 }
 
@@ -2389,12 +2389,12 @@ type Tab = 'chat' | 'open' | 'closed' | 'pertes' | 'vols' | 'dommages' | 'replac
 
 // ── Gestion interne ───────────────────────────────────────────────────────────
 const REPAIR_TAGS: TagConfig[] = [
-  { tag: 'r31_repair_needed', label: 'À réparer', bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
+  { tag: 'r31_repair_needed', label: 'Réparations', bgClass: 'bg-amber-50',  textClass: 'text-amber-700'  },
   { tag: 'r32_repaired',      label: 'Réparé',    bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
 ]
 
 const REPLACE_TAGS: TagConfig[] = [
-  { tag: 'r33_replace_needed', label: 'À remplacer', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
+  { tag: 'r33_replace_needed', label: 'Achats', bgClass: 'bg-orange-50', textClass: 'text-orange-700' },
   { tag: 'r34_replaced',       label: 'Remplacé',    bgClass: 'bg-green-50',  textClass: 'text-green-700'  },
 ]
 
@@ -2407,8 +2407,8 @@ export default function ReturnsPage() {
     { id: 'pertes',      label: 'Pertes' },
     { id: 'vols',        label: 'Vols' },
     { id: 'dommages',    label: 'Dommages' },
-    { id: 'replacement', label: 'À remplacer' },
-    { id: 'repair',      label: 'À réparer' },
+    { id: 'replacement', label: 'Achats' },
+    { id: 'repair',      label: 'Réparations' },
     { id: 'log',         label: 'Log' },
   ]
 
