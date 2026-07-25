@@ -1420,7 +1420,19 @@ function CasesTable() {
                       </td>
                     )}
                     <td className="px-4 py-3 text-gray-400 font-mono text-xs">{c.case_number}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{c.origin_order}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900" onClick={e => e.stopPropagation()}>
+                      <button
+                        className="hover:underline text-left"
+                        onClick={async () => {
+                          const res  = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(c.origin_order)}`)
+                          const data = await res.json() as { url?: string; error?: string }
+                          if (data.url) window.open(data.url, '_blank')
+                          else alert(data.error ?? 'Erreur')
+                        }}
+                      >
+                        {c.origin_order}
+                      </button>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                         {typeLabel(c.problem_type)}
