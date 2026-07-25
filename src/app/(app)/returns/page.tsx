@@ -1515,9 +1515,9 @@ const TAG_LABELS: Record<string, string> = {
   r22_waived:       'Gracié',
   r23_deposit:      'Caution débitée',
   r24_billed:       'Facturé',
-  r31_repair_needed:'Réparations',
+  r31_repair_needed:'À réparer',
   r32_repaired:     'Réparé',
-  r33_replace_needed:'Achats',
+  r33_replace_needed:'À remplacer',
   r34_replaced:     'Remplacé',
 }
 
