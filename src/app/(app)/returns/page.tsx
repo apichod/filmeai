@@ -1595,6 +1595,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
       if (data.error) { setEmailError(data.error); return }
       const email = data.emails?.[0] ?? null
       setEmailData(email)
+      console.log('[openEmail] orderId:', orderId, 'currentDateSav:', currentDateSav, 'email:', email ? { sent_at: email.sent_at, created_at: email.created_at } : null)
       // Auto-update date_sav sur la commande de retour si l'email est plus récent
       if (email) {
         const rawDate = email.sent_at ?? email.created_at
@@ -1605,6 +1606,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
           const normalizedCurrent = frMatch
             ? `${frMatch[3]}-${frMatch[2].padStart(2, '0')}-${frMatch[1].padStart(2, '0')}`
             : (currentDateSav?.split('T')[0] ?? null)
+          console.log('[openEmail] emailDateStr:', emailDateStr, 'normalizedCurrent:', normalizedCurrent, 'shouldPatch:', !normalizedCurrent || emailDateStr > normalizedCurrent)
           if (!normalizedCurrent || emailDateStr > normalizedCurrent) {
             try {
               const patchRes = await fetch('/api/returns/booqable-set-sav-date', {
@@ -1616,13 +1618,18 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                 const patchErr = await patchRes.json() as { error?: string }
                 console.error('[date_sav patch]', patchErr.error)
               } else {
+                console.log('[date_sav patch] OK, updating UI to', emailDateStr)
                 setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
               }
             } catch (patchEx) {
               console.error('[date_sav patch exception]', patchEx)
             }
           }
+        } else {
+          console.log('[openEmail] rawDate is null — pas de date sur l\'email')
         }
+      } else {
+        console.log('[openEmail] aucun email trouvé pour cet order')
       }
     } catch (e) {
       setEmailError(e instanceof Error ? e.message : 'Erreur réseau')
@@ -1997,6 +2004,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
       if (data.error) { setEmailError(data.error); return }
       const email = data.emails?.[0] ?? null
       setEmailData(email)
+      console.log('[openEmail] orderId:', orderId, 'currentDateSav:', currentDateSav, 'email:', email ? { sent_at: email.sent_at, created_at: email.created_at } : null)
       // Auto-update date_sav sur la commande de retour si l'email est plus récent
       if (email) {
         const rawDate = email.sent_at ?? email.created_at
@@ -2007,6 +2015,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
           const normalizedCurrent = frMatch
             ? `${frMatch[3]}-${frMatch[2].padStart(2, '0')}-${frMatch[1].padStart(2, '0')}`
             : (currentDateSav?.split('T')[0] ?? null)
+          console.log('[openEmail] emailDateStr:', emailDateStr, 'normalizedCurrent:', normalizedCurrent, 'shouldPatch:', !normalizedCurrent || emailDateStr > normalizedCurrent)
           if (!normalizedCurrent || emailDateStr > normalizedCurrent) {
             try {
               const patchRes = await fetch('/api/returns/booqable-set-sav-date', {
@@ -2018,13 +2027,18 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                 const patchErr = await patchRes.json() as { error?: string }
                 console.error('[date_sav patch]', patchErr.error)
               } else {
+                console.log('[date_sav patch] OK, updating UI to', emailDateStr)
                 setAllRows(prev => prev.map(r => r.id === orderId ? { ...r, date_sav: emailDateStr } : r))
               }
             } catch (patchEx) {
               console.error('[date_sav patch exception]', patchEx)
             }
           }
+        } else {
+          console.log('[openEmail] rawDate is null — pas de date sur l\'email')
         }
+      } else {
+        console.log('[openEmail] aucun email trouvé pour cet order')
       }
     } catch (e) {
       setEmailError(e instanceof Error ? e.message : 'Erreur réseau')
