@@ -1549,31 +1549,39 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
 
   useEffect(() => {
     if (allRows.length === 0) return
-    allRows.forEach(o => {
-      // Auth expiry — sur la commande d'origine
-      if (o.order_sav) {
-        fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`)
-          .then(r => r.json())
-          .then((uuidData: { id?: string }) => {
-            if (!uuidData.id) return
-            return fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`)
-              .then(r => r.json())
-              .then((data: { found?: boolean; daysLeft?: number | null }) => {
+    const BATCH = 5
+    const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
+    let cancelled = false
+
+    async function fetchBatched() {
+      for (let i = 0; i < allRows.length; i += BATCH) {
+        if (cancelled) break
+        const batch = allRows.slice(i, i + BATCH)
+        await Promise.all(batch.map(async o => {
+          // Auth expiry — sur la commande d'origine
+          if (o.order_sav) {
+            try {
+              const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
+              if (uuidData.id) {
+                const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
                 if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
-              })
-          })
-          .catch(() => {})
+              }
+            } catch { /* silencieux */ }
+          }
+          // Dernier email — sur la commande de retour
+          if (o.id) {
+            try {
+              const data = await fetch(`/api/returns/booqable-last-email?order_id=${encodeURIComponent(o.id)}`).then(r => r.json()) as { found?: boolean; createdAt?: string | null }
+              setLastEmails(prev => ({ ...prev, [o.id]: data.found ? (data.createdAt ?? null) : null }))
+            } catch { /* silencieux */ }
+          }
+        }))
+        if (i + BATCH < allRows.length) await delay(300)
       }
-      // Dernier email — sur la commande de retour
-      if (o.id) {
-        fetch(`/api/returns/booqable-last-email?order_id=${encodeURIComponent(o.id)}`)
-          .then(r => r.json())
-          .then((data: { found?: boolean; createdAt?: string | null }) => {
-            setLastEmails(prev => ({ ...prev, [o.id]: data.found ? (data.createdAt ?? null) : null }))
-          })
-          .catch(() => {})
-      }
-    })
+    }
+
+    fetchBatched()
+    return () => { cancelled = true }
   }, [allRows])
 
   async function openEmail(orderId: string, orderNum: string | number) {
@@ -1893,31 +1901,39 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
 
   useEffect(() => {
     if (allRows.length === 0) return
-    allRows.forEach(o => {
-      // Auth expiry — sur la commande d'origine
-      if (o.order_sav) {
-        fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`)
-          .then(r => r.json())
-          .then((uuidData: { id?: string }) => {
-            if (!uuidData.id) return
-            return fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`)
-              .then(r => r.json())
-              .then((data: { found?: boolean; daysLeft?: number | null }) => {
+    const BATCH = 5
+    const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
+    let cancelled = false
+
+    async function fetchBatched() {
+      for (let i = 0; i < allRows.length; i += BATCH) {
+        if (cancelled) break
+        const batch = allRows.slice(i, i + BATCH)
+        await Promise.all(batch.map(async o => {
+          // Auth expiry — sur la commande d'origine
+          if (o.order_sav) {
+            try {
+              const uuidData = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`).then(r => r.json()) as { id?: string }
+              if (uuidData.id) {
+                const data = await fetch(`/api/returns/booqable-auth-expiry?order_id=${encodeURIComponent(uuidData.id)}`).then(r => r.json()) as { found?: boolean; daysLeft?: number | null }
                 if (data.found) setAuthExpiry(prev => ({ ...prev, [o.id]: { daysLeft: data.daysLeft ?? null } }))
-              })
-          })
-          .catch(() => {})
+              }
+            } catch { /* silencieux */ }
+          }
+          // Dernier email — sur la commande de retour
+          if (o.id) {
+            try {
+              const data = await fetch(`/api/returns/booqable-last-email?order_id=${encodeURIComponent(o.id)}`).then(r => r.json()) as { found?: boolean; createdAt?: string | null }
+              setLastEmails(prev => ({ ...prev, [o.id]: data.found ? (data.createdAt ?? null) : null }))
+            } catch { /* silencieux */ }
+          }
+        }))
+        if (i + BATCH < allRows.length) await delay(300)
       }
-      // Dernier email — sur la commande de retour
-      if (o.id) {
-        fetch(`/api/returns/booqable-last-email?order_id=${encodeURIComponent(o.id)}`)
-          .then(r => r.json())
-          .then((data: { found?: boolean; createdAt?: string | null }) => {
-            setLastEmails(prev => ({ ...prev, [o.id]: data.found ? (data.createdAt ?? null) : null }))
-          })
-          .catch(() => {})
-      }
-    })
+    }
+
+    fetchBatched()
+    return () => { cancelled = true }
   }, [allRows])
 
   async function openEmail(orderId: string, orderNum: string | number) {
