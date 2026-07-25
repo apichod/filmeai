@@ -37,15 +37,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `GET order ${getRes.status}: ${text}` }, { status: 502 })
   }
 
-  type PropItem = { id: string; attributes: { identifier?: string; name?: string } }
-  const getJson = await getRes.json() as { included?: PropItem[] }
+  const getJson = await getRes.json() as Record<string, unknown>
+  // Log temporaire pour debug — à retirer une fois le format confirmé
+  console.log('[setSavDate] GET keys:', Object.keys(getJson))
+  const includedRaw = Array.isArray(getJson.included) ? getJson.included : []
+  console.log('[setSavDate] included:', JSON.stringify(includedRaw.slice(0, 3), null, 2))
+  if (getJson.data && typeof getJson.data === 'object') {
+    const d = getJson.data as Record<string, unknown>
+    console.log('[setSavDate] data.attributes keys:', Object.keys((d.attributes as Record<string, unknown>) ?? {}))
+    console.log('[setSavDate] data.relationships keys:', Object.keys((d.relationships as Record<string, unknown>) ?? {}))
+  }
 
-  const dateSavProp = (getJson.included ?? []).find(
+  type PropItem = { id: string; attributes?: { identifier?: string; name?: string }; identifier?: string; name?: string }
+
+  // Cherche dans included (JSON:API) OU dans data.attributes.properties (boomerang flat)
+  const included = (getJson.included ?? []) as PropItem[]
+  let dateSavProp = included.find(
     p => p.attributes?.identifier === 'date_sav' || p.attributes?.name === 'Date suivi SAV'
+         || p.identifier === 'date_sav' || p.name === 'Date suivi SAV'
   )
 
+  // Fallback : cherche dans data.relationships.properties si disponible
   if (!dateSavProp) {
-    return NextResponse.json({ error: 'Propriété date_sav introuvable sur cet order' }, { status: 404 })
+    return NextResponse.json({
+      error:  'Propriété date_sav introuvable — voir logs Vercel pour la structure',
+      debug:  {
+        keys:     Object.keys(getJson),
+        included: Array.isArray(getJson.included) ? getJson.included.slice(0, 2) : [],
+      }
+    }, { status: 404 })
   }
 
   // ── Étape 2 : PATCH avec l'ID et la valeur en ISO datetime ───────────────────
