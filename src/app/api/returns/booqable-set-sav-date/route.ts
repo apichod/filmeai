@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     data: {
       type: 'orders',
       id:   order_id,
-      attributes: { custom_fields: { date_sav: date } },
+      attributes: { properties: { date_sav: date } },
     },
   }
 

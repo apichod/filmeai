@@ -926,7 +926,7 @@ export async function setOriginalOrder(
 
 /**
  * Inscrit la date du jour (YYYY-MM-DD) dans le champ custom `date_sav` de la commande.
- * Utilise l'API v4 avec custom_fields.
+ * Utilise l'API v4 avec properties.
  */
 export async function setSavDate(orderId: string): Promise<void> {
   const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
@@ -937,7 +937,7 @@ export async function setSavDate(orderId: string): Promise<void> {
       data: {
         type:       'orders',
         id:         orderId,
-        attributes: { custom_fields: { date_sav: today } },
+        attributes: { properties: { date_sav: today } },
       },
     }),
     signal: AbortSignal.timeout(10000),
