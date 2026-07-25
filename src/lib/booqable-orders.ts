@@ -925,30 +925,46 @@ export async function setOriginalOrder(
 // ── Set SAV date ───────────────────────────────────────────────────────────────
 
 /**
- * Inscrit la date du jour (YYYY-MM-DD) dans le champ custom `date_sav` de la commande.
- * Utilise l'API Boomerang avec properties_attributes (même approche que addSAVComment).
+ * Inscrit la date du jour dans le champ `date_sav` de la commande.
+ * 1. GET order?include=properties → récupère l'ID de l'instance date_sav
+ * 2. PATCH avec cet ID + valeur ISO datetime (format exact du frontend Booqable)
  */
 export async function setSavDate(orderId: string): Promise<void> {
   const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-  const res = await fetch(`${BASE}/orders/${orderId}`, {
-    method: 'PATCH',
+
+  // Étape 1 : récupérer l'ID de la property
+  type PropItem = { id: string; attributes: { identifier?: string; name?: string } }
+  const getRes = await fetch(`${BASE}/orders/${orderId}?include=properties`, {
     headers: headers(),
-    body: JSON.stringify({
-      data: {
-        type:       'orders',
-        id:         orderId,
-        attributes: {
-          properties_attributes: [
-            { identifier: 'date_sav', value: today },
-          ],
-        },
-      },
-    }),
-    signal: AbortSignal.timeout(10000),
+    signal:  AbortSignal.timeout(10000),
   })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`setSavDate error ${res.status}: ${text}`)
+  if (!getRes.ok) {
+    const text = await getRes.text()
+    throw new Error(`setSavDate GET error ${getRes.status}: ${text}`)
+  }
+  const getJson = await getRes.json() as { included?: PropItem[] }
+  const dateSavProp = (getJson.included ?? []).find(
+    p => p.attributes?.identifier === 'date_sav' || p.attributes?.name === 'Date suivi SAV'
+  )
+  if (!dateSavProp) throw new Error('setSavDate: propriété date_sav introuvable')
+
+  // Étape 2 : PATCH
+  const propEntry = {
+    id:            dateSavProp.id,
+    property_type: 'date_field',
+    name:          'Date suivi SAV',
+    show_on:       [] as string[],
+    value:         `${today}T12:00:00.000Z`,
+  }
+  const patchRes = await fetch(`${BASE}/orders/${orderId}`, {
+    method:  'PATCH',
+    headers: headers(),
+    body:    JSON.stringify({ order: { properties_attributes: [propEntry] } }),
+    signal:  AbortSignal.timeout(10000),
+  })
+  if (!patchRes.ok) {
+    const text = await patchRes.text()
+    throw new Error(`setSavDate PATCH error ${patchRes.status}: ${text}`)
   }
 }
 

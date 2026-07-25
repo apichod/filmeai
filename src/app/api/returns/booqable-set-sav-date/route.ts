@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const KEY       = process.env.BOOQABLE_API_KEY
 const SUBDOMAIN = process.env.BOOQABLE_SUBDOMAIN || ''
+const BASE      = `https://${SUBDOMAIN}.booqable.com/api/boomerang`
+
+function bqHeaders() {
+  return {
+    Authorization:  `Bearer ${KEY}`,
+    'Content-Type': 'application/json',
+    Accept:         'application/json',
+  }
+}
 
 /**
  * POST /api/returns/booqable-set-sav-date
  * Body: { order_id: string, date: string } — date au format YYYY-MM-DD
  *
- * Patch le champ date_sav via l'API Boomerang (même endpoint que la lecture).
- * L'API v4 n'expose pas les properties en écriture directe.
+ * 1. GET order?include=properties → récupère l'ID de l'instance "date_sav"
+ * 2. PATCH avec l'ID et la valeur en ISO datetime (format exact du frontend Booqable)
  */
 export async function POST(req: NextRequest) {
   const body = await req.json() as { order_id?: string; date?: string }
@@ -18,32 +27,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'order_id et date requis' }, { status: 400 })
   }
 
-  const url = `https://${SUBDOMAIN}.booqable.com/api/boomerang/orders/${encodeURIComponent(order_id)}`
-  const payload = {
-    data: {
-      type: 'orders',
-      id:   order_id,
-      attributes: {
-        properties_attributes: [
-          { identifier: 'date_sav', value: date },
-        ],
-      },
-    },
+  // ── Étape 1 : récupérer l'ID de la property date_sav sur cet order ───────────
+  const getRes = await fetch(`${BASE}/orders/${order_id}?include=properties`, {
+    headers: bqHeaders(),
+    signal:  AbortSignal.timeout(10000),
+  })
+  if (!getRes.ok) {
+    const text = await getRes.text()
+    return NextResponse.json({ error: `GET order ${getRes.status}: ${text}` }, { status: 502 })
   }
 
-  const res = await fetch(url, {
+  type PropItem = { id: string; attributes: { identifier?: string; name?: string } }
+  const getJson = await getRes.json() as { included?: PropItem[] }
+
+  const dateSavProp = (getJson.included ?? []).find(
+    p => p.attributes?.identifier === 'date_sav' || p.attributes?.name === 'Date suivi SAV'
+  )
+
+  if (!dateSavProp) {
+    return NextResponse.json({ error: 'Propriété date_sav introuvable sur cet order' }, { status: 404 })
+  }
+
+  // ── Étape 2 : PATCH avec l'ID et la valeur en ISO datetime ───────────────────
+  const valueISO = `${date}T12:00:00.000Z`
+  const propEntry = {
+    id:            dateSavProp.id,
+    property_type: 'date_field',
+    name:          'Date suivi SAV',
+    show_on:       [] as string[],
+    value:         valueISO,
+  }
+
+  const patchRes = await fetch(`${BASE}/orders/${order_id}`, {
     method:  'PATCH',
-    headers: {
-      Authorization:  `Bearer ${KEY}`,
-      'Content-Type': 'application/json',
-      Accept:         'application/json',
-    },
-    body: JSON.stringify(payload),
+    headers: bqHeaders(),
+    body: JSON.stringify({
+      order: { properties_attributes: [propEntry] },
+    }),
+    signal: AbortSignal.timeout(10000),
   })
 
-  if (!res.ok) {
-    const text = await res.text()
-    return NextResponse.json({ error: `Booqable ${res.status}: ${text}` }, { status: 502 })
+  if (!patchRes.ok) {
+    const text = await patchRes.text()
+    return NextResponse.json({ error: `PATCH order ${patchRes.status}: ${text}` }, { status: 502 })
   }
 
   return NextResponse.json({ ok: true, date })
