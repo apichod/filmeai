@@ -32,10 +32,34 @@ type WorkflowStep = {
   booqable_action?: string
 }
 
+type ReturnWorkflow = {
+  id: string
+  slug: string
+  name: string
+  chat_label: string | null
+  description: string
+  steps: WorkflowStep[]
+  is_active: boolean
+}
+
+// ── Catégories de workflows retour ────────────────────────────────────────────
+
+const WF_GROUPS: { prefix: string; label: string; color: string }[] = [
+  { prefix: 'r11_', label: 'Retard',    color: 'text-blue-600' },
+  { prefix: 'r12_', label: 'Perte',     color: 'text-amber-600' },
+  { prefix: 'r13_', label: 'Vol',       color: 'text-red-600' },
+  { prefix: 'r14_', label: 'Dommage',   color: 'text-orange-600' },
+  { prefix: 'r00_', label: 'Retour OK', color: 'text-green-600' },
+  { prefix: 'u0',   label: 'Utilitaires', color: 'text-violet-600' },
+]
+
+function getGroup(slug: string) {
+  return WF_GROUPS.find(g => slug.startsWith(g.prefix)) ?? { prefix: '', label: 'Autres', color: 'text-gray-500' }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function renderText(text: string) {
-  // **bold** → <strong>, et colorie les champs spéciaux en bleu
   const BLUE_FIELDS = ['Notes internes', 'Order origine SAV', 'Commentaire problème']
   let result = text
   BLUE_FIELDS.forEach(f => {
@@ -65,10 +89,8 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
   while (i < wfSteps.length) {
     const s = wfSteps[i]
 
-    // Skip IA-only actions (pas visible dans le process humain)
     if (s.type === 'action' && HIDDEN_ACTIONS.has(s.booqable_action || '')) { i++; continue }
 
-    // Groupe les questions consécutives en une seule étape
     if (s.type === 'question') {
       const titles: string[] = []
       while (i < wfSteps.length && wfSteps[i].type === 'question') {
@@ -84,14 +106,12 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
       continue
     }
 
-    // instruction → étape manuelle (badge Return)
     if (s.type === 'instruction') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: s.title, badge: { color: 'green', label: 'Return' } })
       i++; continue
     }
 
-    // create_new_return_order → Add order + info + fold add_new_product_line suivant
     if (s.booqable_action === 'create_new_return_order') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: `Créer la **commande de retour** (return_order)`, badge: { color: 'blue', label: 'Add order' } })
@@ -104,14 +124,12 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
       continue
     }
 
-    // add_new_product_line seul (si non consommé)
     if (s.booqable_action === 'add_new_product_line') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: `Ajouter les **articles** à la commande de retour` })
       i++; continue
     }
 
-    // add_internal_note → step + info description
     if (s.booqable_action === 'add_internal_note') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: `Ajouter une **note interne** à la commande d'origine` })
@@ -119,7 +137,6 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
       i++; continue
     }
 
-    // set_original_order → step + info
     if (s.booqable_action === 'set_original_order') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: `Renseigner la **commande d'origine** (original_order)` })
@@ -127,7 +144,6 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
       i++; continue
     }
 
-    // add_sav_comment → step + info
     if (s.booqable_action === 'add_sav_comment') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: `Renseigner le **commentaire SAV**` })
@@ -135,7 +151,6 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
       i++; continue
     }
 
-    // add_tag → step avec nom du tag extrait du titre
     if (s.booqable_action === 'add_tag') {
       stepNum++
       const tagMatch = (s.title + ' ' + (s.description || '')).match(/r\d+_\w+/)
@@ -143,27 +158,23 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
       i++; continue
     }
 
-    // draft_email → Send email + fold send_email suivant
     if (s.booqable_action === 'draft_email') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: `Envoyer l'email client`, badge: { color: 'blue', label: 'Send email' } })
       i++
-      if (wfSteps[i]?.booqable_action === 'send_email') i++ // fold
+      if (wfSteps[i]?.booqable_action === 'send_email') i++
       if (s.description) result.push({ id: `${stepNum}b`, type: 'info', lines: [s.description] })
       continue
     }
 
-    // send_email seul (si non consommé)
     if (s.booqable_action === 'send_email') { i++; continue }
 
-    // log_case → dernière étape
     if (s.booqable_action === 'log_case') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: `Logger le cas dans le tableau de suivi` })
       i++; continue
     }
 
-    // fallback : étape générique
     stepNum++
     result.push({ id: String(stepNum), type: 'step', text: s.title })
     i++
@@ -174,48 +185,40 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
 
 // ── Composant infographie ─────────────────────────────────────────────────────
 
-function ProcessFlow({ process: p, onEdit }: { process: Process; onEdit: (step: StepItem, field: string, value: string) => void }) {
+function ProcessFlow({ process: p, onEdit, readOnly = false }: { process: Process; onEdit: (step: StepItem, field: string, value: string) => void; readOnly?: boolean }) {
   return (
     <div className="max-w-[480px] mx-auto">
-      {/* Header */}
       <div className="text-center mb-6">
         {p.subtitle && <div className="text-xs text-gray-400 mb-2">{p.subtitle}</div>}
         <div className="inline-block border-2 border-gray-900 rounded-xl px-6 py-3 text-sm font-bold text-gray-900 leading-snug text-center">
           {p.title}
         </div>
       </div>
-
-      {/* Steps */}
       <div className="flex flex-col">
         {p.steps.map((step, idx) => (
           <div key={step.id}>
-            {/* Connector */}
             {idx > 0 && <div className="w-0.5 h-4 bg-gray-300 mx-auto" />}
-
-            {step.type === 'step' && (
-              <StepBox step={step} onEdit={onEdit} />
-            )}
-            {step.type === 'info' && (
-              <InfoBox step={step} onEdit={onEdit} />
-            )}
-            {step.type === 'cases' && (
-              <CasesBox step={step} onEdit={onEdit} />
-            )}
+            {step.type === 'step' && <StepBox step={step} onEdit={onEdit} readOnly={readOnly} />}
+            {step.type === 'info' && <InfoBox step={step} onEdit={onEdit} readOnly={readOnly} />}
+            {step.type === 'cases' && <CasesBox step={step} onEdit={onEdit} readOnly={readOnly} />}
           </div>
         ))}
+        {p.steps.length === 0 && (
+          <div className="text-center py-12 text-sm text-gray-400">
+            Aucune étape définie dans ce workflow.
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// ── Step box (numéroté) ───────────────────────────────────────────────────────
+// ── Step box ──────────────────────────────────────────────────────────────────
 
-function StepBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void }) {
+function StepBox({ step, onEdit, readOnly }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void; readOnly?: boolean }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(step.text || '')
-  const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Reset counter par flow (géré via CSS counter au lieu)
   useEffect(() => { setVal(step.text || '') }, [step.text])
 
   function commit() {
@@ -229,9 +232,8 @@ function StepBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: st
         {step.id}
       </div>
       <div className="flex-1 flex items-center gap-3">
-        {editing ? (
+        {editing && !readOnly ? (
           <textarea
-            ref={inputRef}
             value={val}
             autoFocus
             rows={2}
@@ -242,9 +244,9 @@ function StepBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: st
           />
         ) : (
           <div
-            className="flex-1 text-sm text-gray-900 leading-snug cursor-pointer hover:bg-[#d2e3fc] rounded-lg px-1 py-0.5 transition-colors"
-            title="Cliquer pour modifier"
-            onClick={() => setEditing(true)}
+            className={`flex-1 text-sm text-gray-900 leading-snug rounded-lg px-1 py-0.5 transition-colors ${!readOnly ? 'cursor-pointer hover:bg-[#d2e3fc]' : ''}`}
+            title={readOnly ? undefined : 'Cliquer pour modifier'}
+            onClick={() => !readOnly && setEditing(true)}
           >
             {renderText(val)}
           </div>
@@ -259,9 +261,9 @@ function StepBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: st
   )
 }
 
-// ── Info box (fond blanc, liste éditable) ─────────────────────────────────────
+// ── Info box ──────────────────────────────────────────────────────────────────
 
-function InfoBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void }) {
+function InfoBox({ step, onEdit, readOnly }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void; readOnly?: boolean }) {
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [vals, setVals] = useState<string[]>(step.lines || [])
 
@@ -269,9 +271,7 @@ function InfoBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: st
 
   function commit(idx: number, newVal: string) {
     setEditingIdx(null)
-    const next = [...vals]
-    next[idx] = newVal
-    setVals(next)
+    const next = [...vals]; next[idx] = newVal; setVals(next)
     onEdit(step, 'lines', JSON.stringify(next))
   }
 
@@ -280,7 +280,7 @@ function InfoBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: st
       {vals.map((line, i) => (
         <div key={i} className="flex items-center gap-1 py-0.5">
           <span className="text-gray-400 mr-1">–</span>
-          {editingIdx === i ? (
+          {editingIdx === i && !readOnly ? (
             <input
               autoFocus
               value={line}
@@ -291,9 +291,8 @@ function InfoBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: st
             />
           ) : (
             <span
-              className="cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 transition-colors"
-              title="Cliquer pour modifier"
-              onClick={() => setEditingIdx(i)}
+              className={`rounded px-1 py-0.5 transition-colors ${!readOnly ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+              onClick={() => !readOnly && setEditingIdx(i)}
             >
               {line}
             </span>
@@ -317,7 +316,7 @@ function InfoBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: st
 
 // ── Cases box ─────────────────────────────────────────────────────────────────
 
-function CasesBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void }) {
+function CasesBox({ step, onEdit, readOnly }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void; readOnly?: boolean }) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(step.title || '')
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
@@ -325,21 +324,14 @@ function CasesBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: s
 
   useEffect(() => { setTitle(step.title || ''); setVals(step.lines || []) }, [step.title, step.lines])
 
-  function commitTitle(v: string) {
-    setEditingTitle(false)
-    onEdit(step, 'title', v)
-  }
-  function commitLine() {
-    setEditingIdx(null)
-    onEdit(step, 'lines', JSON.stringify(vals))
-  }
+  function commitTitle(v: string) { setEditingTitle(false); onEdit(step, 'title', v) }
+  function commitLine() { setEditingIdx(null); onEdit(step, 'lines', JSON.stringify(vals)) }
 
   return (
     <div className="bg-white border border-[#dadce0] rounded-xl px-4 py-3 text-sm text-gray-800 leading-relaxed">
-      {editingTitle ? (
+      {editingTitle && !readOnly ? (
         <input
-          autoFocus
-          value={title}
+          autoFocus value={title}
           onChange={e => setTitle(e.target.value)}
           onBlur={() => commitTitle(title)}
           onKeyDown={e => { if (e.key === 'Enter') commitTitle(title) }}
@@ -347,18 +339,17 @@ function CasesBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: s
         />
       ) : (
         <div
-          className="font-medium mb-1 cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 transition-colors"
-          onClick={() => setEditingTitle(true)}
+          className={`font-medium mb-1 rounded px-1 py-0.5 transition-colors ${!readOnly ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+          onClick={() => !readOnly && setEditingTitle(true)}
         >
           {title}
         </div>
       )}
       {vals.map((line, i) => (
         <div key={i} className="flex items-center gap-1 py-0.5">
-          {editingIdx === i ? (
+          {editingIdx === i && !readOnly ? (
             <input
-              autoFocus
-              value={line}
+              autoFocus value={line}
               onChange={e => { const n = [...vals]; n[i] = e.target.value; setVals(n) }}
               onBlur={() => commitLine()}
               onKeyDown={e => { if (e.key === 'Enter') commitLine(); if (e.key === 'Escape') { setVals(step.lines || []); setEditingIdx(null) } }}
@@ -366,8 +357,8 @@ function CasesBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: s
             />
           ) : (
             <span
-              className="cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 transition-colors"
-              onClick={() => setEditingIdx(i)}
+              className={`rounded px-1 py-0.5 transition-colors ${!readOnly ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+              onClick={() => !readOnly && setEditingIdx(i)}
             >
               {line}
             </span>
@@ -380,36 +371,56 @@ function CasesBox({ step, onEdit }: { step: StepItem; onEdit: (s: StepItem, f: s
 
 // ── Page principale ───────────────────────────────────────────────────────────
 
+type ActiveItem =
+  | { kind: 'process'; id: string }
+  | { kind: 'workflow'; id: string }
+
 export default function ProcessPage() {
   const [processes, setProcesses]   = useState<Process[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [workflows, setWorkflows]   = useState<ReturnWorkflow[]>([])
+  const [active, setActive]         = useState<ActiveItem | null>(null)
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
   const [saved, setSaved]           = useState(false)
   const [syncing, setSyncing]       = useState(false)
   const [syncError, setSyncError]   = useState<string | null>(null)
-  const [editingTitle, setEditingTitle]   = useState(false)
+  const [editingTitle, setEditingTitle]       = useState(false)
   const [editingSubtitle, setEditingSubtitle] = useState(false)
   const pendingRef = useRef<Record<string, unknown>>({})
 
   useEffect(() => {
-    fetch('/api/processes')
-      .then(r => r.json())
-      .then(d => {
-        setProcesses(d.processes || [])
-        if (d.processes?.length > 0) setSelectedId(d.processes[0].id)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    Promise.all([
+      fetch('/api/processes').then(r => r.json()) as Promise<{ processes?: Process[] }>,
+      fetch('/api/returns/workflows').then(r => r.json()) as Promise<{ workflows?: ReturnWorkflow[] }>,
+    ]).then(([pd, wd]) => {
+      const procs = pd.processes || []
+      const wfs   = wd.workflows || []
+      setProcesses(procs)
+      setWorkflows(wfs.filter(w => w.is_active))
+      // Sélection par défaut
+      if (procs.length > 0) setActive({ kind: 'process', id: procs[0].id })
+      else if (wfs.length > 0) setActive({ kind: 'workflow', id: wfs[0].id })
+      setLoading(false)
+    }).catch(() => setLoading(false))
   }, [])
 
-  const selected = processes.find(p => p.id === selectedId)
+  const selectedProcess  = active?.kind === 'process'  ? processes.find(p => p.id === active.id) : undefined
+  const selectedWorkflow = active?.kind === 'workflow' ? workflows.find(w => w.id === active.id) : undefined
+
+  // Process virtuel construit depuis le workflow retour
+  const workflowAsProcess: Process | undefined = selectedWorkflow ? {
+    id:       selectedWorkflow.id,
+    slug:     selectedWorkflow.slug,
+    title:    selectedWorkflow.name,
+    subtitle: selectedWorkflow.chat_label ?? selectedWorkflow.slug,
+    steps:    workflowToProcessSteps(selectedWorkflow.steps || []),
+    sort_order: 0,
+  } : undefined
 
   const updateLocal = useCallback((id: string, patch: Partial<Process>) => {
     setProcesses(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
   }, [])
 
-  // Sauvegarde debounced
   const saveTimer = useRef<NodeJS.Timeout | null>(null)
 
   const scheduleSave = useCallback((id: string, patch: Record<string, unknown>) => {
@@ -430,126 +441,185 @@ export default function ProcessPage() {
   }, [])
 
   const handleStepEdit = useCallback((step: StepItem, field: string, value: string) => {
-    if (!selected) return
-    const newSteps = selected.steps.map(s => {
+    if (!selectedProcess) return
+    const newSteps = selectedProcess.steps.map(s => {
       if (s.id !== step.id) return s
       if (field === 'text')  return { ...s, text: value }
-      if (field === 'lines') return { ...s, lines: JSON.parse(value) }
+      if (field === 'lines') return { ...s, lines: JSON.parse(value) as string[] }
       if (field === 'title') return { ...s, title: value }
       return s
     })
-    updateLocal(selected.id, { steps: newSteps })
-    scheduleSave(selected.id, { steps: newSteps })
-  }, [selected, updateLocal, scheduleSave])
+    updateLocal(selectedProcess.id, { steps: newSteps })
+    scheduleSave(selectedProcess.id, { steps: newSteps })
+  }, [selectedProcess, updateLocal, scheduleSave])
 
   const handleTitleSave = useCallback((val: string) => {
-    if (!selected) return
+    if (!selectedProcess) return
     setEditingTitle(false)
-    updateLocal(selected.id, { title: val })
-    scheduleSave(selected.id, { title: val })
-  }, [selected, updateLocal, scheduleSave])
+    updateLocal(selectedProcess.id, { title: val })
+    scheduleSave(selectedProcess.id, { title: val })
+  }, [selectedProcess, updateLocal, scheduleSave])
 
   const handleSubtitleSave = useCallback((val: string) => {
-    if (!selected) return
+    if (!selectedProcess) return
     setEditingSubtitle(false)
-    updateLocal(selected.id, { subtitle: val })
-    scheduleSave(selected.id, { subtitle: val })
-  }, [selected, updateLocal, scheduleSave])
+    updateLocal(selectedProcess.id, { subtitle: val })
+    scheduleSave(selectedProcess.id, { subtitle: val })
+  }, [selectedProcess, updateLocal, scheduleSave])
 
   const syncFromWorkflow = useCallback(async () => {
-    if (!selected?.workflow_slug) return
-    setSyncing(true)
-    setSyncError(null)
+    if (!selectedProcess?.workflow_slug) return
+    setSyncing(true); setSyncError(null)
     try {
-      const res = await fetch('/api/returns/workflows')
+      const res  = await fetch('/api/returns/workflows')
       const data = await res.json() as { workflows?: Array<{ slug: string; name: string; steps: WorkflowStep[] }> }
-      const wf = (data.workflows || []).find(w => w.slug === selected.workflow_slug)
-      if (!wf) throw new Error(`Workflow "${selected.workflow_slug}" introuvable`)
+      const wf   = (data.workflows || []).find(w => w.slug === selectedProcess.workflow_slug)
+      if (!wf) throw new Error(`Workflow "${selectedProcess.workflow_slug}" introuvable`)
       const newSteps = workflowToProcessSteps(wf.steps || [])
-      updateLocal(selected.id, { steps: newSteps })
-      scheduleSave(selected.id, { steps: newSteps })
+      updateLocal(selectedProcess.id, { steps: newSteps })
+      scheduleSave(selectedProcess.id, { steps: newSteps })
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Erreur de sync')
-    } finally {
-      setSyncing(false)
-    }
-  }, [selected, updateLocal, scheduleSave])
+    } finally { setSyncing(false) }
+  }, [selectedProcess, updateLocal, scheduleSave])
+
+  // Grouper les workflows par catégorie
+  const wfByGroup: Record<string, ReturnWorkflow[]> = {}
+  for (const wf of workflows) {
+    const g = getGroup(wf.slug).label
+    if (!wfByGroup[g]) wfByGroup[g] = []
+    wfByGroup[g].push(wf)
+  }
+  const groupOrder = [...WF_GROUPS.map(g => g.label), 'Autres']
+  const sortedGroups = groupOrder.filter(g => wfByGroup[g]?.length > 0)
 
   if (loading) return <div className="text-sm text-gray-400 py-8 text-center">Chargement…</div>
 
   return (
     <div className="flex gap-6 min-h-[600px]">
 
-      {/* ── Colonne gauche ── */}
-      <div className="w-52 flex-shrink-0 space-y-1">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-3">Process</p>
-        {processes.map(p => (
-          <button
-            key={p.id}
-            onClick={() => setSelectedId(p.id)}
-            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
-              selectedId === p.id
-                ? 'bg-black text-white font-medium'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            <span className="block leading-snug">{p.title}</span>
-            <span className={`text-xs mt-0.5 block ${selectedId === p.id ? 'text-gray-300' : 'text-gray-400'}`}>
-              {p.steps.filter(s => s.type === 'step').length} étapes
-            </span>
-          </button>
-        ))}
+      {/* ── Sidebar ── */}
+      <div className="w-56 flex-shrink-0 space-y-4 overflow-y-auto max-h-[calc(100vh-120px)]">
+
+        {/* Process éditables */}
+        {processes.length > 0 && (
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2">Process</p>
+            <div className="space-y-0.5">
+              {processes.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setActive({ kind: 'process', id: p.id })}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                    active?.kind === 'process' && active.id === p.id
+                      ? 'bg-black text-white font-medium'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="block leading-snug text-[13px]">{p.title}</span>
+                  <span className={`text-[11px] mt-0.5 block ${active?.kind === 'process' && active.id === p.id ? 'text-gray-300' : 'text-gray-400'}`}>
+                    {p.steps.filter(s => s.type === 'step').length} étapes
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Workflows retours — groupés par catégorie */}
+        {sortedGroups.map(groupLabel => {
+          const group = WF_GROUPS.find(g => g.label === groupLabel) ?? { color: 'text-gray-500', label: groupLabel, prefix: '' }
+          const wfs   = wfByGroup[groupLabel] || []
+          return (
+            <div key={groupLabel}>
+              <p className={`text-[10px] font-semibold uppercase tracking-wider px-2 mb-1.5 ${group.color}`}>
+                {groupLabel}
+              </p>
+              <div className="space-y-0.5">
+                {wfs.map(wf => {
+                  const isActive = active?.kind === 'workflow' && active.id === wf.id
+                  return (
+                    <button
+                      key={wf.id}
+                      onClick={() => setActive({ kind: 'workflow', id: wf.id })}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                        isActive
+                          ? 'bg-gray-900 text-white font-medium'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="block leading-snug text-[13px]">{wf.chat_label || wf.name}</span>
+                      <span className={`text-[11px] mt-0.5 block font-mono ${isActive ? 'text-gray-400' : 'text-gray-400'}`}>
+                        {wf.slug}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
-      {/* ── Colonne droite : infographie ── */}
-      <div className="flex-1 min-w-0">
-        {!selected ? (
-          <p className="text-sm text-gray-400">Sélectionnez un process.</p>
-        ) : (
+      {/* ── Zone principale ── */}
+      <div className="flex-1 min-w-0 overflow-y-auto">
+
+        {/* === Vue workflow retour (lecture seule) === */}
+        {workflowAsProcess && (
           <>
-            {/* Barre titre + statut */}
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <div className="text-xs text-gray-400 font-mono">{selectedWorkflow!.slug}</div>
+                <h2 className="text-base font-semibold text-gray-900 mt-0.5">{selectedWorkflow!.name}</h2>
+                {selectedWorkflow!.description && (
+                  <p className="text-xs text-gray-500 mt-0.5 max-w-lg">{selectedWorkflow!.description}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-mono">
+                  {(selectedWorkflow!.steps || []).length} steps bruts → {workflowAsProcess.steps.filter(s => s.type === 'step').length} étapes visuelles
+                </span>
+              </div>
+            </div>
+            <ProcessFlow process={workflowAsProcess} onEdit={() => {}} readOnly />
+          </>
+        )}
+
+        {/* === Vue process éditable === */}
+        {selectedProcess && (
+          <>
             <div className="flex items-center justify-between mb-6">
               <div>
                 {editingSubtitle ? (
                   <input
-                    autoFocus
-                    defaultValue={selected.subtitle}
+                    autoFocus defaultValue={selectedProcess.subtitle}
                     onBlur={e => handleSubtitleSave(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleSubtitleSave((e.target as HTMLInputElement).value) }}
                     className="text-xs text-gray-400 border-b border-gray-300 focus:outline-none bg-transparent w-64"
                   />
                 ) : (
-                  <div
-                    className="text-xs text-gray-400 cursor-pointer hover:text-gray-600"
-                    onClick={() => setEditingSubtitle(true)}
-                    title="Cliquer pour modifier"
-                  >
-                    {selected.subtitle || '(sous-titre)'}
+                  <div className="text-xs text-gray-400 cursor-pointer hover:text-gray-600" onClick={() => setEditingSubtitle(true)}>
+                    {selectedProcess.subtitle || '(sous-titre)'}
                   </div>
                 )}
                 {editingTitle ? (
                   <input
-                    autoFocus
-                    defaultValue={selected.title}
+                    autoFocus defaultValue={selectedProcess.title}
                     onBlur={e => handleTitleSave(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleTitleSave((e.target as HTMLInputElement).value) }}
                     className="text-base font-semibold text-gray-900 border-b border-gray-400 focus:outline-none bg-transparent w-96 mt-0.5"
                   />
                 ) : (
-                  <h2
-                    className="text-base font-semibold text-gray-900 cursor-pointer hover:text-gray-600 mt-0.5"
-                    onClick={() => setEditingTitle(true)}
-                    title="Cliquer pour modifier"
-                  >
-                    {selected.title}
+                  <h2 className="text-base font-semibold text-gray-900 cursor-pointer hover:text-gray-600 mt-0.5" onClick={() => setEditingTitle(true)}>
+                    {selectedProcess.title}
                   </h2>
                 )}
               </div>
-              <div className="text-xs text-gray-400 flex items-center gap-2">
-                {selected.workflow_slug && (
+              <div className="text-xs text-gray-400 flex items-center gap-2 flex-wrap">
+                {selectedProcess.workflow_slug && (
                   <>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 text-[11px] font-medium">
-                      ⇄ {selected.workflow_slug}
+                      ⇄ {selectedProcess.workflow_slug}
                     </span>
                     <button
                       onClick={syncFromWorkflow}
@@ -566,10 +636,12 @@ export default function ProcessPage() {
                 <span className="text-gray-300 italic">Cliquez sur un champ pour modifier</span>
               </div>
             </div>
-
-            {/* Infographie */}
-            <ProcessFlow process={selected} onEdit={handleStepEdit} />
+            <ProcessFlow process={selectedProcess} onEdit={handleStepEdit} />
           </>
+        )}
+
+        {!selectedProcess && !workflowAsProcess && (
+          <p className="text-sm text-gray-400">Sélectionnez un process ou un workflow.</p>
         )}
       </div>
     </div>
