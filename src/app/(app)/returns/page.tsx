@@ -1696,8 +1696,15 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                     </td>
                     <td className="px-4 py-3">
                       {o.order_sav ? (
-                        <a href={o.url} target="_blank" rel="noopener noreferrer"
-                          className="font-mono text-xs text-blue-600 hover:underline">{o.order_sav}</a>
+                        <button
+                          className="font-mono text-xs text-blue-600 hover:underline"
+                          onClick={async () => {
+                            const res  = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`)
+                            const data = await res.json() as { url?: string; error?: string }
+                            if (data.url) window.open(data.url, '_blank')
+                            else alert(data.error ?? 'Erreur')
+                          }}
+                        >{o.order_sav}</button>
                       ) : <span className="font-mono text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 w-56 max-w-56 whitespace-pre-wrap break-words text-xs text-gray-600">{o.notes_sav || '—'}</td>
@@ -1997,8 +2004,15 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
                     </td>
                     <td className="px-4 py-3">
                       {o.order_sav ? (
-                        <a href={o.url} target="_blank" rel="noopener noreferrer"
-                          className="font-mono text-xs text-blue-600 hover:underline">{o.order_sav}</a>
+                        <button
+                          className="font-mono text-xs text-blue-600 hover:underline"
+                          onClick={async () => {
+                            const res  = await fetch(`/api/returns/booqable-order-uuid?number=${encodeURIComponent(o.order_sav)}`)
+                            const data = await res.json() as { url?: string; error?: string }
+                            if (data.url) window.open(data.url, '_blank')
+                            else alert(data.error ?? 'Erreur')
+                          }}
+                        >{o.order_sav}</button>
                       ) : <span className="font-mono text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs w-56 max-w-56 whitespace-pre-wrap break-words">{o.notes_sav || '—'}</td>
