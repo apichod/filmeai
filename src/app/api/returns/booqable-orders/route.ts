@@ -40,7 +40,8 @@ export async function GET(req: NextRequest) {
   // Booqable stocke les tags en minuscule
   const tagLower = tag.toLowerCase()
 
-  const url =
+  const PAGE_SIZE = 100
+  const baseUrl =
     `${BASE}/orders` +
     `?sort=-number` +
     `&filter[tag_list][]=${encodeURIComponent(tagLower)}` +
@@ -48,30 +49,40 @@ export async function GET(req: NextRequest) {
     `&filter[statuses][not_eq][]=archived` +
     `&filter[statuses][not_eq][]=new` +
     `&include=customer,properties` +
-    `&page[number]=1&page[size]=100`
+    `&page[size]=${PAGE_SIZE}`
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: headers(),
-    signal: AbortSignal.timeout(15000),
-  })
+  // Fetch toutes les pages
+  const allData: V4Resource[] = []
+  const allIncluded: V4Resource[] = []
+  let pageNum = 1
 
-  if (!res.ok) {
-    const text = await res.text()
-    return NextResponse.json({ error: `Booqable error ${res.status}: ${text}` }, { status: 500 })
+  while (true) {
+    const res = await fetch(`${baseUrl}&page[number]=${pageNum}`, {
+      method: 'GET',
+      headers: headers(),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      return NextResponse.json({ error: `Booqable error ${res.status}: ${text}` }, { status: 500 })
+    }
+    const data = await res.json() as V4Response
+    allData.push(...(data.data || []))
+    allIncluded.push(...(data.included || []))
+    // Arrêt si la page est incomplète (dernière page)
+    if ((data.data || []).length < PAGE_SIZE) break
+    pageNum++
   }
-
-  const data = await res.json() as V4Response
 
   // Index des customers depuis included
   const customerMap = new Map<string, string>() // id → name
-  for (const item of (data.included || [])) {
+  for (const item of allIncluded) {
     if (item.type === 'customers') {
       customerMap.set(item.id, (item.attributes as CustomerAttrs).name || '—')
     }
   }
 
-  const rows: BooqableOrderRow[] = (data.data || []).map(order => {
+  const rows: BooqableOrderRow[] = allData.map(order => {
     const attrs  = order.attributes as OrderAttrs
     // Properties sont directement dans attributes.properties (pas dans included)
     const props  = attrs.properties || {}
@@ -101,7 +112,7 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  return NextResponse.json({ orders: rows })
+  return NextResponse.json({ orders: rows, total: rows.length })
 }
 
 // ── Types internes (JSON:API) ──────────────────────────────────────────────────
