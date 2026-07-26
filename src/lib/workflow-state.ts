@@ -251,6 +251,13 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // deposit_euros     = montant de la caution Booqable
     // → pour le montant HT, utiliser fetch_original_amount_HT
   },
+  round_deposit: {
+    label:  'Arrondir la caution à la centaine la plus proche',
+    reads:  ['deposit'],
+    writes: ['deposit_rounded'],
+    // deposit        = montant brut lu depuis {input_context}.deposit ou deposit_euros
+    // deposit_rounded = montant arrondi à la centaine (ex: 1850 → 1900)
+  },
   fetch_original_amount_HT: {
     label:  'Récupérer le montant HT de la commande',
     reads:  ['id'],

@@ -979,6 +979,20 @@ export async function executeCodeStep(
         })
       }
 
+      case 'round_deposit': {
+        // Arrondit la caution à la centaine la plus proche.
+        // Lit {input_context}.deposit (ou deposit_euros en fallback).
+        // Écrit deposit_rounded dans le contexte de sortie.
+        const inputCtx      = step.input_context ?? step.order_context ?? 'return'
+        const depositRaw    = parseFloat(String(vars[`${inputCtx}.deposit`] ?? vars[`${inputCtx}.deposit_euros`] ?? '0'))
+        if (!depositRaw || depositRaw <= 0) return err('round_deposit : deposit introuvable dans les variables — exécuter fetch_order_amount avant')
+        const rounded = Math.round(depositRaw / 100) * 100
+        return ok({
+          deposit_rounded: rounded.toFixed(2),
+          message: `✓ Caution arrondie : ${depositRaw.toFixed(2)} € → ${rounded.toFixed(2)} €`,
+        })
+      }
+
       case 'fetch_original_amount_HT': {
         // Récupère uniquement le total HT (price_in_cents) d'une commande.
         // Écrit grand_total_euros_HT dans le contexte de sortie.
