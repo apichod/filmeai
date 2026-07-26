@@ -1688,6 +1688,42 @@ export async function removeOrderDiscount(orderId: string): Promise<void> {
   }
 }
 
+// ── fetchCustomerOrders ───────────────────────────────────────────────────────
+// Récupère toutes les commandes d'un client (jusqu'à 200).
+export async function fetchCustomerOrders(customerId: string): Promise<Array<{
+  id:                  string
+  number:              number
+  status:              string
+  starts_at:           string | null
+  stops_at:            string | null
+  created_at:          string
+  price_in_cents:      number
+  discount_percentage: number
+  tag_list:            string[]
+}>> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const url = `${BASE_BOOMERANG}/orders?filter[customer_id]=${customerId}&page[size]=200&sort=-created_at`
+  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(15000) })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`fetchCustomerOrders error ${res.status}: ${text}`)
+  }
+  const data = await res.json() as {
+    data?: Array<{ id: string; attributes: Record<string, unknown> }>
+  }
+  return (data.data ?? []).map(o => ({
+    id:                  o.id,
+    number:              Number(o.attributes.number              ?? 0),
+    status:              String(o.attributes.status              ?? ''),
+    starts_at:           (o.attributes.starts_at  as string | null) ?? null,
+    stops_at:            (o.attributes.stops_at   as string | null) ?? null,
+    created_at:          String(o.attributes.created_at          ?? ''),
+    price_in_cents:      Number(o.attributes.price_in_cents      ?? o.attributes.grand_total_in_cents ?? 0),
+    discount_percentage: Number(o.attributes.discount_percentage ?? 0),
+    tag_list:            Array.isArray(o.attributes.tag_list) ? (o.attributes.tag_list as string[]) : [],
+  }))
+}
+
 // ── updateOrderDeposit ────────────────────────────────────────────────────────
 // Met à jour la caution fixe d'une commande Booqable.
 // depositValue = montant en euros (entier, ex: 2000).

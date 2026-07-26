@@ -251,6 +251,13 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // deposit_euros     = montant de la caution Booqable
     // → pour le montant HT, utiliser fetch_original_amount_HT
   },
+  calculate_customer_score: {
+    label:  'Calculer le score client et proposer une remise',
+    reads:  ['customer_id'],
+    writes: ['discount_proposal', 'customer_score'],
+    // discount_proposal = remise suggérée en % (string: "0", "10", "15", "20")
+    // customer_score    = score final (string)
+  },
   round_deposit: {
     label:  'Arrondir la caution à la centaine la plus proche',
     reads:  ['security_deposit'],

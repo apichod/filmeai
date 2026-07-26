@@ -43,6 +43,7 @@ import {
   checkInsuranceRequestStatus,
   addProductInsurance8,
   updateOrderDeposit,
+  fetchCustomerOrders,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -977,6 +978,125 @@ export async function executeCodeStep(
           grand_total_euros: grandTotalEuros.toFixed(2),
           deposit_euros:     depositEuros.toFixed(2),
           message: `💰 Total commande ${label} : ${grandTotalEuros.toFixed(2)} € TTC (caution: ${depositEuros.toFixed(2)} €)`,
+        })
+      }
+
+      case 'calculate_customer_score': {
+        // ── Récupère les commandes du client et calcule un score de fidélité ──
+        const inputCtx   = step.input_context ?? step.order_context ?? 'return'
+        const customerId = String(vars[`${inputCtx}.customer_id`] ?? '')
+        if (!customerId) return err('calculate_customer_score : customer_id manquant — exécuter fetch_order avant')
+
+        const allOrders = await fetchCustomerOrders(customerId)
+        const now        = new Date()
+        const MS_2Y      = 730 * 24 * 3600 * 1000
+        const MS_6M      = 183 * 24 * 3600 * 1000
+        const MS_1Y      = 365 * 24 * 3600 * 1000
+        const MS_90D     =  90 * 24 * 3600 * 1000
+        const MS_180D    = 180 * 24 * 3600 * 1000
+
+        const ANOMALY_WEIGHTS: Record<string, number> = {
+          r11_late: 4, r12_missing: 10, r14_damage: 12, r13_theft: 20,
+        }
+        const ANOMALY_TAGS = Object.keys(ANOMALY_WEIGHTS)
+
+        // Sépare commerciales vs anomalies
+        const anomalyOrders     = allOrders.filter(o => o.tag_list.some(t => ANOMALY_TAGS.includes(t)))
+        const commercialOrders  = allOrders.filter(o => !o.tag_list.some(t => ANOMALY_TAGS.includes(t)))
+        const completedStatuses = ['stopped', 'completed', 'returned']
+        const completed         = commercialOrders.filter(o => completedStatuses.includes(o.status))
+
+        // Commandes commerciales terminées dans les 24 derniers mois
+        const recent24 = completed.filter(o => {
+          const d = new Date(o.stops_at ?? o.created_at)
+          return !isNaN(d.getTime()) && now.getTime() - d.getTime() <= MS_2Y
+        })
+
+        // Score fréquence
+        const orderCount = recent24.length
+        const frequencyScore = orderCount >= 12 ? 35 : orderCount >= 6 ? 25 : orderCount >= 3 ? 15 : orderCount >= 1 ? 5 : 0
+
+        // Score CA HT
+        const turnoverCents = recent24.reduce((s, o) => s + o.price_in_cents, 0)
+        const turnoverEuros = turnoverCents / 100
+        const turnoverScore = turnoverEuros >= 20000 ? 40 : turnoverEuros >= 8000 ? 30 : turnoverEuros >= 3000 ? 20 : turnoverEuros >= 1000 ? 10 : 0
+
+        // Score récence
+        const sorted      = [...completed].sort((a, b) => new Date(b.stops_at ?? b.created_at).getTime() - new Date(a.stops_at ?? a.created_at).getTime())
+        const lastOrder   = sorted[0] ?? null
+        let recencyScore  = 0
+        let daysSinceLast: number | null = null
+        if (lastOrder) {
+          const lastMs = now.getTime() - new Date(lastOrder.stops_at ?? lastOrder.created_at).getTime()
+          daysSinceLast = Math.floor(lastMs / (24 * 3600 * 1000))
+          recencyScore  = lastMs <= MS_90D ? 10 : lastMs <= MS_180D ? 5 : 0
+        }
+
+        // RiskScore
+        const incidentDetails: Array<{ number: number; tag: string; coeff: number; penalty: number }> = []
+        let riskScore = 0
+        for (const o of anomalyOrders) {
+          const d     = new Date(o.stops_at ?? o.created_at)
+          if (isNaN(d.getTime())) continue
+          const ageMs = now.getTime() - d.getTime()
+          if (ageMs > MS_2Y) continue
+
+          const tags = o.tag_list.filter(t => ANOMALY_TAGS.includes(t))
+          if (tags.length === 0) continue
+
+          // Tag le plus grave uniquement
+          const worstTag = tags.reduce((best, t) => (ANOMALY_WEIGHTS[t] > ANOMALY_WEIGHTS[best] ? t : best))
+          const coeff    = ageMs <= MS_6M ? 1 : ageMs <= MS_1Y ? 0.75 : 0.5
+          const penalty  = Math.round(ANOMALY_WEIGHTS[worstTag] * coeff)
+          riskScore += penalty
+          incidentDetails.push({ number: o.number, tag: worstTag, coeff, penalty })
+        }
+        riskScore = Math.min(riskScore, 50)
+
+        const commercialScore = frequencyScore + turnoverScore + recencyScore
+        const finalScore      = commercialScore - riskScore
+
+        // Remise proposée
+        let suggestedDiscount = 0
+        if (completed.length === 0) {
+          suggestedDiscount = 0  // première commande
+        } else if (finalScore >= 60) {
+          suggestedDiscount = 20
+        } else if (finalScore >= 40) {
+          suggestedDiscount = 15
+        } else if (finalScore >= 20) {
+          suggestedDiscount = 10
+        }
+
+        // Garde-fous
+        const hasRecentSevereIncident = incidentDetails.some(
+          i => ['r12_missing', 'r13_theft', 'r14_damage'].includes(i.tag) && i.coeff === 1
+        )
+        if (hasRecentSevereIncident && suggestedDiscount > 10) suggestedDiscount = 10
+
+        // Message détaillé
+        const lines: string[] = [
+          `🎯 Remise suggérée : ${suggestedDiscount} %`,
+          ``,
+          `📊 Score commercial`,
+          `  ${orderCount} location${orderCount > 1 ? 's' : ''} sur 24 mois → +${frequencyScore}`,
+          `  CA HT : ${Math.round(turnoverEuros).toLocaleString('fr-FR')} € → +${turnoverScore}`,
+          `  Récence${daysSinceLast !== null ? ` (il y a ${daysSinceLast} j)` : ''} → +${recencyScore}`,
+        ]
+        if (incidentDetails.length > 0) {
+          lines.push(``, `⚠️ Malus incidents`)
+          for (const inc of incidentDetails) {
+            lines.push(`  #${inc.number} ${inc.tag} (×${inc.coeff}) → −${inc.penalty}`)
+          }
+        }
+        lines.push(``, `Score commercial : ${commercialScore} | Malus : ${riskScore} | Score final : ${finalScore}`)
+        if (completed.length === 0) lines.push(`⚠️ Première commande → remise forcée à 0 %`)
+        if (hasRecentSevereIncident) lines.push(`⚠️ Incident grave récent → plafond 10 %`)
+
+        return ok({
+          discount_proposal:  String(suggestedDiscount),
+          customer_score:     String(finalScore),
+          message: lines.join('\n'),
         })
       }
 
