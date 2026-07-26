@@ -48,6 +48,7 @@ type ActiveWorkflow = {
   name: string
   chat_label: string | null
   description?: string
+  category: string
   parent_category: string | null
   welcome: string | null
   is_active: boolean
@@ -451,8 +452,11 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
 
   // ── Menu piloté par Supabase ───────────────────────────────────────────────
 
+  // Filtre strict : uniquement les workflows de la bonne catégorie
+  const chatWorkflows = availableWorkflows.filter(w => w.category === chatType)
+
   const level2Map: Record<string, SubOption[]> = {}
-  for (const wf of availableWorkflows) {
+  for (const wf of chatWorkflows) {
     if (!wf.parent_category) continue
     if (!level2Map[wf.parent_category]) level2Map[wf.parent_category] = []
     level2Map[wf.parent_category].push({
@@ -462,12 +466,12 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
     })
   }
 
-  const otherWorkflows = availableWorkflows.filter(w => !w.parent_category)
+  const otherWorkflows = chatWorkflows.filter(w => !w.parent_category)
 
-  // Catégories DB + fallback depuis parent_category des workflows
+  // Catégories DB + fallback depuis parent_category des workflows (filtrés par chatType)
   const effectiveLevel1Items: Level1Item[] = level1Items.length > 0
     ? level1Items
-    : Array.from(new Set(availableWorkflows.map(w => w.parent_category).filter(Boolean) as string[]))
+    : Array.from(new Set(chatWorkflows.map(w => w.parent_category).filter(Boolean) as string[]))
         .map(key => ({ key, label: key }))
 
   const visibleLevel1Items = effectiveLevel1Items.filter(item => (level2Map[item.key]?.length ?? 0) > 0)
