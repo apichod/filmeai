@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react'
 
 const BOOQABLE_TOOLS = [
-  { value: 'add_internal_note',                  label: 'add_internal_note — note interne' },
   { value: 'add_new_product_line',               label: 'add_new_product_line — ajouter les articles sélectionnés (produit ou custom si sans ID)' },
   { value: 'add_sav_comment',                    label: 'add_sav_comment — commentaire SAV' },
   { value: 'add_tag',                            label: 'add_tag — ajouter / supprimer des tags' },
@@ -16,7 +15,7 @@ const BOOQABLE_TOOLS = [
   { value: 'clear_tags',                         label: 'clear_tags — supprimer tous les tags' },
   { value: 'create_new_return_order',            label: 'create_new_return_order — créer la commande de retour' },
   { value: 'create_payment_link',                label: 'create_payment_link — créer un lien de paiement et le stocker dans lien_paiement' },
-  { value: 'draft_email',                        label: 'draft_email — préparer l\'email client' },
+  { value: 'draft_email_ia',                     label: 'draft_email_ia — préparer l\'email client (IA)' },
   { value: 'draft_email_booqable',               label: 'draft_email_booqable — aperçu template Booqable (lecture seule)' },
   { value: 'draft_email_with_invoice_booqable',  label: 'draft_email_with_invoice_booqable — aperçu template + facture jointe' },
   { value: 'duplicate_order',                    label: 'duplicate_order — dupliquer la commande' },
@@ -32,7 +31,7 @@ const BOOQABLE_TOOLS = [
   { value: 'reserve_order',                      label: 'reserve_order — réserver la commande (concept → reserved)' },
   { value: 'revert_to_concept',                  label: 'revert_to_concept — repasser en draft (concept)' },
   { value: 'search_products',                    label: 'search_products — identifier les articles (bulk/trackable/custom)' },
-  { value: 'send_email',                         label: 'send_email — envoyer l\'email' },
+  { value: 'send_email_ia',                      label: 'send_email_ia — envoyer l\'email (IA)' },
   { value: 'send_email_booqable',                label: 'send_email_booqable — envoyer via template Booqable (document_id)' },
   { value: 'send_email_with_invoice_booqable',   label: 'send_email_with_invoice_booqable — envoyer email avec facture en pièce jointe' },
   { value: 'set_original_order',                 label: 'set_original_order — renseigner la commande d\'origine (original_order)' },
@@ -41,7 +40,6 @@ const BOOQABLE_TOOLS = [
   { value: 'start_order',                        label: 'start_order — démarrer la commande (pickup)' },
   { value: 'stop_order',                         label: 'stop_order — retourner le matériel (started → stopped)' },
   { value: 'update_return_date',                 label: 'update_return_date — changer la date de retour à aujourd\'hui' },
-  { value: 'zero_out_order_lines',               label: 'zero_out_order_lines — remettre les lignes à 0' },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────────
