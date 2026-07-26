@@ -1736,6 +1736,7 @@ export async function createPaymentLink(opts: {
   const chargeData = await chargeRes.json() as {
     data?: { id: string; attributes: Record<string, unknown> }
   }
+  console.log('[createPaymentLink] response →', JSON.stringify(chargeData?.data?.attributes))
   const chargeId    = chargeData.data?.id ?? ''
   const checkoutUrl = String(
     chargeData.data?.attributes?.checkout_url ??
