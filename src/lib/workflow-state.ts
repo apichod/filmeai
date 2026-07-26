@@ -257,6 +257,17 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes: ['grand_total_euros_HT'],
     // grand_total_euros_HT = total HT (price_in_cents / 100, string, ex: "125.00")
   },
+  check_insurance_request_status: {
+    label:  'Vérifier si l\'assurance a été demandée par le locataire',
+    reads:  ['id'],
+    writes: ['insurance_request_status'],
+    // insurance_request_status = 'true' (assuré par FILME) | 'false' (autre)
+  },
+  add_product_insurance_8: {
+    label:  'Ajouter l\'assurance FILME à 8% du montant HT',
+    reads:  ['id', 'grand_total_euros_HT'],
+    writes: [],
+  },
   create_payment_link: {
     label:  'Créer un lien de paiement et le stocker dans le champ custom lien_paiement',
     reads:  ['id', 'grand_total_euros'],
