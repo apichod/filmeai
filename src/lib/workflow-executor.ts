@@ -1088,7 +1088,7 @@ export async function executeCodeStep(
         //   field_label       (optionnel) – label affiché (défaut: 'Lien paiement')
         if (!orderId) return err('create_payment_link : order_id manquant — exécuter fetch_order avant')
 
-        const inputCtx       = step.input_context ?? 'return'
+        const inputCtx       = step.input_context ?? step.order_context ?? 'return'
         const amountFromVars = parseFloat(String(vars[`${inputCtx}.grand_total_euros`] ?? '0'))
         const amountEuros    = amountFromVars > 0
           ? amountFromVars
