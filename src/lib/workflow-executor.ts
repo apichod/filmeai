@@ -995,7 +995,7 @@ export async function executeCodeStep(
         if (!orderId) return err('check_insurance_request_status : order_id manquant — exécuter fetch_order avant')
         const ins = await checkInsuranceRequestStatus(orderId)
         return ok({
-          insurance_request_status: ins.status,   // 'yes' | 'no' | 'not_set'
+          insurance_request_status: ins.status === 'yes' ? 'true' : 'false',
           message: ins.message,
         })
       }
