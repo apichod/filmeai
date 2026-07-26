@@ -1703,13 +1703,26 @@ export async function createPaymentLink(opts: {
   const fieldId    = opts.customFieldName  ?? 'lien_paiement'
   const fieldLabel = opts.customFieldLabel ?? 'Lien paiement'
 
-  // 1. Créer le payment charge en mode "request"
+  // Debug : lister les charges existantes sur la commande
+  const listRes = await fetch(`${BASE_BOOMERANG}/payment_charges?filter[owner_id]=${orderId}&filter[owner_type]=Order`, {
+    headers: headers(),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (listRes.ok) {
+    const listData = await listRes.json() as { data?: Array<{ attributes: Record<string, unknown> }> }
+    console.log('[createPaymentLink] existing charges:', JSON.stringify(listData.data?.map(d => d.attributes) ?? []))
+  }
+
+  // 1. Créer le payment charge — format JSON:API
   const chargeBody = {
-    payment_charge: {
-      mode:             'request',
-      order_id:         orderId,
-      amount_in_cents:  amountCents,
-      deposit_in_cents: 0,
+    data: {
+      type: 'payment_charges',
+      attributes: {
+        mode:           'request',
+        owner_id:       orderId,
+        owner_type:     'Order',
+        total_in_cents: amountCents,
+      },
     },
   }
   console.log('[createPaymentLink] body →', JSON.stringify(chargeBody))
