@@ -3,15 +3,15 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const tabs = [
-  { label: 'Apparence', href: '/assistant/appearance' },
+  { label: 'Apparence',    href: '/assistant/appearance' },
   { label: 'Comportement', href: '/assistant/behavior' },
   { label: 'Connaissances', href: '/assistant/knowledge' },
-  { label: 'Logs', href: '/assistant/corrections' },
-  { label: 'Conditions', href: '/assistant/conditions' },
-  { label: 'Devis', href: '/assistant/quotes' },
-  { label: 'Intégration', href: '/assistant/integration' },
-  { label: 'Workflows retours', href: '/assistant/workflows' },
-  { label: 'Templates email',  href: '/assistant/emails' },
+  { label: 'Logs',         href: '/assistant/corrections' },
+  { label: 'Conditions',   href: '/assistant/conditions' },
+  { label: 'Devis',        href: '/assistant/quotes' },
+  { label: 'Intégration',  href: '/assistant/integration' },
+  { label: 'Workflows',    href: '/assistant/workflows' },
+  // { label: 'Templates email', href: '/assistant/emails' }, // désactivé — non utilisé
 ]
 
 export default function AssistantLayout({ children }: { children: React.ReactNode }) {
