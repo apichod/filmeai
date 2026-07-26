@@ -120,7 +120,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
   fetch_order_amount:           { reads: ['id'], writes: ['grand_total_euros', 'deposit_euros'] },
   fetch_original_amount_HT:     { reads: ['id'], writes: ['grand_total_euros_HT'] },
-  round_deposit:                { reads: ['security_deposit'], writes: ['deposit_rounded'] },
+  round_deposit:                { reads: ['security_deposit'], writes: ['security_deposit_rounded'] },
   create_payment_link:       { reads: ['id', 'grand_total_euros'],                   writes: ['payment_charge_id', 'checkout_url'] },
   capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'payment_charge_id', 'captured_amount'] },
 }
@@ -285,7 +285,7 @@ const TOOL_DOC: Record<string, string> = {
   fetch_order:                       'Charge une commande Booqable depuis son UUID ou numéro. Écrit id, number, status, customer_id, tags et lines dans les vars du contexte.',
   fetch_order_amount:                'Récupère le montant total TTC de la commande. Écrit grand_total_euros (TTC) et deposit_euros. Pour le HT, utiliser fetch_original_amount_HT.',
   fetch_original_amount_HT:          'Récupère uniquement le montant HT de la commande (price_in_cents Booqable). Écrit grand_total_euros_HT. Utile pour calculer un pourcentage (ex: assurance 8%) sur le montant hors taxes.',
-  round_deposit:                     'Arrondit la caution à la centaine la plus proche (ex: 1850 → 1900, 2000 → 2000). Lit security_deposit depuis input_context (écrit par check_deposit). Écrit deposit_rounded dans output_context.',
+  round_deposit:                     'Arrondit la caution à la centaine la plus proche (ex: 1850 → 1900, 2000 → 2000). Lit security_deposit depuis input_context (écrit par check_deposit). Écrit security_deposit_rounded dans output_context.',
   fetch_original_from_field:         'Lit le numéro de commande d\'origine depuis le champ custom order_sav de la commande courante, puis charge cette commande. Écrit les données dans le contexte original.',
   finalize_invoice:                  'Finalise la facture de la commande (statut draft → finalized). Écrit document_id et invoice_number.',
   finalize_quote:                    'Crée le devis de la commande via POST /documents (document_type: quote). Écrit document_id et quote_number.',

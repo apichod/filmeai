@@ -254,9 +254,9 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   round_deposit: {
     label:  'Arrondir la caution à la centaine la plus proche',
     reads:  ['security_deposit'],
-    writes: ['deposit_rounded'],
+    writes: ['security_deposit_rounded'],
     // security_deposit = montant brut lu depuis {input_context}.security_deposit (écrit par check_deposit)
-    // deposit_rounded  = montant arrondi à la centaine (ex: 1850 → 1900)
+    // security_deposit_rounded  = montant arrondi à la centaine (ex: 1850 → 1900)
   },
   fetch_original_amount_HT: {
     label:  'Récupérer le montant HT de la commande',

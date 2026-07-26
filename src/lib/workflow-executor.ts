@@ -982,13 +982,13 @@ export async function executeCodeStep(
       case 'round_deposit': {
         // Arrondit la caution à la centaine la plus proche.
         // Lit {input_context}.deposit (ou deposit_euros en fallback).
-        // Écrit deposit_rounded dans le contexte de sortie.
+        // Écrit security_deposit_rounded dans le contexte de sortie.
         const inputCtx      = step.input_context ?? step.order_context ?? 'return'
         const depositRaw    = parseFloat(String(vars[`${inputCtx}.security_deposit`] ?? '0'))
         if (!depositRaw || depositRaw <= 0) return err('round_deposit : security_deposit introuvable dans les variables — exécuter check_deposit avant')
         const rounded = Math.round(depositRaw / 100) * 100
         return ok({
-          deposit_rounded: rounded.toFixed(2),
+          security_deposit_rounded: rounded.toFixed(2),
           message: `✓ Caution arrondie : ${depositRaw.toFixed(2)} € → ${rounded.toFixed(2)} €`,
         })
       }
