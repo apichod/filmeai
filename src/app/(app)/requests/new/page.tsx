@@ -282,7 +282,7 @@ function ProductSearchDropdown({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function NewRequestPage() {
+export function NewRequestForm() {
   const router = useRouter()
 
   // ── Step
@@ -1369,3 +1369,5 @@ export default function NewRequestPage() {
     </div>
   )
 }
+
+export default NewRequestForm
