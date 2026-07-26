@@ -33,6 +33,7 @@ import {
   duplicateOrder,
   startSAVOrder,
   sendEmailViaBooqable,
+  checkInsuranceRequestStatus,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -433,6 +434,20 @@ function buildTools(
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'check_insurance_request_status',
+      description: 'Vérifie si le locataire a demandé ou non l\'assurance FILME sur sa commande Booqable. Retourne YES (assuré par FILME), NO (assurance personnelle multirisques), ou NOT_SET (non renseigné). À appeler après fetch_order.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'UUID Booqable de la commande (champ "id" de fetch_order)' },
+        },
+        required: ['order_id'],
+      },
+    },
+  },
   ] // fin buildTools
 }
 
@@ -791,6 +806,13 @@ async function executeTool(
           }
         })
         return { result: JSON.stringify({ __type__: 'choices', order_id: String(args.order_id || ''), items, multiSelect: true }) }
+      }
+
+      case 'check_insurance_request_status': {
+        const orderId = String(args.order_id ?? '')
+        if (!orderId) return { result: 'Erreur : order_id manquant' }
+        const ins = await checkInsuranceRequestStatus(orderId)
+        return { result: JSON.stringify({ success: true, ...ins }) }
       }
 
       default:

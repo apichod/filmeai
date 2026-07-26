@@ -265,6 +265,7 @@ const TOOL_DOC: Record<string, string> = {
   start_order:                       'Démarre la commande (statut → started / pickup).',
   stop_order:                        'Retourne le matériel (statut started → stopped).',
   update_return_date:                'Met à jour la date de retour de la commande à aujourd\'hui.',
+  check_insurance_request_status:   'Vérifie si le locataire a demandé l\'assurance FILME sur sa commande. Retourne YES (assuré par FILME), NO (assurance personnelle multirisques), ou NOT_SET (non renseigné). Appeler après fetch_order avec l\'UUID de la commande.',
 }
 
 type WorkflowCategory = 'retours' | 'planning'

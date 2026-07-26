@@ -2199,6 +2199,42 @@ export async function renderBooqableEmailTemplate(
 // ── sendEmailViaBooqable ──────────────────────────────────────────────────────
 // Envoie un email via Booqable (qui gère le destinataire depuis l'order et
 // remplace les {{variables}} Booqable au moment de l'envoi).
+// ── Check assurance ────────────────────────────────────────────────────────────
+
+export async function checkInsuranceRequestStatus(orderId: string): Promise<{
+  status: 'yes' | 'no' | 'not_set'
+  value: string | null
+  message: string
+}> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const url = `${BASE_BOOMERANG}/properties?filter[owner_id]=${orderId}&filter[owner_type]=orders&filter[identifier]=derogation_dassurance`
+
+  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(10000) })
+  if (!res.ok) throw new Error(`Booqable properties error: ${res.status}`)
+
+  const data = await res.json() as {
+    data?: Array<{ id: string; attributes: { identifier: string; value: string | null } }>
+  }
+
+  const property = data.data?.find(p => p.attributes.identifier === 'derogation_dassurance')
+
+  if (!property) {
+    return { status: 'not_set', value: null, message: 'Propriété assurance non trouvée sur cette commande.' }
+  }
+
+  const value = property.attributes.value
+
+  if (value === 'Je souhaite être assuré par FILME (pour 8% du montant total)') {
+    return { status: 'yes', value, message: 'OUI — Le locataire souhaite être assuré par FILME.' }
+  }
+
+  if (value === "J'ai une assurance multirisques, couvrant le matériel loué, et je souhaite l'utiliser") {
+    return { status: 'no', value, message: 'NON — Le locataire utilise sa propre assurance multirisques.' }
+  }
+
+  return { status: 'not_set', value, message: `Valeur non reconnue : "${value ?? 'vide'}"` }
+}
+
 export async function sendEmailViaBooqable(
   orderId: string,
   subject: string,
