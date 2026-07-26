@@ -236,7 +236,7 @@ export default function RequestsPage() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',    label: 'Chat' },
-    { id: 'new',     label: 'Nouvelle demande' },
+    { id: 'new',     label: 'Devis assisté par IA' },
     { id: 'history', label: 'Historique' },
   ]
 
