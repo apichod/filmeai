@@ -1736,16 +1736,10 @@ export async function createPaymentLink(opts: {
   const chargeData = await chargeRes.json() as {
     data?: { id: string; attributes: Record<string, unknown> }
   }
-  console.log('[createPaymentLink] response.data →', JSON.stringify(chargeData?.data))
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  console.log('[createPaymentLink] response.included →', JSON.stringify((chargeData as any)?.included))
   const chargeId    = chargeData.data?.id ?? ''
-  const checkoutUrl = String(
-    chargeData.data?.attributes?.checkout_url ??
-    chargeData.data?.attributes?.public_url   ??
-    chargeData.data?.attributes?.url          ?? ''
-  )
-  if (!checkoutUrl) throw new Error('createPaymentLink : URL de paiement absente dans la réponse Booqable')
+  if (!chargeId) throw new Error('createPaymentLink : charge ID absent dans la réponse Booqable')
+  // Booqable ne retourne pas l'URL dans la réponse API — on la construit depuis le charge ID
+  const checkoutUrl = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/payment_requests/${chargeId}`
 
   // 2. Stocker l'URL dans le champ custom de la commande
   const updateRes = await fetch(`${BASE1}/orders/${orderId}`, {
