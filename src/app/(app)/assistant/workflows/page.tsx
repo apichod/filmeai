@@ -267,6 +267,8 @@ const TOOL_DOC: Record<string, string> = {
   update_return_date:                'Met à jour la date de retour de la commande à aujourd\'hui.',
 }
 
+type WorkflowCategory = 'retours' | 'planning'
+
 type Workflow = {
   id: string
   slug: string
@@ -276,6 +278,7 @@ type Workflow = {
   prompt: string
   steps: WorkflowStep[]
   is_active: boolean
+  category: WorkflowCategory
 }
 
 // ── Composant Step ─────────────────────────────────────────────────────────────
@@ -771,6 +774,8 @@ export default function WorkflowsPage() {
   const [editPrompt, setEditPrompt] = useState('')
   const [editSteps, setEditSteps] = useState<WorkflowStep[]>([])
   const [editActive, setEditActive] = useState(true)
+  const [editCategory, setEditCategory] = useState<WorkflowCategory>('retours')
+  const [activeTab, setActiveTab] = useState<WorkflowCategory>('retours')
   const [exportModal, setExportModal] = useState(false)
   const [exportCopied, setExportCopied] = useState(false)
 
@@ -832,6 +837,7 @@ export default function WorkflowsPage() {
     setEditPrompt(wf.prompt)
     setEditSteps(wf.steps || [])
     setEditActive(wf.is_active)
+    setEditCategory(wf.category ?? 'retours')
     setSaved(false)
   }
 
@@ -851,11 +857,12 @@ export default function WorkflowsPage() {
           prompt: editPrompt,
           steps: editSteps,
           is_active: editActive,
+          category: editCategory,
         }),
       })
       if (!res.ok) throw new Error('Erreur serveur')
 
-      const updated = { ...selected, slug: editSlug, name: editName, chat_label: editChatLabel.trim() || null, description: editDescription, prompt: editPrompt, steps: editSteps, is_active: editActive }
+      const updated = { ...selected, slug: editSlug, name: editName, chat_label: editChatLabel.trim() || null, description: editDescription, prompt: editPrompt, steps: editSteps, is_active: editActive, category: editCategory }
       setWorkflows(prev => prev.map(w => w.id === selected.id ? updated : w))
       setSelected(updated)
       setEditing(false)
@@ -895,6 +902,7 @@ export default function WorkflowsPage() {
           prompt:      wf.prompt,
           steps:       wf.steps,
           is_active:   false,
+          category:    wf.category ?? 'retours',
         }),
       })
       const d = await res.json() as { workflow?: Workflow; error?: string }
@@ -914,7 +922,7 @@ export default function WorkflowsPage() {
       const res = await fetch('/api/returns/workflows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: `workflow-${Date.now()}`, name: 'Nouveau workflow', description: '', prompt: '', steps: [], is_active: false }),
+        body: JSON.stringify({ slug: `workflow-${Date.now()}`, name: 'Nouveau workflow', description: '', prompt: '', steps: [], is_active: false, category: activeTab }),
       })
       const d = await res.json() as { workflow?: Workflow; error?: string }
       if (d.workflow) {
@@ -949,7 +957,7 @@ export default function WorkflowsPage() {
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Workflows retours</h1>
+          <h1 className="text-xl font-semibold text-gray-900">Workflows</h1>
           <p className="text-sm text-gray-500 mt-0.5">Éditez les procédures utilisées par l&apos;assistant</p>
         </div>
         <div className="flex items-center gap-3">
@@ -996,23 +1004,51 @@ export default function WorkflowsPage() {
 
       <div className="flex gap-4">
         {/* Liste des workflows */}
-        <div className="w-52 shrink-0 space-y-1">
-          {workflows.map(wf => (
-            <button
-              key={wf.id}
-              onClick={() => select(wf)}
-              className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors text-sm ${
-                selected?.id === wf.id
-                  ? 'bg-black text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <div className="font-medium">{wf.name}</div>
-              <div className={`text-xs mt-0.5 font-mono ${selected?.id === wf.id ? 'text-white/50' : 'text-gray-400'}`}>
-                {wf.slug} · {wf.steps?.length || 0} étapes
-              </div>
-            </button>
-          ))}
+        <div className="w-52 shrink-0">
+          {/* Tabs Retours / Planning */}
+          <div className="flex mb-3 border border-gray-200 rounded-lg overflow-hidden text-xs font-medium">
+            {(['retours', 'planning'] as WorkflowCategory[]).map(tab => (
+              <button
+                key={tab}
+                onClick={() => {
+                  setActiveTab(tab)
+                  const first = workflows.find(w => (w.category ?? 'retours') === tab)
+                  if (first) select(first)
+                  else setSelected(null)
+                }}
+                className={`flex-1 py-1.5 transition-colors ${
+                  activeTab === tab
+                    ? 'bg-black text-white'
+                    : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {tab === 'retours' ? 'Retours' : 'Planning'}
+              </button>
+            ))}
+          </div>
+
+          {/* Liste filtrée */}
+          <div className="space-y-1">
+            {workflows.filter(w => (w.category ?? 'retours') === activeTab).map(wf => (
+              <button
+                key={wf.id}
+                onClick={() => select(wf)}
+                className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors text-sm ${
+                  selected?.id === wf.id
+                    ? 'bg-black text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <div className="font-medium">{wf.name}</div>
+                <div className={`text-xs mt-0.5 font-mono ${selected?.id === wf.id ? 'text-white/50' : 'text-gray-400'}`}>
+                  {wf.slug} · {wf.steps?.length || 0} étapes
+                </div>
+              </button>
+            ))}
+            {workflows.filter(w => (w.category ?? 'retours') === activeTab).length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-4">Aucun workflow</p>
+            )}
+          </div>
         </div>
 
         {/* Éditeur */}
@@ -1061,16 +1097,29 @@ export default function WorkflowsPage() {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Nom dans le chat <span className="text-gray-400 font-normal">(bouton affiché dans /returns — si vide, utilise le Nom)</span>
-                </label>
-                <input
-                  value={editChatLabel}
-                  onChange={e => { setEditChatLabel(e.target.value); setEditing(true) }}
-                  placeholder={editName || 'ex: Retard — créer un dossier'}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
-                />
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Nom dans le chat <span className="text-gray-400 font-normal">(bouton affiché dans /returns — si vide, utilise le Nom)</span>
+                  </label>
+                  <input
+                    value={editChatLabel}
+                    onChange={e => { setEditChatLabel(e.target.value); setEditing(true) }}
+                    placeholder={editName || 'ex: Retard — créer un dossier'}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
+                  />
+                </div>
+                <div className="shrink-0">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Catégorie</label>
+                  <select
+                    value={editCategory}
+                    onChange={e => { setEditCategory(e.target.value as WorkflowCategory); setEditing(true) }}
+                    className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+                  >
+                    <option value="retours">Retours</option>
+                    <option value="planning">Planning</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">

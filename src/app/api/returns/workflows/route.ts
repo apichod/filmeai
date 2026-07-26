@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     prompt?: string
     steps?: unknown[]
     is_active?: boolean
+    category?: string
   }
 
   if (!body.slug || !body.name) return NextResponse.json({ error: 'slug et name requis' }, { status: 400 })
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
       prompt:      body.prompt || '',
       steps:       body.steps || [],
       is_active:   body.is_active ?? true,
+      category:    body.category ?? 'retours',
     })
     .select()
     .single()
@@ -65,6 +67,7 @@ export async function PATCH(req: NextRequest) {
     prompt?: string
     steps?: unknown[]
     is_active?: boolean
+    category?: string
   }
 
   if (!body.id) return NextResponse.json({ error: 'id manquant' }, { status: 400 })
@@ -79,6 +82,7 @@ export async function PATCH(req: NextRequest) {
   if (body.prompt      !== undefined) patch.prompt      = body.prompt
   if (body.steps       !== undefined) patch.steps       = body.steps
   if (body.is_active   !== undefined) patch.is_active   = body.is_active
+  if (body.category    !== undefined) patch.category    = body.category
 
   const { error } = await supabase.from('return_workflows').update(patch).eq('id', body.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
