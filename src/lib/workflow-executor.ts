@@ -984,8 +984,8 @@ export async function executeCodeStep(
         // Lit {input_context}.deposit (ou deposit_euros en fallback).
         // Écrit deposit_rounded dans le contexte de sortie.
         const inputCtx      = step.input_context ?? step.order_context ?? 'return'
-        const depositRaw    = parseFloat(String(vars[`${inputCtx}.deposit`] ?? vars[`${inputCtx}.deposit_euros`] ?? '0'))
-        if (!depositRaw || depositRaw <= 0) return err('round_deposit : deposit introuvable dans les variables — exécuter fetch_order_amount avant')
+        const depositRaw    = parseFloat(String(vars[`${inputCtx}.security_deposit`] ?? '0'))
+        if (!depositRaw || depositRaw <= 0) return err('round_deposit : security_deposit introuvable dans les variables — exécuter check_deposit avant')
         const rounded = Math.round(depositRaw / 100) * 100
         return ok({
           deposit_rounded: rounded.toFixed(2),
