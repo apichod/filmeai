@@ -724,13 +724,6 @@ function ChatPanel() {
   }
 
   function selectLevel1(key: string) {
-    // Si la catégorie n'a qu'un seul workflow, on démarre directement
-    const subs = level2Map[key] ?? []
-    if (subs.length === 1) {
-      const item = level1Items.find(i => i.key === key)
-      selectSubOption(subs[0], `${item?.label ?? key} — ${subs[0].label}`)
-      return
-    }
     setLevel1(key)
   }
 
