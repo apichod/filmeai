@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import NewRequestForm from './new/page'
 
@@ -24,8 +23,7 @@ type PlanningWorkflow = {
 
 // ── Composant Chat Planning ───────────────────────────────────────────────────
 
-function PlanningChatPanel() {
-  const router = useRouter()
+function PlanningChatPanel({ onSelectScenario }: { onSelectScenario: (scenario: string) => void }) {
   const [level1Items, setLevel1Items]       = useState<Level1Item[]>([])
   const [workflows, setWorkflows]           = useState<PlanningWorkflow[]>([])
   const [workflowsLoaded, setWorkflowsLoaded] = useState(false)
@@ -69,7 +67,7 @@ function PlanningChatPanel() {
   const visibleLevel1 = effectiveLevel1Items.filter(i => (level2Map[i.key]?.length ?? 0) > 0)
 
   function selectSubOption(opt: SubOption) {
-    router.push(`/requests/new?scenario=${encodeURIComponent(opt.scenario)}`)
+    onSelectScenario(opt.scenario)
   }
 
   function selectLevel1(key: string) {
@@ -414,7 +412,7 @@ export default function RequestsPage() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === 'chat'    && (
           <div className="h-full" style={{ minHeight: '540px' }}>
-            <PlanningChatPanel />
+            <PlanningChatPanel onSelectScenario={() => setTab('new')} />
           </div>
         )}
         {tab === 'new'     && <NewRequestForm />}
