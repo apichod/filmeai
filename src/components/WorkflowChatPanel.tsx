@@ -651,18 +651,19 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
                   {msg.toolCalls.map((tc, i) => {
                     const status  = toolStatus(tc.result)
                     const summary = toolSummary(tc.name, tc.result)
-                    if (status === 'skipped') return null
                     return (
-                      <div key={i} className="text-xs bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-100">
+                      <div key={i} className={`text-xs rounded-lg px-3 py-1.5 border ${status === 'skipped' ? 'bg-white border-gray-100 opacity-50' : 'bg-gray-50 border-gray-100'}`}>
                         <div className="flex items-center gap-2 text-gray-400">
                           {status === 'pending' && <span className="w-3 h-3 rounded-full border-2 border-blue-300 border-t-blue-500 animate-spin flex-shrink-0" />}
                           {status === 'success' && <span className="text-green-500 flex-shrink-0 font-medium">✓</span>}
                           {status === 'warning' && <span className="text-amber-400 flex-shrink-0 font-medium">⚠</span>}
                           {status === 'error'   && <span className="text-red-400 flex-shrink-0 font-medium">✗</span>}
-                          <span className={status === 'error' ? 'text-red-400' : status === 'warning' ? 'text-amber-500' : 'text-gray-500'}>{toolLabel(tc.name)}</span>
+                          {status === 'skipped' && <span className="text-gray-300 flex-shrink-0 font-medium">–</span>}
+                          <span className={status === 'error' ? 'text-red-400' : status === 'warning' ? 'text-amber-500' : status === 'skipped' ? 'text-gray-300' : 'text-gray-500'}>{toolLabel(tc.name)}</span>
                         </div>
                         {status === 'error' && toolErrorMessage(tc.result) && <p className="mt-0.5 pl-5 text-red-400 text-xs">{toolErrorMessage(tc.result)}</p>}
                         {status === 'warning' && toolErrorMessage(tc.result) && <p className="mt-0.5 pl-5 text-amber-400 text-xs">{toolErrorMessage(tc.result)}</p>}
+                        {status === 'skipped' && <p className="mt-0.5 pl-5 text-gray-300 text-xs">Condition non remplie</p>}
                         {(status === 'success' || status === 'pending') && summary && <p className="mt-0.5 pl-5 text-gray-400 whitespace-pre-wrap">{summary}</p>}
                       </div>
                     )
