@@ -1703,17 +1703,16 @@ export async function createPaymentLink(opts: {
   const fieldId    = opts.customFieldName  ?? 'lien_paiement'
   const fieldLabel = opts.customFieldLabel ?? 'Lien paiement'
 
-  // 1. Créer le payment charge en mode "checkout" (Stripe checkout link)
+  // 1. Créer le payment charge en mode "request"
   const chargeBody = {
-    data: {
-      type: 'payment_charges',
-      attributes: {
-        mode:            'checkout',
-        order_id:        orderId,
-        total_in_cents:  amountCents,
-      },
+    payment_charge: {
+      mode:             'request',
+      order_id:         orderId,
+      amount_in_cents:  amountCents,
+      deposit_in_cents: 0,
     },
   }
+  console.log('[createPaymentLink] body →', JSON.stringify(chargeBody))
   const chargeRes = await fetch(`${BASE_BOOMERANG}/payment_charges`, {
     method:  'POST',
     headers: { ...headers(), 'Content-Type': 'application/json' },
