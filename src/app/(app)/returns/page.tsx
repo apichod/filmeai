@@ -291,46 +291,18 @@ function toolSummary(name: string, result: string | undefined): string | null {
 
 // ── Menu 2 niveaux ─────────────────────────────────────────────────────────────
 
-type Level1Key = 'retard' | 'perte' | 'vol' | 'dommage' | 'split'
+type Level1Item = { key: string; label: string }
 
-type ActiveWorkflow = { slug: string; name: string; chat_label: string | null; description: string }
+type ActiveWorkflow = {
+  slug: string
+  name: string
+  chat_label: string | null
+  description: string
+  parent_category: string | null
+  welcome: string | null
+}
 
 type SubOption = { label: string; scenario: string; welcome: string }
-
-const LEVEL1_ITEMS: { key: Level1Key; label: string }[] = [
-  { key: 'retard',  label: 'Retard' },
-  { key: 'perte',   label: 'Perte' },
-  { key: 'vol',     label: 'Vol' },
-  { key: 'dommage', label: 'Dommage' },
-  { key: 'split',   label: 'Séparer 2 problèmes' },
-]
-
-const LEVEL2_MAP: Record<Exclude<Level1Key, 'split'>, SubOption[]> = {
-  retard: [
-    { label: 'Créer un dossier de retard',       scenario: 'r11_21_late_open',    welcome: 'Tâche : Créer un dossier de retard (R11-21).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Régulariser et gracier',            scenario: 'r11_22_late_waived',  welcome: 'Tâche : Régulariser un retard et gracier (R11-22).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Régulariser et débiter la caution', scenario: 'r11_23_late_deposit', welcome: 'Tâche : Régulariser un retard et débiter la caution (R11-23).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Régulariser et facturer',           scenario: 'r11_24_late_billed',  welcome: 'Tâche : Régulariser un retard et facturer le client (R11-24).\nDonnez-moi le numéro de la commande d\'origine.' },
-  ],
-  perte: [
-    { label: 'Créer un dossier de perte',     scenario: 'r12_21_missing_open',    welcome: 'Tâche : Créer un dossier de perte (R12-21).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer et gracier',           scenario: 'r12_22_missing_waived',  welcome: 'Tâche : Clôturer un dossier de perte et gracier (R12-22).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par débit de caution', scenario: 'r12_23_missing_deposit', welcome: 'Tâche : Clôturer un dossier de perte par débit de caution (R12-23).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par facturation',      scenario: 'r12_24_missing_billed',  welcome: 'Tâche : Clôturer un dossier de perte par facturation (R12-24).\nDonnez-moi le numéro de la commande d\'origine.' },
-  ],
-  vol: [
-    { label: 'Créer un dossier de vol',       scenario: 'r13_21_theft_open',    welcome: 'Tâche : Créer un dossier de vol (R13-21).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer et gracier',           scenario: 'r13_22_theft_waived',  welcome: 'Tâche : Clôturer un dossier de vol et gracier (R13-22).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par débit de caution', scenario: 'r13_23_theft_deposit', welcome: 'Tâche : Clôturer un dossier de vol par débit de caution (R13-23).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par facturation',      scenario: 'r13_24_theft_billed',  welcome: 'Tâche : Clôturer un dossier de vol par facturation (R13-24).\nDonnez-moi le numéro de la commande d\'origine.' },
-  ],
-  dommage: [
-    { label: 'Créer un dossier de dommage',   scenario: 'r14_21_damage_open',    welcome: 'Tâche : Créer un dossier de dommage (R14-21).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer et gracier',           scenario: 'r14_22_damage_waived',  welcome: 'Tâche : Clôturer un dossier de dommage et gracier (R14-22).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par débit de caution', scenario: 'r14_23_damage_deposit', welcome: 'Tâche : Clôturer un dossier de dommage par débit de caution (R14-23).\nDonnez-moi le numéro de la commande d\'origine.' },
-    { label: 'Clôturer par facturation',      scenario: 'r14_24_damage_billed',  welcome: 'Tâche : Clôturer un dossier de dommage par facturation (R14-24).\nDonnez-moi le numéro de la commande d\'origine.' },
-  ],
-}
 
 // ── Composant Chat ─────────────────────────────────────────────────────────────
 
@@ -352,7 +324,7 @@ function ChatPanel() {
   const [emailInstruction, setEmailInstruction] = useState('')
   const [caseId, setCaseId] = useState<string | null>(null)
   const [scenario, setScenario] = useState<string | null>(null)
-  const [level1, setLevel1] = useState<Level1Key | null>(null)
+  const [level1, setLevel1] = useState<string | null>(null)
   const [selectedLabel, setSelectedLabel] = useState<string>('')
   // Données client extraites du dernier fetch_order — passées à chaque requête pour éviter les placeholders IA
   const [fetchedCustomerId, setFetchedCustomerId] = useState<string | null>(null)
@@ -361,6 +333,8 @@ function ChatPanel() {
   const [workflowState, setWorkflowState] = useState<WorkflowState | null>(null)
   const [activeSteps, setActiveSteps] = useState<WorkflowStep[]>([])
   const [showSteps, setShowSteps] = useState(false)
+  // Catégories niveau 1 depuis Supabase
+  const [level1Items, setLevel1Items] = useState<Level1Item[]>([])
   // Workflows actifs depuis Supabase — pilote le menu de sélection
   const [availableWorkflows, setAvailableWorkflows] = useState<ActiveWorkflow[]>([])
   const [workflowsLoaded, setWorkflowsLoaded] = useState(false)
@@ -378,12 +352,17 @@ function ChatPanel() {
       .catch(() => {})
   }, [scenario])
 
-  // Charge tous les workflows actifs pour piloter le menu de sélection
+  // Charge les catégories niveau 1 et les workflows actifs
   useEffect(() => {
-    fetch('/api/returns/workflows')
-      .then(r => r.json())
-      .then((d: { workflows?: Array<{ slug: string; name: string; chat_label: string | null; description: string; is_active: boolean }> }) => {
-        setAvailableWorkflows((d.workflows ?? []).filter(w => w.is_active))
+    Promise.all([
+      fetch('/api/chat-categories?chat_type=retours').then(r => r.json()),
+      fetch('/api/returns/workflows').then(r => r.json()),
+    ])
+      .then(([cats, wfs]) => {
+        const categories = (cats.categories ?? []) as Array<{ key: string; label: string; is_active: boolean }>
+        setLevel1Items(categories.filter(c => c.is_active).map(c => ({ key: c.key, label: c.label })))
+        const allWfs = (wfs.workflows ?? []) as Array<{ slug: string; name: string; chat_label: string | null; description: string; is_active: boolean; parent_category: string | null; welcome: string | null }>
+        setAvailableWorkflows(allWfs.filter(w => w.is_active))
         setWorkflowsLoaded(true)
       })
       .catch(() => setWorkflowsLoaded(true))
@@ -744,12 +723,12 @@ function ChatPanel() {
     setFetchedCustomerEmail(null)
   }
 
-  function selectLevel1(key: Level1Key) {
-    if (key === 'split') {
-      selectSubOption(
-        { label: 'Séparer 2 problèmes', scenario: 'u01_split_return_order', welcome: 'Tâche : Séparer 2 problèmes sur la même commande (U01).\nDonnez-moi le numéro de la commande d\'origine.' },
-        'Séparer 2 problèmes',
-      )
+  function selectLevel1(key: string) {
+    // Si la catégorie n'a qu'un seul workflow, on démarre directement
+    const subs = level2Map[key] ?? []
+    if (subs.length === 1) {
+      const item = level1Items.find(i => i.key === key)
+      selectSubOption(subs[0], `${item?.label ?? key} — ${subs[0].label}`)
       return
     }
     setLevel1(key)
@@ -759,9 +738,8 @@ function ChatPanel() {
     setScenario(wf.slug)
     const displayName = wf.chat_label || wf.name
     setSelectedLabel(displayName)
-    const welcome = wf.description
-      ? `${wf.description}\nDonnez-moi le numéro de la commande d'origine.`
-      : `Tâche : ${displayName}.\nDonnez-moi le numéro de la commande d'origine.`
+    const welcome = wf.welcome
+      || (wf.description ? `${wf.description}\nDonnez-moi le numéro de la commande d'origine.` : `Tâche : ${displayName}.\nDonnez-moi le numéro de la commande d'origine.`)
     setMessages([{ id: 'welcome', role: 'assistant', content: welcome }])
     setCaseId(null)
     setWorkflowState(null)
@@ -774,23 +752,25 @@ function ChatPanel() {
   }
 
   // ── Menu dynamique piloté par Supabase ─────────────────────────────────────
-  const activeSlugSet = new Set(availableWorkflows.map(w => w.slug))
+  // Level 2 : workflows groupés par parent_category
+  const level2Map: Record<string, SubOption[]> = {}
+  for (const wf of availableWorkflows) {
+    if (!wf.parent_category) continue
+    if (!level2Map[wf.parent_category]) level2Map[wf.parent_category] = []
+    level2Map[wf.parent_category].push({
+      label:    wf.chat_label || wf.name,
+      scenario: wf.slug,
+      welcome:  wf.welcome || wf.description || '',
+    })
+  }
 
-  const KNOWN_SLUGS = new Set<string>([
-    'r00_return_ok',
-    'r11_21_late_open', 'r11_22_late_waived', 'r11_23_late_deposit', 'r11_24_late_billed',
-    'r12_21_missing_open', 'r12_22_missing_waived', 'r12_23_missing_deposit', 'r12_24_missing_billed',
-    'r13_21_theft_open', 'r13_22_theft_waived', 'r13_23_theft_deposit', 'r13_24_theft_billed',
-    'r14_21_damage_open', 'r14_22_damage_waived', 'r14_23_damage_deposit', 'r14_24_damage_billed',
-    'u01_split_return_order', 'late', 'late_returned', 'late_partial', 'missing', 'damage', 'split_v2',
-  ])
+  // Workflows sans catégorie parent → affichés directement en niveau 1
+  const otherWorkflows = availableWorkflows.filter(w => !w.parent_category)
 
-  const otherWorkflows = availableWorkflows.filter(w => !KNOWN_SLUGS.has(w.slug))
-
-  const visibleLevel1Items = LEVEL1_ITEMS.filter(item => {
-    if (item.key === 'split') return activeSlugSet.has('u01_split_return_order')
-    const subOpts = LEVEL2_MAP[item.key as Exclude<Level1Key, 'split'>]
-    return subOpts?.some(opt => activeSlugSet.has(opt.scenario))
+  // Catégories visibles = celles qui ont au moins un workflow actif rattaché
+  const visibleLevel1Items = level1Items.filter(item => {
+    const subs = level2Map[item.key]
+    return subs && subs.length > 0
   })
 
   // ── Sélecteur niveau 1 ────────────────────────────────────────────────────
@@ -835,8 +815,8 @@ function ChatPanel() {
 
   // ── Sélecteur niveau 2 ────────────────────────────────────────────────────
   if (!scenario && level1) {
-    const l1Label = LEVEL1_ITEMS.find(i => i.key === level1)!.label
-    const subOptions = LEVEL2_MAP[level1 as Exclude<Level1Key, 'split'>].filter(opt => activeSlugSet.has(opt.scenario))
+    const l1Label = level1Items.find(i => i.key === level1)?.label ?? level1
+    const subOptions = level2Map[level1] ?? []
     return (
       <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 gap-6">

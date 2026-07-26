@@ -32,6 +32,8 @@ export async function POST(req: NextRequest) {
     steps?: unknown[]
     is_active?: boolean
     category?: string
+    parent_category?: string | null
+    welcome?: string | null
   }
 
   if (!body.slug || !body.name) return NextResponse.json({ error: 'slug et name requis' }, { status: 400 })
@@ -40,14 +42,16 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase
     .from('return_workflows')
     .insert({
-      slug:        body.slug,
-      name:        body.name,
-      chat_label:  body.chat_label ?? null,
-      description: body.description || '',
-      prompt:      body.prompt || '',
-      steps:       body.steps || [],
-      is_active:   body.is_active ?? true,
-      category:    body.category ?? 'retours',
+      slug:            body.slug,
+      name:            body.name,
+      chat_label:      body.chat_label ?? null,
+      description:     body.description || '',
+      prompt:          body.prompt || '',
+      steps:           body.steps || [],
+      is_active:       body.is_active ?? true,
+      category:        body.category ?? 'retours',
+      parent_category: body.parent_category ?? null,
+      welcome:         body.welcome ?? null,
     })
     .select()
     .single()
@@ -68,6 +72,8 @@ export async function PATCH(req: NextRequest) {
     steps?: unknown[]
     is_active?: boolean
     category?: string
+    parent_category?: string | null
+    welcome?: string | null
   }
 
   if (!body.id) return NextResponse.json({ error: 'id manquant' }, { status: 400 })
@@ -75,14 +81,16 @@ export async function PATCH(req: NextRequest) {
   const supabase = getSupabaseAdmin()
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
 
-  if (body.slug        !== undefined) patch.slug        = body.slug
-  if (body.name        !== undefined) patch.name        = body.name
-  if (body.chat_label  !== undefined) patch.chat_label  = body.chat_label ?? null
-  if (body.description !== undefined) patch.description = body.description
-  if (body.prompt      !== undefined) patch.prompt      = body.prompt
-  if (body.steps       !== undefined) patch.steps       = body.steps
-  if (body.is_active   !== undefined) patch.is_active   = body.is_active
-  if (body.category    !== undefined) patch.category    = body.category
+  if (body.slug            !== undefined) patch.slug            = body.slug
+  if (body.name            !== undefined) patch.name            = body.name
+  if (body.chat_label      !== undefined) patch.chat_label      = body.chat_label ?? null
+  if (body.description     !== undefined) patch.description     = body.description
+  if (body.prompt          !== undefined) patch.prompt          = body.prompt
+  if (body.steps           !== undefined) patch.steps           = body.steps
+  if (body.is_active       !== undefined) patch.is_active       = body.is_active
+  if (body.category        !== undefined) patch.category        = body.category
+  if (body.parent_category !== undefined) patch.parent_category = body.parent_category ?? null
+  if (body.welcome         !== undefined) patch.welcome         = body.welcome ?? null
 
   const { error } = await supabase.from('return_workflows').update(patch).eq('id', body.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

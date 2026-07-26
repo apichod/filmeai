@@ -11,6 +11,7 @@ const tabs = [
   { label: 'Devis',        href: '/assistant/quotes' },
   { label: 'Intégration',  href: '/assistant/integration' },
   { label: 'Workflows',    href: '/assistant/workflows' },
+  { label: 'Chat',         href: '/assistant/chat' },
   // { label: 'Templates email', href: '/assistant/emails' }, // désactivé — non utilisé
 ]
 

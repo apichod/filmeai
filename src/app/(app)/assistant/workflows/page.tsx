@@ -279,6 +279,8 @@ type Workflow = {
   steps: WorkflowStep[]
   is_active: boolean
   category: WorkflowCategory
+  parent_category: string | null
+  welcome: string | null
 }
 
 // ── Composant Step ─────────────────────────────────────────────────────────────
@@ -775,7 +777,10 @@ export default function WorkflowsPage() {
   const [editSteps, setEditSteps] = useState<WorkflowStep[]>([])
   const [editActive, setEditActive] = useState(true)
   const [editCategory, setEditCategory] = useState<WorkflowCategory>('retours')
+  const [editParentCategory, setEditParentCategory] = useState<string>('')
+  const [editWelcome, setEditWelcome] = useState<string>('')
   const [activeTab, setActiveTab] = useState<WorkflowCategory>('retours')
+  const [chatCategories, setChatCategories] = useState<{ key: string; label: string; chat_type: string }[]>([])
   const [exportModal, setExportModal] = useState(false)
   const [exportCopied, setExportCopied] = useState(false)
 
@@ -827,6 +832,13 @@ export default function WorkflowsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    fetch('/api/chat-categories')
+      .then(r => r.json())
+      .then(d => setChatCategories(d.categories || []))
+      .catch(() => {})
+  }, [])
+
   function select(wf: Workflow) {
     setSelected(wf)
     setEditing(false)
@@ -838,6 +850,8 @@ export default function WorkflowsPage() {
     setEditSteps(wf.steps || [])
     setEditActive(wf.is_active)
     setEditCategory(wf.category ?? 'retours')
+    setEditParentCategory(wf.parent_category ?? '')
+    setEditWelcome(wf.welcome ?? '')
     setSaved(false)
   }
 
@@ -858,11 +872,13 @@ export default function WorkflowsPage() {
           steps: editSteps,
           is_active: editActive,
           category: editCategory,
+          parent_category: editParentCategory.trim() || null,
+          welcome: editWelcome.trim() || null,
         }),
       })
       if (!res.ok) throw new Error('Erreur serveur')
 
-      const updated = { ...selected, slug: editSlug, name: editName, chat_label: editChatLabel.trim() || null, description: editDescription, prompt: editPrompt, steps: editSteps, is_active: editActive, category: editCategory }
+      const updated = { ...selected, slug: editSlug, name: editName, chat_label: editChatLabel.trim() || null, description: editDescription, prompt: editPrompt, steps: editSteps, is_active: editActive, category: editCategory, parent_category: editParentCategory.trim() || null, welcome: editWelcome.trim() || null }
       setWorkflows(prev => prev.map(w => w.id === selected.id ? updated : w))
       setSelected(updated)
       setEditing(false)
@@ -895,14 +911,16 @@ export default function WorkflowsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          slug:        `${wf.slug}_copy_${Date.now()}`,
-          name:        `${wf.name} (copie)`,
-          chat_label:  wf.chat_label ?? null,
-          description: wf.description,
-          prompt:      wf.prompt,
-          steps:       wf.steps,
-          is_active:   false,
-          category:    wf.category ?? 'retours',
+          slug:            `${wf.slug}_copy_${Date.now()}`,
+          name:            `${wf.name} (copie)`,
+          chat_label:      wf.chat_label ?? null,
+          description:     wf.description,
+          prompt:          wf.prompt,
+          steps:           wf.steps,
+          is_active:       false,
+          category:        wf.category ?? 'retours',
+          parent_category: wf.parent_category ?? null,
+          welcome:         wf.welcome ?? null,
         }),
       })
       const d = await res.json() as { workflow?: Workflow; error?: string }
@@ -1187,6 +1205,52 @@ export default function WorkflowsPage() {
                     )
                   })()}
                 </select>
+              </div>
+            </div>
+
+            {/* Catégorie parent + Message d'accueil */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Chat</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Rattachement dans le menu et message affiché au lancement</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Catégorie parent <span className="text-gray-400 font-normal">(niveau 1 du menu chat)</span>
+                  </label>
+                  <select
+                    value={editParentCategory}
+                    onChange={e => { setEditParentCategory(e.target.value); setEditing(true) }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+                  >
+                    <option value="">— aucune —</option>
+                    {chatCategories
+                      .filter(c => c.chat_type === editCategory)
+                      .map(c => (
+                        <option key={c.key} value={c.key}>{c.label}</option>
+                      ))
+                    }
+                  </select>
+                </div>
+                <div className="text-xs text-gray-400 flex items-end pb-1">
+                  {editParentCategory
+                    ? <span>Ce workflow apparaîtra sous <strong className="text-gray-600">{chatCategories.find(c => c.key === editParentCategory)?.label ?? editParentCategory}</strong> dans le chat.</span>
+                    : <span>Sans catégorie → affiché directement en niveau 1.</span>
+                  }
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  Message d&apos;accueil <span className="text-gray-400 font-normal">(affiché au démarrage du chat)</span>
+                </label>
+                <textarea
+                  value={editWelcome}
+                  onChange={e => { setEditWelcome(e.target.value); setEditing(true) }}
+                  rows={3}
+                  placeholder="ex: Tâche : Créer un dossier de retard (R11-21).&#10;Donnez-moi le numéro de la commande d'origine."
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 resize-y"
+                />
               </div>
             </div>
 
