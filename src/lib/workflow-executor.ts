@@ -40,6 +40,8 @@ import {
   createManualPaymentCharge,
   createPaymentLink,
   setSavDate,
+  checkInsuranceRequestStatus,
+  addProductInsurance8,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -987,6 +989,25 @@ export async function executeCodeStep(
           grand_total_euros_HT: grandTotalEurosHT.toFixed(2),
           message: `💰 Montant HT commande ${label} : ${grandTotalEurosHT.toFixed(2)} €`,
         })
+      }
+
+      case 'check_insurance_request_status': {
+        if (!orderId) return err('check_insurance_request_status : order_id manquant — exécuter fetch_order avant')
+        const ins = await checkInsuranceRequestStatus(orderId)
+        return ok({
+          insurance_request_status: ins.status,   // 'yes' | 'no' | 'not_set'
+          message: ins.message,
+        })
+      }
+
+      case 'add_product_insurance_8': {
+        if (!orderId) return err('add_product_insurance_8 : order_id manquant — exécuter fetch_order avant')
+        const inputCtx          = step.input_context ?? step.order_context ?? 'return'
+        const grandTotalEurosHT = parseFloat(String(vars[`${inputCtx}.grand_total_euros_HT`] ?? '0'))
+        if (!grandTotalEurosHT || grandTotalEurosHT <= 0) return err('add_product_insurance_8 : grand_total_euros_HT introuvable — exécuter fetch_original_amount_HT avant')
+        await addProductInsurance8(orderId, grandTotalEurosHT)
+        const insuranceAmount = Math.round(grandTotalEurosHT * 0.08 * 100) / 100
+        return ok({ success: true, message: `✓ Assurance FILME ajoutée — ${insuranceAmount.toFixed(2)} € (8% de ${grandTotalEurosHT.toFixed(2)} € HT)` })
       }
 
       case 'capture_stripe_deposit': {
