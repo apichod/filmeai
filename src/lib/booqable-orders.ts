@@ -2206,7 +2206,31 @@ export async function addProductLineById(
   productGroupId: string,
   quantity: number = 1,
 ): Promise<void> {
-  await addSAVLine({ type: 'product', orderId, productGroupId, quantity })
+  // Résoudre le product_id depuis le product_group_id
+  const productId = await resolveProductId(productGroupId)
+  if (!productId) throw new Error(`Impossible de résoudre le product_id pour product_group ${productGroupId}`)
+
+  // Ajouter la ligne via order_fulfillments (book_product) — sans zeroOutOrderLines
+  const res = await fetch(`${BASE4}/order_fulfillments`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'order_fulfillments',
+        attributes: {
+          order_id: orderId,
+          confirm_shortage: true,
+          actions: [{ action: 'book_product', mode: 'create_new', product_id: productId, quantity }],
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Booqable addProductLineById failed (${res.status}): ${text}`)
+  }
 }
 
 // ── Check assurance ────────────────────────────────────────────────────────────
