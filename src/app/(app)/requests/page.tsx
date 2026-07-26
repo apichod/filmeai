@@ -1,155 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import NewRequestForm from './new/page'
-
-// ── Types partagés ────────────────────────────────────────────────────────────
+import WorkflowChatPanel from '@/components/WorkflowChatPanel'
 
 type Tab = 'chat' | 'new' | 'history'
-
-type Level1Item = { key: string; label: string }
-type SubOption  = { label: string; scenario: string; welcome: string }
-
-type PlanningWorkflow = {
-  slug: string
-  name: string
-  chat_label: string | null
-  welcome: string | null
-  parent_category: string | null
-  category: string
-  is_active: boolean
-}
-
-// ── Composant Chat Planning ───────────────────────────────────────────────────
-
-function PlanningChatPanel({ onSelectScenario }: { onSelectScenario: (scenario: string) => void }) {
-  const [level1Items, setLevel1Items]       = useState<Level1Item[]>([])
-  const [workflows, setWorkflows]           = useState<PlanningWorkflow[]>([])
-  const [workflowsLoaded, setWorkflowsLoaded] = useState(false)
-  const [level1, setLevel1]                 = useState<string | null>(null)
-
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/chat-categories?chat_type=planning').then(r => r.json()),
-      fetch('/api/returns/workflows').then(r => r.json()),
-    ])
-      .then(([cats, wfs]) => {
-        const categories = (cats.categories ?? []) as Array<{ key: string; label: string; is_active: boolean }>
-        setLevel1Items(categories.filter(c => c.is_active).map(c => ({ key: c.key, label: c.label })))
-        const allWfs = (wfs.workflows ?? []) as PlanningWorkflow[]
-        // Accepte les workflows planning ET les workflows avec parent_category
-        // (au cas où category n'est pas encore 'planning' mais le workflow est rattaché)
-        setWorkflows(allWfs.filter(w => w.is_active && (w.category === 'planning' || w.parent_category)))
-        setWorkflowsLoaded(true)
-      })
-      .catch(() => setWorkflowsLoaded(true))
-  }, [])
-
-  // level2Map : workflows groupés par parent_category
-  const level2Map: Record<string, SubOption[]> = {}
-  for (const wf of workflows) {
-    if (!wf.parent_category) continue
-    if (!level2Map[wf.parent_category]) level2Map[wf.parent_category] = []
-    level2Map[wf.parent_category].push({
-      label:    wf.chat_label || wf.name,
-      scenario: wf.slug,
-      welcome:  wf.welcome || '',
-    })
-  }
-
-  // Si aucune catégorie en base, dériver depuis les parent_category des workflows
-  const effectiveLevel1Items: Level1Item[] = level1Items.length > 0
-    ? level1Items
-    : Array.from(new Set(workflows.map(w => w.parent_category).filter(Boolean) as string[]))
-        .map(key => ({ key, label: key }))
-
-  const visibleLevel1 = effectiveLevel1Items.filter(i => (level2Map[i.key]?.length ?? 0) > 0)
-
-  function selectSubOption(opt: SubOption) {
-    onSelectScenario(opt.scenario)
-  }
-
-  function selectLevel1(key: string) {
-    setLevel1(key)
-  }
-
-  // ── Sélecteur niveau 1 ──────────────────────────────────────────────────────
-  if (!level1) return (
-    <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 gap-6">
-        <div className="w-14 h-14 rounded-full bg-indigo-500 flex items-center justify-center flex-shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        </div>
-        <p className="text-base font-bold text-gray-900 text-center">Que souhaitez-vous faire&nbsp;?</p>
-        {!workflowsLoaded ? (
-          <span className="text-xs text-gray-400">Chargement…</span>
-        ) : visibleLevel1.length === 0 ? (
-          <div className="text-center space-y-2">
-            <p className="text-sm text-gray-500">Aucun workflow planning configuré.</p>
-            <Link href="/assistant/chat" className="text-xs text-indigo-600 hover:underline">
-              Configurer les catégories →
-            </Link>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2 justify-center">
-            {visibleLevel1.map(item => (
-              <button
-                key={item.key}
-                onClick={() => selectLevel1(item.key)}
-                className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-
-  // ── Sélecteur niveau 2 ──────────────────────────────────────────────────────
-  const l1Label   = effectiveLevel1Items.find(i => i.key === level1)?.label ?? level1
-  const subOptions = level2Map[level1] ?? []
-
-  return (
-    <div className="flex flex-col h-full bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 gap-6">
-        <div className="w-14 h-14 rounded-full bg-indigo-500 flex items-center justify-center flex-shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        </div>
-        <div className="text-center">
-          <p className="text-base font-bold text-gray-900">Quelle tâche veux-tu exécuter&nbsp;?</p>
-          <p className="text-xs text-gray-400 mt-1">{l1Label}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 justify-center">
-          {subOptions.map(opt => (
-            <button
-              key={opt.scenario}
-              onClick={() => selectSubOption(opt)}
-              className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-all"
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={() => setLevel1(null)}
-          className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-          Retour
-        </button>
-      </div>
-    </div>
-  )
-}
 
 // ── Types historique ──────────────────────────────────────────────────────────
 
@@ -412,7 +267,7 @@ export default function RequestsPage() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === 'chat'    && (
           <div className="h-full" style={{ minHeight: '540px' }}>
-            <PlanningChatPanel onSelectScenario={() => setTab('new')} />
+            <WorkflowChatPanel chatType="planning" />
           </div>
         )}
         {tab === 'new'     && <NewRequestForm />}
