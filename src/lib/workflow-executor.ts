@@ -572,6 +572,26 @@ export async function executeCodeStep(
         })
       }
 
+      case 'draft_email_with_quote_booqable': {
+        // Comme draft_email_with_invoice_booqable mais pour un devis
+        const emailTemplateId = String(params.document_id ?? '')
+        if (!emailTemplateId) return err('draft_email_with_quote_booqable : document_id (email_template_id) manquant')
+        if (!orderId)         return err('draft_email_with_quote_booqable : order_id manquant')
+        const inputCtx  = step.input_context ?? step.order_context ?? 'return'
+        const quoteDocId = String(vars[`${inputCtx}.document_id`] ?? params.quote_document_id ?? '')
+        if (!quoteDocId) return err('draft_email_with_quote_booqable : document_id devis introuvable dans vars — exécutez finalize_quote avant')
+        const rendered = await renderBooqableEmailTemplateWithInvoice(emailTemplateId, orderId, quoteDocId)
+        if (!rendered) return err(`draft_email_with_quote_booqable : rendu template ${emailTemplateId} échoué`)
+        return ok({
+          __type__:           'email_preview',
+          document_id:        emailTemplateId,
+          active_document_id: emailTemplateId,
+          name:               emailTemplateId,
+          subject:            rendered.subject,
+          body:               rendered.body,
+        })
+      }
+
       case 'send_email_with_invoice_booqable': {
         // Comme send_email_booqable mais joint la facture (document_ids)
         if (!orderId) return err('send_email_with_invoice_booqable : order_id manquant')

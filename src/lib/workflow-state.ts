@@ -158,6 +158,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'document_id'],
     writes: ['active_document_id'],
   },
+  draft_email_with_quote_booqable: {
+    label:  'Aperçu template Booqable avec devis joint',
+    reads:  ['id', 'document_id'],
+    writes: ['active_document_id'],
+  },
   send_email_with_invoice_booqable: {
     label:  'Envoyer email Booqable avec facture en pièce jointe',
     reads:  ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'],
