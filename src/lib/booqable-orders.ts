@@ -2199,6 +2199,16 @@ export async function renderBooqableEmailTemplate(
 // ── sendEmailViaBooqable ──────────────────────────────────────────────────────
 // Envoie un email via Booqable (qui gère le destinataire depuis l'order et
 // remplace les {{variables}} Booqable au moment de l'envoi).
+// ── Ajout ligne produit par ID (paramétré depuis le step JSON) ────────────────
+
+export async function addProductLineById(
+  orderId: string,
+  productGroupId: string,
+  quantity: number = 1,
+): Promise<void> {
+  await addSAVLine({ type: 'product', orderId, productGroupId, quantity })
+}
+
 // ── Check assurance ────────────────────────────────────────────────────────────
 
 export async function checkInsuranceRequestStatus(orderId: string): Promise<{

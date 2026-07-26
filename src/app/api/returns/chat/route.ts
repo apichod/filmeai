@@ -34,6 +34,7 @@ import {
   startSAVOrder,
   sendEmailViaBooqable,
   checkInsuranceRequestStatus,
+  addProductLineById,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -437,6 +438,22 @@ function buildTools(
   {
     type: 'function',
     function: {
+      name: 'add_product_line_by_id',
+      description: 'Ajoute une ligne produit à une commande Booqable en utilisant un product_group_id fixe défini dans les paramètres du step. Utile pour les workflows automatisés (ex: ajouter une ligne assurance standard).',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id:         { type: 'string', description: 'UUID Booqable de la commande (champ "id" de fetch_order)' },
+          product_group_id: { type: 'string', description: 'UUID Booqable du product_group à ajouter (défini dans les paramètres du step)' },
+          quantity:         { type: 'number', description: 'Quantité à ajouter (défaut : 1)' },
+        },
+        required: ['order_id', 'product_group_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'check_insurance_request_status',
       description: 'Vérifie si le locataire a demandé ou non l\'assurance FILME sur sa commande Booqable. Retourne YES (assuré par FILME), NO (assurance personnelle multirisques), ou NOT_SET (non renseigné). À appeler après fetch_order.',
       parameters: {
@@ -806,6 +823,15 @@ async function executeTool(
           }
         })
         return { result: JSON.stringify({ __type__: 'choices', order_id: String(args.order_id || ''), items, multiSelect: true }) }
+      }
+
+      case 'add_product_line_by_id': {
+        const orderId         = String(args.order_id ?? '')
+        const productGroupId  = String(args.product_group_id ?? '')
+        const quantity        = typeof args.quantity === 'number' ? args.quantity : 1
+        if (!orderId || !productGroupId) return { result: 'Erreur : order_id et product_group_id sont requis' }
+        await addProductLineById(orderId, productGroupId, quantity)
+        return { result: `✓ Ligne produit ajoutée (product_group_id: ${productGroupId}, qté: ${quantity})` }
       }
 
       case 'check_insurance_request_status': {
