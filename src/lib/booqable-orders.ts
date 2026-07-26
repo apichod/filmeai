@@ -1688,6 +1688,33 @@ export async function removeOrderDiscount(orderId: string): Promise<void> {
   }
 }
 
+// ── updateOrderDeposit ────────────────────────────────────────────────────────
+// Met à jour la caution fixe d'une commande Booqable.
+// depositValue = montant en euros (entier, ex: 2000).
+export async function updateOrderDeposit(orderId: string, depositValue: number): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const depositStr = Math.round(depositValue).toString()
+  const body = {
+    id: orderId,
+    order: { deposit_type: 'fixed', deposit_value: depositStr },
+    data: {
+      type: 'orders',
+      id: orderId,
+      attributes: { deposit_type: 'fixed', deposit_value: depositStr },
+    },
+  }
+  const res = await fetch(`${BASE_BOOMERANG}/orders/${orderId}`, {
+    method:  'PUT',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+    signal:  AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`updateOrderDeposit error ${res.status}: ${text}`)
+  }
+}
+
 // ── createPaymentLink ─────────────────────────────────────────────────────────
 // Crée un lien de paiement (mode: "request") sur une commande Booqable,
 // puis stocke l'URL dans le champ custom "lien_paiement" de la commande.

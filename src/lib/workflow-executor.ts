@@ -42,6 +42,7 @@ import {
   setSavDate,
   checkInsuranceRequestStatus,
   addProductInsurance8,
+  updateOrderDeposit,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -987,9 +988,11 @@ export async function executeCodeStep(
         const depositRaw    = parseFloat(String(vars[`${inputCtx}.security_deposit`] ?? '0'))
         if (!depositRaw || depositRaw <= 0) return err('round_deposit : security_deposit introuvable dans les variables — exécuter check_deposit avant')
         const rounded = Math.round(depositRaw / 100) * 100
+        if (!orderId) return err('round_deposit : order_id manquant — exécuter fetch_order avant')
+        await updateOrderDeposit(orderId, rounded)
         return ok({
           security_deposit_rounded: rounded.toFixed(2),
-          message: `✓ Caution arrondie : ${depositRaw.toFixed(2)} € → ${rounded.toFixed(2)} €`,
+          message: `✓ Caution mise à jour : ${depositRaw.toFixed(2)} € → ${rounded.toFixed(2)} €`,
         })
       }
 
