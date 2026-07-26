@@ -10,6 +10,7 @@ const BOOQABLE_TOOLS = [
   { value: 'capture_stripe_deposit',             label: 'capture_stripe_deposit — débiter l\'autorisation bancaire Stripe (caution)' },
   { value: 'check_deposit',                      label: 'check_deposit — vérifier la caution (dépôt physique + autorisation carte)' },
   { value: 'check_insurance',                    label: 'check_insurance — vérifier si l\'assurance est prise sur la commande' },
+  { value: 'check_insurance_request_status',     label: 'check_insurance_request_status — vérifier si l\'assurance a été demandée par le locataire' },
   { value: 'choose_article',                     label: 'choose_article — sélectionner les articles de la commande' },
   { value: 'choose_problem_tag',                 label: 'choose_problem_tag — afficher boutons choix de tag (retard/perte/vol/dommage)' },
   { value: 'clear_tags',                         label: 'clear_tags — supprimer tous les tags' },
