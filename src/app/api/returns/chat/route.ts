@@ -35,6 +35,7 @@ import {
   sendEmailViaBooqable,
   checkInsuranceRequestStatus,
   addProductLineById,
+  addProductInsurance8,
 } from '@/lib/booqable-orders'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -454,6 +455,21 @@ function buildTools(
   {
     type: 'function',
     function: {
+      name: 'add_product_insurance_8',
+      description: 'Ajoute la ligne assurance FILME sur la commande et fixe automatiquement son prix à 8% du montant HT (grand_total_euros_HT). À appeler après fetch_original_amount_HT.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id:             { type: 'string', description: 'UUID Booqable de la commande (champ "id" de fetch_order)' },
+          grand_total_euros_HT: { type: 'number', description: 'Montant HT de la commande en euros (depuis fetch_original_amount_HT)' },
+        },
+        required: ['order_id', 'grand_total_euros_HT'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'check_insurance_request_status',
       description: 'Vérifie si le locataire a demandé ou non l\'assurance FILME sur sa commande Booqable. Retourne YES (assuré par FILME), NO (assurance personnelle multirisques), ou NOT_SET (non renseigné). À appeler après fetch_order.',
       parameters: {
@@ -823,6 +839,16 @@ async function executeTool(
           }
         })
         return { result: JSON.stringify({ __type__: 'choices', order_id: String(args.order_id || ''), items, multiSelect: true }) }
+      }
+
+      case 'add_product_insurance_8': {
+        const orderId          = String(args.order_id ?? '')
+        const grandTotalEurosHT = typeof args.grand_total_euros_HT === 'number' ? args.grand_total_euros_HT : parseFloat(String(args.grand_total_euros_HT ?? '0'))
+        if (!orderId) return { result: 'Erreur : order_id manquant' }
+        if (!grandTotalEurosHT) return { result: 'Erreur : grand_total_euros_HT manquant — appeler fetch_original_amount_HT avant' }
+        await addProductInsurance8(orderId, grandTotalEurosHT)
+        const insuranceAmount = Math.round(grandTotalEurosHT * 0.08 * 100) / 100
+        return { result: `✓ Assurance FILME ajoutée — prix fixé à ${insuranceAmount.toFixed(2)} € (8% de ${grandTotalEurosHT.toFixed(2)} € HT)` }
       }
 
       case 'add_product_line_by_id': {

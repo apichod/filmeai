@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 const BOOQABLE_TOOLS = [
   { value: 'add_new_product_line',               label: 'add_new_product_line — ajouter les articles sélectionnés (produit ou custom si sans ID)' },
   { value: 'add_product_line_by_id',             label: 'add_product_line_by_id — ajouter un produit fixe via son product_group_id (paramètre JSON)' },
+  { value: 'add_product_insurance_8',            label: 'add_product_insurance_8 — ajouter l\'assurance FILME à 8% du montant HT (grand_total_euros_HT)' },
   { value: 'add_sav_comment',                    label: 'add_sav_comment — commentaire SAV' },
   { value: 'add_tag',                            label: 'add_tag — ajouter / supprimer des tags' },
   { value: 'cancel_order',                       label: 'cancel_order — annuler la commande' },
@@ -100,7 +101,8 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email:              { reads: ['subject', 'body'], writes: [] },
   draft_email_booqable:    { reads: ['id'], writes: ['active_document_id'] },
   send_email_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id'], writes: [] },
-  add_product_line_by_id:           { reads: ['id'],           writes: [] },
+  add_product_line_by_id:           { reads: ['id'],                              writes: [] },
+  add_product_insurance_8:          { reads: ['id', 'grand_total_euros_HT'],      writes: [] },
   check_insurance:                  { reads: ['id', 'lines'], writes: ['insurance'] },
   check_insurance_request_status:   { reads: ['id'],          writes: ['insurance_request_status'] },
   check_deposit:                    { reads: ['id'],          writes: ['security_deposit', 'authorisation_card', 'payment_authorization_id', 'provider_id'] },
@@ -142,6 +144,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   draft_email:             'code',
   send_email:              'code',
   add_product_line_by_id:          'code',
+  add_product_insurance_8:         'code',
   check_insurance:                 'code',
   check_insurance_request_status:  'code',
   check_deposit:                   'code',
@@ -166,6 +169,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   create_new_return_order: 'code',
   add_new_product_line:    'both',
   add_product_line_by_id:  'code',
+  add_product_insurance_8: 'code',
   set_sav_date:            'code',
   set_original_order:      'code',
   clear_tags:              'code',
@@ -280,7 +284,8 @@ const TOOL_DOC: Record<string, string> = {
   stop_order:                        'Retourne le matériel (statut started → stopped).',
   update_return_date:                'Met à jour la date de retour de la commande à aujourd\'hui.',
   check_insurance_request_status:   'Vérifie si le locataire a demandé l\'assurance FILME sur sa commande. Retourne YES (assuré par FILME), NO (assurance personnelle multirisques), ou NOT_SET (non renseigné). Appeler après fetch_order avec l\'UUID de la commande.',
-  add_product_line_by_id:           'Ajoute une ligne produit à la commande en utilisant un product_group_id fixe défini dans les paramètres du step. Utile pour ajouter automatiquement un produit standard (ex: ligne assurance FILME). Requiert product_group_id dans les paramètres JSON.',
+  add_product_line_by_id:           'Ajoute une ligne produit à la commande en utilisant un product_group_id fixe défini dans les paramètres du step. Utile pour ajouter automatiquement un produit standard. Requiert product_group_id dans les paramètres JSON.',
+  add_product_insurance_8:          'Ajoute la ligne assurance FILME (product_group_id fixe) et fixe automatiquement son prix à 8% du montant HT. Lire grand_total_euros_HT depuis fetch_original_amount_HT avant d\'appeler ce step.',
 }
 
 type WorkflowCategory = 'retours' | 'planning'

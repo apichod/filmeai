@@ -2233,6 +2233,78 @@ export async function addProductLineById(
   }
 }
 
+// ── addProductInsurance8 ──────────────────────────────────────────────────────
+// Ajoute le produit assurance FILME (ID fixe) et fixe son prix à 8% du montant HT.
+// Étape 1 : book_product via order_fulfillments
+// Étape 2 : fetch des lignes de la commande pour trouver la ligne créée (par product_group_id)
+// Étape 3 : PATCH price_each_in_cents = 8% du HT
+export async function addProductInsurance8(
+  orderId: string,
+  grandTotalEurosHT: number,
+): Promise<void> {
+  const PRODUCT_GROUP_ID = '7ade5f07-d1d4-46de-8044-77698d6173be'
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+
+  // Résoudre le product_id
+  const productId = await resolveProductId(PRODUCT_GROUP_ID)
+  if (!productId) throw new Error('addProductInsurance8: impossible de résoudre le product_id assurance')
+
+  // Étape 1 : ajouter la ligne
+  const bookRes = await fetch(`${BASE4}/order_fulfillments`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      data: {
+        type: 'order_fulfillments',
+        attributes: {
+          order_id: orderId,
+          confirm_shortage: true,
+          actions: [{ action: 'book_product', mode: 'create_new', product_id: productId, quantity: 1 }],
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!bookRes.ok) {
+    const text = await bookRes.text()
+    throw new Error(`addProductInsurance8: book_product failed (${bookRes.status}): ${text}`)
+  }
+
+  // Étape 2 : récupérer la ligne créée (match par product_group_id dans included)
+  const linesRes = await fetch(
+    `${BASE_BOOMERANG}/lines?filter[order_id]=${orderId}&include=item&page[size]=200`,
+    { headers: headers(), signal: AbortSignal.timeout(10000) },
+  )
+  if (!linesRes.ok) throw new Error(`addProductInsurance8: fetch lines failed (${linesRes.status})`)
+
+  type Node = { id: string; type: string; attributes: Record<string, unknown> }
+  const linesData = await linesRes.json() as { data?: Node[]; included?: Node[] }
+  const included  = linesData.included || []
+
+  // Construire un map product_id → product_group_id
+  const pgMap = new Map<string, string>()
+  for (const r of included) {
+    if (r.type === 'products' || r.type === 'product') {
+      const pg = String(r.attributes.product_group_id || '')
+      if (pg) pgMap.set(r.id, pg)
+    }
+  }
+
+  // Trouver la ligne dont l'item correspond au bon product_group_id
+  // On prend la dernière dans la liste (= la plus récemment créée)
+  const matchingLines = (linesData.data || []).filter(line => {
+    const itemId = String((line.attributes as Record<string, unknown> & { item_id?: string }).item_id || '')
+    return pgMap.get(itemId) === PRODUCT_GROUP_ID || itemId === productId
+  })
+  const lineId = matchingLines.at(-1)?.id
+
+  if (!lineId) throw new Error('addProductInsurance8: ligne assurance introuvable après book_product')
+
+  // Étape 3 : fixer le prix à 8% du HT
+  const insuranceEuros = Math.round(grandTotalEurosHT * 0.08 * 100) / 100
+  await setLineReplacementPrice(lineId, insuranceEuros, 'Assurance FILME (8% HT)')
+}
+
 // ── Check assurance ────────────────────────────────────────────────────────────
 
 export async function checkInsuranceRequestStatus(orderId: string): Promise<{
