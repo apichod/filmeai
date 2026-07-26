@@ -909,15 +909,13 @@ export async function executeCodeStep(
         // Récupère le total TTC d'une commande (grand_total_in_cents via Boomerang).
         // Utilise order_context pour cibler la commande.
         if (!orderId) return err('fetch_order_amount : order_id manquant — exécuter fetch_order avant')
-        const { grandTotalCents, priceCents, depositCents } = await fetchOrderAmount(orderId)
+        const { grandTotalCents, depositCents } = await fetchOrderAmount(orderId)
         const grandTotalEuros = grandTotalCents / 100
-        const priceEuros      = priceCents      / 100
         const depositEuros    = depositCents    / 100
         return ok({
           grand_total_euros: grandTotalEuros.toFixed(2),
-          price_euros:       priceEuros.toFixed(2),
           deposit_euros:     depositEuros.toFixed(2),
-          message: `💰 Total commande ${label} : ${grandTotalEuros.toFixed(2)} € TTC (HT: ${priceEuros.toFixed(2)} €, caution: ${depositEuros.toFixed(2)} €)`,
+          message: `💰 Total commande ${label} : ${grandTotalEuros.toFixed(2)} € TTC (caution: ${depositEuros.toFixed(2)} €)`,
         })
       }
 

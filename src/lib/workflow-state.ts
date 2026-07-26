@@ -231,10 +231,10 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   fetch_order_amount: {
     label:  'Récupérer le montant total de la commande',
     reads:  ['id'],
-    writes: ['grand_total_euros', 'price_euros', 'deposit_euros'],
+    writes: ['grand_total_euros', 'deposit_euros'],
     // grand_total_euros = total TTC (string, ex: "150.00")
-    // price_euros       = HT
     // deposit_euros     = montant de la caution Booqable
+    // → pour le montant HT, utiliser fetch_original_amount_HT
   },
   fetch_original_amount_HT: {
     label:  'Récupérer le montant HT de la commande',
