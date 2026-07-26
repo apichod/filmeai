@@ -226,6 +226,47 @@ const PARAMETERS_HINT: Record<string, string> = {
   log_case:                '{"problem_type": "manquant"}',
 }
 
+/** Documentation textuelle de chaque outil */
+const TOOL_DOC: Record<string, string> = {
+  add_new_product_line:              'Ajoute les articles sélectionnés (via choose_article) à la commande cible. Si l\'article a un product_group_id, crée une ligne produit Booqable ; sinon crée une ligne custom.',
+  add_sav_comment:                   'Renseigne les champs SAV : order_sav (commande d\'origine) et notes_sav (commentaire). En mode Code, le commentaire est défini dans les paramètres ; en mode IA, il est rédigé par l\'IA.',
+  add_tag:                           'Ajoute et/ou supprime des tags sur la commande cible. Les tags sont définis dans les paramètres (tags_add, tags_remove) ou déterminés par l\'IA.',
+  cancel_order:                      'Annule la commande Booqable (statut → cancelled).',
+  capture_stripe_deposit:            'Débite l\'autorisation bancaire Stripe (caution) du montant indiqué. Requiert provider_id (ID de l\'autorisation) et grand_total_euros.',
+  check_deposit:                     'Vérifie la caution sur la commande d\'origine : détecte si un dépôt physique et/ou une autorisation carte Stripe sont présents. Écrit security_deposit, authorisation_card, payment_authorization_id, provider_id.',
+  check_insurance:                   'Vérifie si l\'assurance Filme est souscrite sur la commande. Écrit insurance (true / false).',
+  choose_article:                    'Affiche la liste des articles de la commande pour que l\'opérateur sélectionne ceux concernés. En mode Code : boutons multi-select ; en mode IA : sélection par texte. Écrit selected_ids et chosen_lines.',
+  choose_problem_tag:                'Affiche des boutons de choix de type de problème (retard, perte, vol, dommage…). Les options sont configurables dans les paramètres.',
+  clear_tags:                        'Supprime tous les tags de la commande.',
+  create_new_return_order:           'Crée une nouvelle commande Booqable au nom du client avec remise 100 %, sans caution, date de fin fixée au 31/12. L\'ID et le numéro sont écrits dans les vars du contexte return (return.id / return.number).',
+  create_payment_link:               'Crée un lien de paiement Stripe pour le montant de la commande et stocke l\'URL dans le champ lien_paiement de Booqable.',
+  draft_email_ia:                    'Génère un brouillon d\'email via l\'IA (objet + corps). L\'opérateur peut le modifier avant envoi.',
+  draft_email_booqable:              'Charge et affiche l\'aperçu d\'un template email Booqable (lecture seule). Le document_id doit être renseigné dans les paramètres.',
+  draft_email_with_invoice_booqable: 'Charge un template Booqable avec la facture finalisée en pièce jointe. Requiert document_id (template) et s\'appuie sur la facture générée par finalize_invoice.',
+  duplicate_order:                   'Duplique la commande cible et stocke l\'ID et le numéro de la copie dans les vars du contexte child (child.id / child.number).',
+  fetch_order:                       'Charge une commande Booqable depuis son UUID ou numéro. Écrit id, number, status, customer_id, tags et lines dans les vars du contexte.',
+  fetch_order_amount:                'Récupère le montant total TTC de la commande. Écrit grand_total_euros, price_euros et deposit_euros.',
+  fetch_original_from_field:         'Lit le numéro de commande d\'origine depuis le champ custom order_sav de la commande courante, puis charge cette commande. Écrit les données dans le contexte original.',
+  finalize_invoice:                  'Finalise la facture de la commande (statut draft → finalized). Écrit document_id et invoice_number.',
+  list_order:                        'Liste tous les articles de la commande dans le chat (lecture seule, aucune modification).',
+  log_case:                          'Enregistre le cas dans la base FilmeAI (Supabase). Le problem_type doit être renseigné dans les paramètres.',
+  remove_discount:                   'Supprime la remise (discount) de la commande.',
+  remove_other_lines:                'Supprime toutes les lignes de la commande sauf l\'article sélectionné (via choose_article).',
+  remove_product_line:               'Supprime une ligne spécifique de la commande.',
+  reserve_order:                     'Passe la commande de concept à réservé (concept → reserved).',
+  revert_to_concept:                 'Repasse la commande en statut draft/concept.',
+  search_products:                   'Recherche des articles dans le catalogue Booqable (mode IA uniquement). Identifie les articles bulk, trackable ou custom correspondant à la demande.',
+  send_email_ia:                     'Envoie l\'email préparé par draft_email_ia. Lit subject et body depuis les vars.',
+  send_email_booqable:               'Envoie le template Booqable via le moteur d\'emailing intégré. Requiert document_id (depuis les paramètres ou active_document_id).',
+  send_email_with_invoice_booqable:  'Envoie le template Booqable avec la facture en pièce jointe. S\'appuie sur finalize_invoice + draft_email_with_invoice_booqable.',
+  set_original_order:                'Renseigne le numéro de la commande d\'origine dans le champ order_sav de la commande de retour. Lit number depuis le contexte input.',
+  set_replacement_price:             'Fixe le prix de remplacement d\'une ligne de la commande. En mode IA, l\'opérateur est invité à saisir le montant.',
+  set_sav_date:                      'Inscrit la date du jour dans le champ date_sav de la commande.',
+  start_order:                       'Démarre la commande (statut → started / pickup).',
+  stop_order:                        'Retourne le matériel (statut started → stopped).',
+  update_return_date:                'Met à jour la date de retour de la commande à aujourd\'hui.',
+}
+
 type Workflow = {
   id: string
   slug: string
@@ -322,6 +363,7 @@ function StepList({
 }) {
   const dragIdx = useRef<number | null>(null)
   const [dragOver, setDragOver] = useState<number | null>(null)
+  const [docOpen, setDocOpen]   = useState<string | null>(null) // step.id ayant le popup ouvert
 
   function onDragStart(idx: number) {
     dragIdx.current = idx
@@ -574,20 +616,89 @@ function StepList({
             <div className="pl-7 space-y-2">
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Appel API Booqable</label>
-                <select
-                  value={step.booqable_action || ''}
-                  onChange={e => {
-                    const action = e.target.value || undefined
-                    const defaultExec = action ? (TOOL_DEFAULT_EXECUTION[action] ?? 'ai') : undefined
-                    updateStep(idx, { booqable_action: action, execution: defaultExec })
-                  }}
-                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
-                >
-                  <option value="">— aucun —</option>
-                  {BOOQABLE_TOOLS.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={step.booqable_action || ''}
+                    onChange={e => {
+                      const action = e.target.value || undefined
+                      const defaultExec = action ? (TOOL_DEFAULT_EXECUTION[action] ?? 'ai') : undefined
+                      updateStep(idx, { booqable_action: action, execution: defaultExec })
+                    }}
+                    className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+                  >
+                    <option value="">— aucun —</option>
+                    {BOOQABLE_TOOLS.map(t => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                  {step.booqable_action && (
+                    <button
+                      type="button"
+                      onClick={() => setDocOpen(docOpen === step.id ? null : step.id)}
+                      title="Documentation de l'outil"
+                      className={`shrink-0 w-6 h-6 rounded-full border text-xs font-semibold transition-colors ${
+                        docOpen === step.id
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600'
+                      }`}
+                    >
+                      ℹ
+                    </button>
+                  )}
+                </div>
+                {/* Popup documentation */}
+                {docOpen === step.id && step.booqable_action && (() => {
+                  const tool   = step.booqable_action!
+                  const doc    = TOOL_DOC[tool]
+                  const io     = TOOL_IO[tool]
+                  const compat = TOOL_COMPAT[tool]
+                  return (
+                    <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3 space-y-2 text-xs shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-semibold text-blue-800 font-mono">{tool}</span>
+                        <button
+                          type="button"
+                          onClick={() => setDocOpen(null)}
+                          className="text-blue-300 hover:text-blue-600 text-xs shrink-0"
+                        >✕</button>
+                      </div>
+                      {doc && <p className="text-gray-600 leading-relaxed">{doc}</p>}
+                      <div className="flex flex-wrap gap-2 pt-0.5">
+                        {(compat === 'code' || compat === 'both') && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-700 border border-green-200">⚡ Code</span>
+                        )}
+                        {(compat === 'ai' || compat === 'both') && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">🤖 IA</span>
+                        )}
+                      </div>
+                      {io && (
+                        <div className="grid grid-cols-2 gap-2 pt-0.5">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-0.5">Lit</p>
+                            {io.reads.length > 0
+                              ? io.reads.map(r => (
+                                  <span key={r} className="inline-block mr-1 mb-0.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-mono text-[10px]">{r}</span>
+                                ))
+                              : <span className="text-gray-300 text-[10px] italic">rien</span>
+                            }
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-0.5">Écrit</p>
+                            {io.writes.length > 0
+                              ? io.writes.map(w => (
+                                  <span key={w} className="inline-block mr-1 mb-0.5 px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-mono text-[10px]">{w}</span>
+                                ))
+                              : <span className="text-gray-300 text-[10px] italic">rien</span>
+                            }
+                            {io.outputCtx && (
+                              <span className="inline-block mt-0.5 text-[10px] text-blue-500 italic">→ contexte {io.outputCtx}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* Badges compatibilité + description mode */}
