@@ -32,6 +32,7 @@ import {
   setLineReplacementPrice,
   removeOrderDiscount,
   finalizeInvoice,
+  finalizeQuote,
   renderBooqableEmailTemplateWithInvoice,
   sendEmailWithInvoiceViaBooqable,
   captureStripeDeposit,
@@ -340,6 +341,17 @@ export async function executeCodeStep(
           document_id,
           invoice_number: number,
           message: `✓ Facture${number ? ` #${number}` : ''} finalisée`,
+        })
+      }
+
+      case 'finalize_quote': {
+        if (!orderId) return err('finalize_quote : order_id manquant')
+        const { document_id, number } = await finalizeQuote(orderId)
+        return ok({
+          success:     true,
+          document_id,
+          quote_number: number,
+          message: `✓ Devis${number ? ` #${number}` : ''} créé`,
         })
       }
 

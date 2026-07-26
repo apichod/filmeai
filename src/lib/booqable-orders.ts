@@ -1629,6 +1629,39 @@ export async function finalizeInvoice(orderId: string): Promise<{ document_id: s
   return { document_id: documentId, number: String(invoice.attributes?.number ?? '') }
 }
 
+// ── finalizeQuote ─────────────────────────────────────────────────────────────
+// Crée (et finalise) un document de type "quote" pour une commande Booqable.
+// POST /api/boomerang/documents avec document_type: "quote"
+export async function finalizeQuote(orderId: string): Promise<{ document_id: string; number: string }> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+
+  const res = await fetch(`${BASE_BOOMERANG}/documents`, {
+    method:  'POST',
+    headers: headers(),
+    signal:  AbortSignal.timeout(15000),
+    body: JSON.stringify({
+      data: {
+        type: 'documents',
+        attributes: {
+          order_id:      orderId,
+          document_type: 'quote',
+        },
+      },
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`finalizeQuote POST error ${res.status}: ${text}`)
+  }
+
+  const data = await res.json() as { data?: { id: string; attributes: { number?: string } } }
+  const doc  = data.data
+  if (!doc) throw new Error('finalizeQuote : aucun document retourné par Booqable')
+
+  return { document_id: doc.id, number: String(doc.attributes?.number ?? '') }
+}
+
 // ── removeOrderDiscount ───────────────────────────────────────────────────────
 // Supprime la remise appliquée sur une commande (remet discount_value à 0).
 export async function removeOrderDiscount(orderId: string): Promise<void> {

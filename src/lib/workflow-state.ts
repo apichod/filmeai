@@ -148,6 +148,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: ['document_id', 'invoice_number'],
   },
+  finalize_quote: {
+    label:  'Créer le devis de la commande',
+    reads:  ['id'],
+    writes: ['document_id', 'quote_number'],
+  },
   draft_email_with_invoice_booqable: {
     label:  'Aperçu template Booqable avec facture jointe',
     reads:  ['id', 'document_id'],
