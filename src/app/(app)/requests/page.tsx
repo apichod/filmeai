@@ -40,7 +40,9 @@ function PlanningChatPanel() {
         const categories = (cats.categories ?? []) as Array<{ key: string; label: string; is_active: boolean }>
         setLevel1Items(categories.filter(c => c.is_active).map(c => ({ key: c.key, label: c.label })))
         const allWfs = (wfs.workflows ?? []) as PlanningWorkflow[]
-        setWorkflows(allWfs.filter(w => w.is_active && w.category === 'planning'))
+        // Accepte les workflows planning ET les workflows avec parent_category
+        // (au cas où category n'est pas encore 'planning' mais le workflow est rattaché)
+        setWorkflows(allWfs.filter(w => w.is_active && (w.category === 'planning' || w.parent_category)))
         setWorkflowsLoaded(true)
       })
       .catch(() => setWorkflowsLoaded(true))
@@ -57,7 +59,14 @@ function PlanningChatPanel() {
       welcome:  wf.welcome || '',
     })
   }
-  const visibleLevel1 = level1Items.filter(i => (level2Map[i.key]?.length ?? 0) > 0)
+
+  // Si aucune catégorie en base, dériver depuis les parent_category des workflows
+  const effectiveLevel1Items: Level1Item[] = level1Items.length > 0
+    ? level1Items
+    : Array.from(new Set(workflows.map(w => w.parent_category).filter(Boolean) as string[]))
+        .map(key => ({ key, label: key }))
+
+  const visibleLevel1 = effectiveLevel1Items.filter(i => (level2Map[i.key]?.length ?? 0) > 0)
 
   function selectSubOption(opt: SubOption) {
     router.push(`/requests/new?scenario=${encodeURIComponent(opt.scenario)}`)
@@ -104,7 +113,7 @@ function PlanningChatPanel() {
   )
 
   // ── Sélecteur niveau 2 ──────────────────────────────────────────────────────
-  const l1Label   = level1Items.find(i => i.key === level1)?.label ?? level1
+  const l1Label   = effectiveLevel1Items.find(i => i.key === level1)?.label ?? level1
   const subOptions = level2Map[level1] ?? []
 
   return (
