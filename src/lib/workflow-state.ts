@@ -168,6 +168,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'],
     writes: [],
   },
+  send_email_with_quote_booqable: {
+    label:  'Envoyer email Booqable avec devis en pièce jointe',
+    reads:  ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'],
+    writes: [],
+  },
   set_replacement_price: {
     label:  'Fixer le prix de remplacement d\'une ligne',
     reads:  ['id', 'lines'],

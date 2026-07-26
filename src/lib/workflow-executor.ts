@@ -618,6 +618,32 @@ export async function executeCodeStep(
         return ok({ success: true, message: `✓ Email avec facture envoyé pour ${label}` })
       }
 
+      case 'send_email_with_quote_booqable': {
+        // Comme send_email_with_invoice_booqable mais joint le devis
+        if (!orderId) return err('send_email_with_quote_booqable : order_id manquant')
+        const inputCtx      = step.input_context ?? step.order_context ?? 'return'
+        const emailTemplateId = String(vars[`${inputCtx}.active_document_id`] ?? params.document_id ?? '')
+        if (!emailTemplateId) return err('send_email_with_quote_booqable : template manquant — exécutez draft_email_with_quote_booqable avant')
+        const quoteDocId = String(vars[`${inputCtx}.document_id`] ?? params.quote_document_id ?? '')
+        if (!quoteDocId) return err('send_email_with_quote_booqable : document_id devis introuvable — exécutez finalize_quote avant')
+
+        let customerId     = String(vars[`${inputCtx}.customer_id`]    ?? '')
+        let recipientEmail = String(vars[`${inputCtx}.customer_email`] ?? '')
+        if (!customerId || !recipientEmail) {
+          const fetchedOrder = await fetchOrderById(orderId)
+          if (!customerId)     customerId    = fetchedOrder?.customer_id ?? ''
+          if (!recipientEmail) recipientEmail = fetchedOrder?.customer?.email ?? ''
+        }
+        if (!customerId)     return err('send_email_with_quote_booqable : customer_id introuvable')
+        if (!recipientEmail) return err('send_email_with_quote_booqable : email client introuvable')
+
+        const rendered = await renderBooqableEmailTemplateWithInvoice(emailTemplateId, orderId, quoteDocId)
+        if (!rendered) return err(`send_email_with_quote_booqable : rendu template ${emailTemplateId} échoué`)
+
+        await sendEmailWithInvoiceViaBooqable(orderId, rendered.subject, rendered.body, recipientEmail, customerId, emailTemplateId, quoteDocId)
+        return ok({ success: true, message: `✓ Email avec devis envoyé pour ${label}` })
+      }
+
       case 'add_missing_lines': {
         // Lit les articles choisis (MANQUANTS) depuis original.chosen_tag + original.lines
         // Les ajoute à la return order (parent.id)
