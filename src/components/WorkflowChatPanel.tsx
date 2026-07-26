@@ -95,8 +95,9 @@ function toolLabel(name: string) {
   return labels[name] || name
 }
 
-function toolStatus(result: string | undefined): 'pending' | 'success' | 'warning' | 'error' {
+function toolStatus(result: string | undefined): 'pending' | 'success' | 'warning' | 'error' | 'skipped' {
   if (!result) return 'pending'
+  if (result.startsWith('⏭')) return 'skipped'
   const lower = result.toLowerCase()
   if (lower.startsWith('erreur') || lower.startsWith('impossible') || lower.startsWith('échec')) return 'error'
   try {
@@ -650,6 +651,7 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
                   {msg.toolCalls.map((tc, i) => {
                     const status  = toolStatus(tc.result)
                     const summary = toolSummary(tc.name, tc.result)
+                    if (status === 'skipped') return null
                     return (
                       <div key={i} className="text-xs bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-100">
                         <div className="flex items-center gap-2 text-gray-400">
