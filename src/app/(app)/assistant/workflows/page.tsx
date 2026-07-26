@@ -23,6 +23,7 @@ const BOOQABLE_TOOLS = [
   { value: 'duplicate_order',                    label: 'duplicate_order — dupliquer la commande' },
   { value: 'fetch_order',                        label: 'fetch_order — récupérer la commande' },
   { value: 'fetch_order_amount',                 label: 'fetch_order_amount — récupérer le montant total TTC de la commande' },
+  { value: 'fetch_original_amount_HT',           label: 'fetch_original_amount_HT — récupérer uniquement le montant HT de la commande' },
   { value: 'fetch_original_from_field',          label: 'fetch_original_from_field — lire la commande originale depuis un champ custom (ex: order_sav)' },
   { value: 'finalize_invoice',                   label: 'finalize_invoice — finaliser la facture de la commande' },
   { value: 'list_order',                         label: 'list_order — lister les articles de la commande dans le chat' },
@@ -108,7 +109,8 @@ const TOOL_IO: Record<string, ToolIO> = {
   draft_email_with_invoice_booqable:  { reads: ['id', 'document_id'],                                        writes: ['active_document_id'] },
   send_email_with_invoice_booqable:   { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
   set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
-  fetch_order_amount:        { reads: ['id'],                                        writes: ['grand_total_euros', 'price_euros', 'deposit_euros'] },
+  fetch_order_amount:           { reads: ['id'], writes: ['grand_total_euros', 'price_euros', 'deposit_euros'] },
+  fetch_original_amount_HT:     { reads: ['id'], writes: ['grand_total_euros_HT'] },
   create_payment_link:       { reads: ['id', 'grand_total_euros'],                   writes: ['payment_charge_id', 'checkout_url'] },
   capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'payment_charge_id', 'captured_amount'] },
 }
@@ -149,6 +151,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   send_email_with_invoice_booqable:  'code',
   set_replacement_price:             'ai',
   fetch_order_amount:                'code',
+  fetch_original_amount_HT:          'code',
   create_payment_link:               'code',
   capture_stripe_deposit:            'code',
 }
@@ -195,6 +198,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   send_email_with_invoice_booqable:  'code',
   set_replacement_price:             'ai',
   fetch_order_amount:                'code',
+  fetch_original_amount_HT:          'code',
   create_payment_link:               'code',
   capture_stripe_deposit:            'code',
 }
@@ -254,7 +258,8 @@ const TOOL_DOC: Record<string, string> = {
   draft_email_with_invoice_booqable: 'Charge un template Booqable avec la facture finalisée en pièce jointe. Requiert document_id (template) et s\'appuie sur la facture générée par finalize_invoice.',
   duplicate_order:                   'Duplique la commande cible et stocke l\'ID et le numéro de la copie dans les vars du contexte child (child.id / child.number).',
   fetch_order:                       'Charge une commande Booqable depuis son UUID ou numéro. Écrit id, number, status, customer_id, tags et lines dans les vars du contexte.',
-  fetch_order_amount:                'Récupère le montant total TTC de la commande. Écrit grand_total_euros, price_euros et deposit_euros.',
+  fetch_order_amount:                'Récupère le montant total TTC de la commande. Écrit grand_total_euros (TTC), price_euros (HT) et deposit_euros.',
+  fetch_original_amount_HT:          'Récupère uniquement le montant HT de la commande (price_in_cents Booqable). Écrit grand_total_euros_HT. Utile pour calculer un pourcentage (ex: assurance 8%) sur le montant hors taxes.',
   fetch_original_from_field:         'Lit le numéro de commande d\'origine depuis le champ custom order_sav de la commande courante, puis charge cette commande. Écrit les données dans le contexte original.',
   finalize_invoice:                  'Finalise la facture de la commande (statut draft → finalized). Écrit document_id et invoice_number.',
   list_order:                        'Liste tous les articles de la commande dans le chat (lecture seule, aucune modification).',

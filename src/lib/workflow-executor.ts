@@ -921,6 +921,18 @@ export async function executeCodeStep(
         })
       }
 
+      case 'fetch_original_amount_HT': {
+        // Récupère uniquement le total HT (price_in_cents) d'une commande.
+        // Écrit grand_total_euros_HT dans le contexte de sortie.
+        if (!orderId) return err('fetch_original_amount_HT : order_id manquant — exécuter fetch_order avant')
+        const { priceCents } = await fetchOrderAmount(orderId)
+        const grandTotalEurosHT = priceCents / 100
+        return ok({
+          grand_total_euros_HT: grandTotalEurosHT.toFixed(2),
+          message: `💰 Montant HT commande ${label} : ${grandTotalEurosHT.toFixed(2)} €`,
+        })
+      }
+
       case 'capture_stripe_deposit': {
         // Capture une autorisation bancaire Stripe (PaymentIntent en requires_capture).
         // Lit provider_id depuis les vars (écrit par check_deposit).

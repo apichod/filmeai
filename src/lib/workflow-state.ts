@@ -236,6 +236,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // price_euros       = HT
     // deposit_euros     = montant de la caution Booqable
   },
+  fetch_original_amount_HT: {
+    label:  'Récupérer le montant HT de la commande',
+    reads:  ['id'],
+    writes: ['grand_total_euros_HT'],
+    // grand_total_euros_HT = total HT (price_in_cents / 100, string, ex: "125.00")
+  },
   create_payment_link: {
     label:  'Créer un lien de paiement et le stocker dans le champ custom lien_paiement',
     reads:  ['id', 'grand_total_euros'],
