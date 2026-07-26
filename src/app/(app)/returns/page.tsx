@@ -1624,6 +1624,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
         setSynced(true)
       }
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function sync() {

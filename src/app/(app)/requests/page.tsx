@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { NewRequestForm } from './new/page'
+import NewRequestForm from './new/page'
 
 // ── Types partagés ────────────────────────────────────────────────────────────
 

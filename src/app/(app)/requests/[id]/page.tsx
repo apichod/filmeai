@@ -335,6 +335,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       })
       .catch(() => setError('Impossible de charger la demande'))
       .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id])
 
   const days = useMemo(() => daysBetween(startsAt, stopsAt), [startsAt, stopsAt])
