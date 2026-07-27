@@ -1751,9 +1751,9 @@ export async function updateOrderDeposit(orderId: string, depositValue: number):
   }
 }
 
-// ── removeSecurityDeposit ─────────────────────────────────────────────────────
+// ── removeDeposit ─────────────────────────────────────────────────────
 // Supprime la caution d'une commande Booqable (deposit_type: none, deposit_value: null).
-export async function removeSecurityDeposit(orderId: string): Promise<void> {
+export async function removeDeposit(orderId: string): Promise<void> {
   const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
   const body = {
     id: orderId,
@@ -1772,7 +1772,7 @@ export async function removeSecurityDeposit(orderId: string): Promise<void> {
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`removeSecurityDeposit error ${res.status}: ${text}`)
+    throw new Error(`removeDeposit error ${res.status}: ${text}`)
   }
 }
 

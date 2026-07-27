@@ -76,7 +76,7 @@ function toolLabel(name: string) {
     set_original_order:     'Commande d\'origine liée',
     send_email:             'Envoi email',
     ask_yes_no:             'Question Oui / Non',
-    remove_security:        'Suppression caution',
+    remove_deposit:        'Suppression caution',
     choose_article:         'Choix de l\'article',
     choose_problem_tag:     'Choix du type de problème',
     remove_other_lines:     'Suppression des autres lignes',

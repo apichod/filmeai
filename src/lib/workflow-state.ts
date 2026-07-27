@@ -149,7 +149,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: [],
   },
-  remove_security: {
+  remove_deposit: {
     label:  'Supprimer la caution de la commande',
     reads:  ['id'],
     writes: [],
