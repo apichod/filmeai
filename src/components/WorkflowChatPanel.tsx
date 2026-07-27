@@ -77,6 +77,7 @@ function toolLabel(name: string) {
     send_email:             'Envoi email',
     ask_yes_no:             'Question Oui / Non',
     remove_deposit:        'Suppression caution',
+    read_customer_notes:   'Commentaires client',
     choose_article:         'Choix de l\'article',
     choose_problem_tag:     'Choix du type de problème',
     remove_other_lines:     'Suppression des autres lignes',

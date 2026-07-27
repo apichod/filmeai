@@ -45,6 +45,7 @@ import {
   updateOrderDeposit,
   fetchCustomerOrders,
   removeDeposit,
+  readCustomerNotes,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -1156,6 +1157,15 @@ export async function executeCodeStep(
         return ok({
           insurance_request_status: ins.status === 'yes' ? 'true' : 'false',
           message: ins.message,
+        })
+      }
+
+      case 'read_customer_notes': {
+        if (!orderId) return err('read_customer_notes : order_id manquant — exécuter fetch_order avant')
+        const result = await readCustomerNotes(orderId)
+        return ok({
+          customer_notes: result.notes ?? '',
+          message: result.message,
         })
       }
 

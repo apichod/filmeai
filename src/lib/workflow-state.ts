@@ -288,6 +288,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes: ['insurance_request_status'],
     // insurance_request_status = 'true' (assuré par FILME) | 'false' (autre)
   },
+  read_customer_notes: {
+    label:  'Lire et afficher les commentaires clients',
+    reads:  ['id'],
+    writes: ['customer_notes'],
+    // customer_notes = texte du champ "commentaire" (vide si non renseigné)
+  },
   add_product_insurance_8: {
     label:  'Ajouter l\'assurance FILME à 8% du montant HT',
     reads:  ['id', 'grand_total_euros_HT'],

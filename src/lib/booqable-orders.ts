@@ -2436,6 +2436,32 @@ export async function addProductInsurance8(
   await setLineReplacementPrice(lineId, insuranceEuros, 'Assurance FILME (8% HT)')
 }
 
+// ── readCustomerNotes ──────────────────────────────────────────────────────────
+// Lit le champ custom "commentaire" sur une commande Booqable.
+export async function readCustomerNotes(orderId: string): Promise<{
+  notes: string | null
+  message: string
+}> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const url = `${BASE_BOOMERANG}/properties?filter[owner_id]=${orderId}&filter[owner_type]=orders&filter[identifier]=commentaire`
+
+  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(10000) })
+  if (!res.ok) throw new Error(`Booqable properties error: ${res.status}`)
+
+  const data = await res.json() as {
+    data?: Array<{ id: string; attributes: { identifier: string; value: string | null } }>
+  }
+
+  const property = data.data?.find(p => p.attributes.identifier === 'commentaire')
+
+  if (!property || !property.attributes.value) {
+    return { notes: null, message: 'Aucun commentaire client sur cette commande.' }
+  }
+
+  const notes = property.attributes.value.trim()
+  return { notes, message: `💬 Commentaire client : ${notes}` }
+}
+
 // ── Check assurance ────────────────────────────────────────────────────────────
 
 export async function checkInsuranceRequestStatus(orderId: string): Promise<{
