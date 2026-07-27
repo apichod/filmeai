@@ -144,6 +144,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'number', 'kept_product_names'],
     writes: [],
   },
+  add_discount_with_input_field: {
+    label:  'Saisir une remise manuellement (champ texte)',
+    reads:  [],
+    writes: ['discount_proposal'],
+    // Affiche un champ de saisie numérique dans le chat → écrit {output_context}.discount_proposal
+  },
   add_discount: {
     label:  'Appliquer une remise en pourcentage sur la commande',
     reads:  ['id', 'discount_proposal'],

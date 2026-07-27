@@ -1128,6 +1128,17 @@ export async function executeCodeStep(
         })
       }
 
+      case 'add_discount_with_input_field': {
+        const question = String(params.question ?? 'Quelle remise souhaitez-vous appliquer ?')
+        return ok({
+          __type__:   'text_input',
+          output_var: 'discount_proposal',
+          message:    question,
+          placeholder: 'Ex : 15',
+          unit:        '%',
+        })
+      }
+
       case 'add_discount': {
         if (!orderId) return err('add_discount : order_id manquant — exécuter fetch_order avant')
         const inputCtx       = step.input_context ?? step.order_context ?? 'return'

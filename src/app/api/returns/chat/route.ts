@@ -1229,6 +1229,7 @@ Affiche les {{...}} littéralement, toujours.`
     const isChoiceStep = leavingStep?.booqable_action === 'choose_problem_tag'
                       || leavingStep?.booqable_action === 'choose_article'
                       || leavingStep?.booqable_action === 'ask_yes_no'
+                      || leavingStep?.booqable_action === 'add_discount_with_input_field'
 
     // draft_email → l'opérateur renvoie __email_confirm__:{subject,body}
     if (leavingStep?.booqable_action === 'draft_email') {
@@ -1256,6 +1257,8 @@ Affiche les {{...}} littéralement, toujours.`
         } else if (leavingStep!.booqable_action === 'ask_yes_no') {
           const outputVar = String(leavingStep!.parameters?.output_var ?? 'question_yes_no')
           wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.${outputVar}`]: chosenTag } }
+        } else if (leavingStep!.booqable_action === 'add_discount_with_input_field') {
+          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.discount_proposal`]: chosenTag } }
         }
 
         // ── Pour choose_article : construire chosen_lines (lignes structurées avec UUIDs) ──
@@ -1383,6 +1386,7 @@ Affiche les {{...}} littéralement, toujours.`
           const isChoiceStep2 = leavingStep2?.booqable_action === 'choose_problem_tag'
                              || leavingStep2?.booqable_action === 'choose_article'
                              || leavingStep2?.booqable_action === 'ask_yes_no'
+                             || leavingStep2?.booqable_action === 'add_discount_with_input_field'
           if (isChoiceStep2) {
             const lastUserMsg2 = [...messages].reverse().find(m => m.role === 'user')
             const selectionText2 = typeof lastUserMsg2?.content === 'string' ? lastUserMsg2.content.trim() : ''
@@ -1397,6 +1401,8 @@ Affiche les {{...}} littéralement, toujours.`
                 } else if (leavingStep2.booqable_action === 'ask_yes_no') {
                   const outputVar2 = String(leavingStep2.parameters?.output_var ?? 'question_yes_no')
                   wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.${outputVar2}`]: selectionText2 } }
+                } else if (leavingStep2.booqable_action === 'add_discount_with_input_field') {
+                  wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.discount_proposal`]: selectionText2 } }
                 }
               }
 
@@ -1548,11 +1554,18 @@ Affiche les {{...}} littéralement, toujours.`
             // Si le résultat est un choix ou un éditeur email → SSE + waiting_for_input + pas d'avance
             let isChoicesResult = false
             try {
-              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; document_id?: string; name?: string }
+              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; document_id?: string; name?: string; output_var?: string; placeholder?: string; unit?: string }
               if (choicesParsed.__type__ === 'choices') {
                 const promptText = codeStep.description ?? choicesParsed.message ?? codeStep.title ?? ''
                 if (promptText) send(JSON.stringify({ type: 'text', content: promptText }))
                 send(JSON.stringify({ type: 'choices', order_id: choicesParsed.order_id, items: choicesParsed.items, multiSelect: choicesParsed.multiSelect ?? false }))
+                wfState = { ...wfState, status: 'waiting_for_input' }
+                isChoicesResult = true
+              }
+              if (choicesParsed.__type__ === 'text_input') {
+                const promptText = codeStep.description ?? choicesParsed.message ?? codeStep.title ?? ''
+                if (promptText) send(JSON.stringify({ type: 'text', content: promptText }))
+                send(JSON.stringify({ type: 'text_input', output_var: choicesParsed.output_var ?? '', placeholder: choicesParsed.placeholder ?? '', unit: choicesParsed.unit ?? '' }))
                 wfState = { ...wfState, status: 'waiting_for_input' }
                 isChoicesResult = true
               }
@@ -1866,11 +1879,18 @@ Affiche les {{...}} littéralement, toujours.`
               // choices / email_editor → SSE + waiting_for_input, pas d'avance
               let postIsChoices = false
               try {
-                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string }
+                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; output_var?: string; placeholder?: string; unit?: string }
                 if (postParsed.__type__ === 'choices') {
                   const postPrompt = postCodeStep.description ?? postParsed.message ?? postCodeStep.title ?? ''
                   if (postPrompt) send(JSON.stringify({ type: 'text', content: postPrompt }))
                   send(JSON.stringify({ type: 'choices', order_id: postParsed.order_id, items: postParsed.items, multiSelect: postParsed.multiSelect ?? false }))
+                  wfState = { ...wfState, status: 'waiting_for_input' }
+                  postIsChoices = true
+                }
+                if (postParsed.__type__ === 'text_input') {
+                  const postPrompt = postCodeStep.description ?? postParsed.message ?? postCodeStep.title ?? ''
+                  if (postPrompt) send(JSON.stringify({ type: 'text', content: postPrompt }))
+                  send(JSON.stringify({ type: 'text_input', output_var: postParsed.output_var ?? '', placeholder: postParsed.placeholder ?? '', unit: postParsed.unit ?? '' }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   postIsChoices = true
                 }
