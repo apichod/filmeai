@@ -93,6 +93,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: [],
   },
+  ask_yes_no: {
+    label:  'Question Oui/Non (boutons)',
+    reads:  [],
+    writes: [],   // la variable est écrite dynamiquement depuis parameters.output_var (route.ts)
+    // Params : question (texte), output_var (nom de la variable à écrire: 'true'/'false')
+  },
   choose_problem_tag: {
     label:  'Choisir le tag problème (boutons)',
     reads:  ['id'],

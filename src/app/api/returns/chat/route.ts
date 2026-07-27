@@ -1228,6 +1228,7 @@ Affiche les {{...}} littéralement, toujours.`
     const leavingStep = activeSteps[wfState.step_index] as WorkflowStep | undefined
     const isChoiceStep = leavingStep?.booqable_action === 'choose_problem_tag'
                       || leavingStep?.booqable_action === 'choose_article'
+                      || leavingStep?.booqable_action === 'ask_yes_no'
 
     // draft_email → l'opérateur renvoie __email_confirm__:{subject,body}
     if (leavingStep?.booqable_action === 'draft_email') {
@@ -1252,6 +1253,10 @@ Affiche les {{...}} littéralement, toujours.`
           wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.sav_tag`]: chosenTag } }
         } else if (leavingStep!.booqable_action === 'choose_article' && leavingStep!.execution === 'code') {
           wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.selected_ids`]: chosenTag } }
+        } else if (leavingStep!.booqable_action === 'ask_yes_no') {
+          // Écrit la réponse Oui/Non dans la variable configurée dans parameters.output_var
+          const outputVar = String(leavingStep!.parameters?.output_var ?? 'question_yes_no')
+          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.${outputVar}`]: chosenTag } }
         }
 
         // ── Pour choose_article : construire chosen_lines (lignes structurées avec UUIDs) ──
@@ -1378,17 +1383,21 @@ Affiche les {{...}} littéralement, toujours.`
           const leavingStep2 = activeSteps[wfState.step_index] as WorkflowStep | undefined
           const isChoiceStep2 = leavingStep2?.booqable_action === 'choose_problem_tag'
                              || leavingStep2?.booqable_action === 'choose_article'
+                             || leavingStep2?.booqable_action === 'ask_yes_no'
           if (isChoiceStep2) {
             const lastUserMsg2 = [...messages].reverse().find(m => m.role === 'user')
             const selectionText2 = typeof lastUserMsg2?.content === 'string' ? lastUserMsg2.content.trim() : ''
             if (selectionText2) {
               const ctx2 = leavingStep2!.output_context ?? leavingStep2!.order_context ?? 'parent'
-              // choose_problem_tag → sav_tag ; choose_article code → selected_ids ; choose_article AI → rien
+              // choose_problem_tag → sav_tag ; choose_article code → selected_ids ; ask_yes_no → output_var
               if (leavingStep2?.execution === 'code') {
                 if (leavingStep2.booqable_action === 'choose_problem_tag') {
                   wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.sav_tag`]: selectionText2 } }
                 } else if (leavingStep2.booqable_action === 'choose_article') {
                   wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.selected_ids`]: selectionText2 } }
+                } else if (leavingStep2.booqable_action === 'ask_yes_no') {
+                  const outputVar2 = String(leavingStep2.parameters?.output_var ?? 'question_yes_no')
+                  wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.${outputVar2}`]: selectionText2 } }
                 }
               }
 

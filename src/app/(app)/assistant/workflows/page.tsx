@@ -13,6 +13,7 @@ const BOOQABLE_TOOLS = [
   { value: 'check_deposit',                      label: 'check_deposit — vérifier la caution (dépôt physique + autorisation carte)' },
   { value: 'check_insurance',                    label: 'check_insurance — vérifier si l\'assurance est prise sur la commande' },
   { value: 'check_insurance_request_status',     label: 'check_insurance_request_status — vérifier si l\'assurance a été demandée par le locataire' },
+  { value: 'ask_yes_no',                          label: 'ask_yes_no — poser une question Oui/Non et stocker la réponse dans une variable' },
   { value: 'choose_article',                     label: 'choose_article — sélectionner les articles de la commande' },
   { value: 'choose_problem_tag',                 label: 'choose_problem_tag — afficher boutons choix de tag (retard/perte/vol/dommage)' },
   { value: 'clear_tags',                         label: 'clear_tags — supprimer tous les tags' },
@@ -120,6 +121,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email_with_quote_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
   set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
   fetch_order_amount:           { reads: ['id'], writes: ['grand_total_euros', 'deposit_euros'] },
+  ask_yes_no:                   { reads: [], writes: ['<output_var>'] },   // variable dynamique configurée dans parameters.output_var
   calculate_customer_score:     { reads: ['customer_id'], writes: ['discount_proposal', 'customer_score'] },
   fetch_original_amount_HT:     { reads: ['id'], writes: ['grand_total_euros_HT'] },
   round_deposit:                { reads: ['security_deposit'], writes: ['security_deposit_rounded'] },
@@ -135,6 +137,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   revert_to_concept:       'code',
   clear_tags:              'code',
   add_tag:                 'code',
+  ask_yes_no:              'code',
   choose_article:          'code',
   remove_other_lines:      'code',
   choose_problem_tag:      'code',
@@ -199,6 +202,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   add_tag:                 'both',
   add_sav_comment:         'both',
   duplicate_order:         'code',
+  ask_yes_no:              'code',
   choose_article:          'both',
   remove_other_lines:      'code',
   choose_problem_tag:      'both',
@@ -249,6 +253,7 @@ const PARAMETERS_HINT: Record<string, string> = {
   stop_order:              '{}',
   add_tag:                 '{"tags_add": ["R22_WAIVED"], "tags_remove": ["R21_OPEN"]}',
   duplicate_order:         '{}',
+  ask_yes_no:              '{"question": "Souhaites-tu conserver la caution ?", "output_var": "question_yes_no"}',
   choose_problem_tag:      '{"options": [{"label": "Retard", "tag": "r21_open"}, {"label": "Perte", "tag": "r22_waived"}, {"label": "Dommage", "tag": "r23_security"}, {"label": "Facturé", "tag": "r24_billed"}]}',
   create_new_return_order: '{}',
   zero_out_order_lines:    '{}',
@@ -269,6 +274,7 @@ const PARAMETERS_HINT: Record<string, string> = {
 
 /** Documentation textuelle de chaque outil */
 const TOOL_DOC: Record<string, string> = {
+  ask_yes_no:                        'Pose une question fermée (Oui/Non) à l\'opérateur. La réponse ("true" ou "false") est écrite dans {output_context}.{output_var}. Paramètres requis : question (texte affiché) et output_var (nom de la variable). Les steps suivants peuvent utiliser une condition du type "return.deposit_confirmed == \'true\'".',
   add_new_product_line:              'Ajoute les articles sélectionnés (via choose_article) à la commande cible. Si l\'article a un product_group_id, crée une ligne produit Booqable ; sinon crée une ligne custom.',
   add_sav_comment:                   'Renseigne les champs SAV : order_sav (commande d\'origine) et notes_sav (commentaire). En mode Code, le commentaire est défini dans les paramètres ; en mode IA, il est rédigé par l\'IA.',
   add_tag:                           'Ajoute et/ou supprime des tags sur la commande cible. Les tags sont définis dans les paramètres (tags_add, tags_remove) ou déterminés par l\'IA.',
