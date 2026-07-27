@@ -681,14 +681,23 @@ function StepList({
 
           {/* Paramètres ask_yes_no — visibles pour les questions en mode code */}
           {step.type === 'question' && step.execution === 'code' && (
-            <div className="pl-7 space-y-1">
-              <p className="text-[10px] text-purple-500 font-medium">⚡ ask_yes_no — boutons Oui / Non</p>
+            <div className="pl-7 space-y-1.5">
               <ParametersEditor
                 value={step.parameters}
                 hint={PARAMETERS_HINT['ask_yes_no']}
                 onChange={params => updateStep(idx, { parameters: params })}
               />
-              <p className="text-[10px] text-gray-400">Condition dans le step suivant : <span className="font-mono">{step.output_context ?? step.order_context ?? 'return'}.{'<output_var>'} == &apos;true&apos;</span></p>
+              {(() => {
+                const ctx     = step.output_context ?? step.order_context ?? 'return'
+                const outVar  = (step.parameters as Record<string, string> | undefined)?.output_var ?? 'question_yes_no'
+                return (
+                  <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                    <span>📤 Write :</span>
+                    <span className="font-mono bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{ctx}.{outVar}</span>
+                    <span className="text-gray-300">→ valeur : <span className="font-mono">&apos;true&apos;</span> ou <span className="font-mono">&apos;false&apos;</span></span>
+                  </div>
+                )
+              })()}
             </div>
           )}
 
