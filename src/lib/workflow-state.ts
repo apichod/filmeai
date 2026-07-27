@@ -144,11 +144,16 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'number', 'kept_product_names'],
     writes: [],
   },
-  create_delivery_event: {
-    label:  'Créer un événement livraison dans le calendrier',
+  build_delivery_event: {
+    label:  'Formater les données de livraison pour le calendrier (IA)',
     reads:  ['delivery_options', 'number'],
-    writes: [],
-    // Étape IA : extrait date/heure/adresse depuis delivery_options et appelle create_calendar_event
+    writes: ['event_summary', 'event_start_iso', 'event_end_iso', 'event_location', 'event_description'],
+    // Étape IA : extrait date/heure/adresse depuis delivery_options, écrit les vars pour create_delivery_event
+  },
+  create_delivery_event: {
+    label:  'Créer l\'événement dans Google Calendar',
+    reads:  ['event_summary', 'event_start_iso', 'event_end_iso', 'event_location', 'event_description'],
+    writes: ['calendar_event_id', 'calendar_event_link'],
   },
   add_discount_with_input_field: {
     label:  'Saisir une remise manuellement (champ texte)',
@@ -623,8 +628,8 @@ CONSIGNE : Affiche la liste ci-dessus (format : "Qty x Produit ID-X"), puis dema
 N'appelle AUCUN outil. Attends la réponse tapée par l'opérateur.${context}`
     }
 
-    // ── Cas spécial : create_delivery_event → extrait les infos de delivery_options et crée l'événement ──
-    if (step.booqable_action === 'create_delivery_event') {
+    // ── Cas spécial : build_delivery_event → extrait les infos de delivery_options ──
+    if (step.booqable_action === 'build_delivery_event') {
       const inputCtx      = step.input_context ?? step.order_context ?? 'return'
       const deliveryText  = vars[`${inputCtx}.delivery_options`] ?? vars['return.delivery_options'] ?? vars['original.delivery_options'] ?? ''
       const orderNumber   = vars[`${inputCtx}.number`] ?? vars['return.number'] ?? vars['original.number'] ?? '?'
@@ -634,7 +639,7 @@ N'appelle AUCUN outil. Attends la réponse tapée par l'opérateur.${context}`
 ÉTAPE ${stepIndex + 1}/${totalSteps} — CALENDRIER : ${step.title}
 ${orderRef}
 ══════════════════════════════════════════
-Analyse le champ "Options de livraison" ci-dessous et crée un événement dans le calendrier.
+Analyse le champ "Options de livraison" et formate les données pour l'événement.
 
 OPTIONS DE LIVRAISON :
 "${deliveryText || '(non renseigné)'}"
@@ -642,16 +647,14 @@ OPTIONS DE LIVRAISON :
 CLIENT : ${customerEmail || '(non renseigné)'}
 NUMÉRO DE COMMANDE : #${orderNumber}
 
-RÈGLES POUR L'ÉVÉNEMENT :
-- Appelle UNIQUEMENT l'outil "create_calendar_event"
-- Titre (summary) : "Livraison {NomClient} {HH:MM} (#{NumeroCommande})" — extrais le nom du client depuis customer_email ou les vars disponibles
-- Créneau : commence 1 heure AVANT l'heure de livraison, se termine à l'heure exacte de livraison
-- location : adresse extraite du texte ci-dessus
-- description : "Commande #${orderNumber} — ${deliveryText}"
-- Dates au format ISO 8601 avec timezone Europe/Paris, ex: "2025-08-15T09:30:00+02:00"
-- Si la date/heure n'est pas claire, indique-le à l'opérateur avant d'appeler l'outil
-
-INTERDIT : N'appelle pas d'autres outils que "create_calendar_event".${context}`
+RÈGLES :
+- Appelle UNIQUEMENT l'outil "build_delivery_event" avec les champs extraits
+- event_summary : "Livraison {NomClient} {HH:MM} (#{NumeroCommande})"
+- event_start_iso : 1 heure AVANT la livraison, format ISO 8601 Europe/Paris
+- event_end_iso : heure exacte de livraison
+- event_location : adresse extraite du texte
+- event_description : "Commande #${orderNumber} — ${deliveryText}"
+- Si la date/heure n'est pas claire, demande à l'opérateur avant d'appeler l'outil${context}`
     }
 
     // ── Cas spécial : log_case → mapping explicite des vars sur les paramètres ──

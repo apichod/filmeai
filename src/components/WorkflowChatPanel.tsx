@@ -82,6 +82,7 @@ function toolLabel(name: string) {
     remove_deposit:        'Suppression caution',
     read_customer_notes:   'Commentaires client',
     read_delivery_options:   'Options de livraison',
+    build_delivery_event:    'Formatage données livraison',
     create_delivery_event:   'Création événement calendrier',
     choose_article:         'Choix de l\'article',
     choose_problem_tag:     'Choix du type de problème',

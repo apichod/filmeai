@@ -58,6 +58,7 @@ function getSupabase() {
   )
 }
 
+import { createCalendarEvent } from './google-calendar'
 import {
   TOOL_REGISTRY,
   getOrderIdForStep,
@@ -1127,6 +1128,18 @@ export async function executeCodeStep(
           customer_score:     String(finalScore),
           message: lines.join('\n'),
         })
+      }
+
+      case 'create_delivery_event': {
+        const inputCtx   = step.input_context ?? step.order_context ?? 'return'
+        const summary    = String(vars[`${inputCtx}.event_summary`]     ?? '')
+        const startIso   = String(vars[`${inputCtx}.event_start_iso`]   ?? '')
+        const endIso     = String(vars[`${inputCtx}.event_end_iso`]     ?? '')
+        const location   = String(vars[`${inputCtx}.event_location`]    ?? '') || undefined
+        const description = String(vars[`${inputCtx}.event_description`] ?? '') || undefined
+        if (!summary || !startIso || !endIso) return err('create_delivery_event : event_summary / event_start_iso / event_end_iso manquants — exécuter build_delivery_event avant')
+        const event = await createCalendarEvent({ summary, startIso, endIso, location, description })
+        return ok({ success: true, calendar_event_id: event.eventId, calendar_event_link: event.htmlLink, message: `✅ Événement créé dans le calendrier : "${summary}" — ${event.htmlLink}` })
       }
 
       case 'add_discount_with_input_field': {

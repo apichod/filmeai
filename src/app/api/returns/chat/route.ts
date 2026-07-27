@@ -485,18 +485,18 @@ function buildTools(
   {
     type: 'function',
     function: {
-      name: 'create_calendar_event',
-      description: 'Crée un événement dans le calendrier partagé location@filme.fr. Le créneau doit démarrer 1 heure AVANT l\'heure de livraison et se terminer à l\'heure exacte de livraison. Titre : "Livraison {NomClient} {heure} (#{NumeroCommande})". À appeler après avoir extrait date, heure et adresse du champ delivery_options.',
+      name: 'build_delivery_event',
+      description: 'Extrait les informations de livraison depuis le champ delivery_options et formate les données pour créer un événement calendrier. Créneau : 1h AVANT l\'heure de livraison jusqu\'à l\'heure exacte. Titre : "Livraison {NomClient} {HH:MM} (#{NumeroCommande})". Appelle cet outil avec les données extraites et formatées.',
       parameters: {
         type: 'object',
         properties: {
-          summary:     { type: 'string',  description: 'Titre de l\'événement — format: "Livraison {NomClient} {HH:MM} (#{NumeroCommande})"' },
-          start_iso:   { type: 'string',  description: 'Début du créneau ISO 8601 avec timezone Europe/Paris — 1 heure avant la livraison. Ex: "2025-08-15T09:30:00+02:00"' },
-          end_iso:     { type: 'string',  description: 'Fin du créneau ISO 8601 — heure exacte de livraison. Ex: "2025-08-15T10:30:00+02:00"' },
-          location:    { type: 'string',  description: 'Adresse de livraison extraite du champ delivery_options' },
-          description: { type: 'string',  description: 'Commentaires : nom du client, numéro de commande, contenu du champ delivery_options' },
+          event_summary:     { type: 'string', description: 'Titre — format: "Livraison {NomClient} {HH:MM} (#{NumeroCommande})"' },
+          event_start_iso:   { type: 'string', description: 'Début ISO 8601 Europe/Paris — 1h avant livraison. Ex: "2025-08-15T09:30:00+02:00"' },
+          event_end_iso:     { type: 'string', description: 'Fin ISO 8601 — heure exacte de livraison. Ex: "2025-08-15T10:30:00+02:00"' },
+          event_location:    { type: 'string', description: 'Adresse de livraison extraite du texte' },
+          event_description: { type: 'string', description: 'Commande #numéro — contenu du champ delivery_options' },
         },
-        required: ['summary', 'start_iso', 'end_iso'],
+        required: ['event_summary', 'event_start_iso', 'event_end_iso'],
       },
     },
   },
@@ -886,15 +886,21 @@ async function executeTool(
         return { result: JSON.stringify({ success: true, ...ins }) }
       }
 
-      case 'create_calendar_event': {
-        const summary     = String(args.summary     ?? '')
-        const startIso    = String(args.start_iso   ?? '')
-        const endIso      = String(args.end_iso     ?? '')
-        const location    = args.location    ? String(args.location)    : undefined
-        const description = args.description ? String(args.description) : undefined
-        if (!summary || !startIso || !endIso) return { result: 'Erreur : summary, start_iso et end_iso sont requis' }
-        const event = await createCalendarEvent({ summary, startIso, endIso, location, description })
-        return { result: JSON.stringify({ success: true, event_id: event.eventId, link: event.htmlLink, message: `✅ Événement créé : "${summary}" — ${event.htmlLink}` }) }
+      case 'build_delivery_event': {
+        const summary     = String(args.event_summary     ?? '')
+        const startIso    = String(args.event_start_iso   ?? '')
+        const endIso      = String(args.event_end_iso     ?? '')
+        const location    = args.event_location    ? String(args.event_location)    : undefined
+        const description = args.event_description ? String(args.event_description) : undefined
+        if (!summary || !startIso || !endIso) return { result: 'Erreur : event_summary, event_start_iso et event_end_iso sont requis' }
+        return { result: JSON.stringify({
+          event_summary:     summary,
+          event_start_iso:   startIso,
+          event_end_iso:     endIso,
+          event_location:    location ?? '',
+          event_description: description ?? '',
+          message: `📅 Événement formaté : "${summary}" — ${startIso.slice(0, 16).replace('T', ' ')} → ${endIso.slice(11, 16)} | ${location ?? 'adresse non renseignée'}`,
+        }) }
       }
 
       default:
@@ -1703,7 +1709,7 @@ Affiche les {{...}} littéralement, toujours.`
           // choose_article en mode AI = question (texte libre, pas boutons) → pas de tool call forcé
           const isAiTextChooseArticle = aiStep?.booqable_action === 'choose_article' && aiStep?.execution === 'ai'
           // Outils qui ne ciblent pas une commande existante → pas besoin de order_id en vars
-          const NO_ORDER_ID_NEEDED = new Set(['create_new_return_order', 'draft_email', 'send_email', 'search_products', 'get_stock_items', 'list_order'])
+          const NO_ORDER_ID_NEEDED = new Set(['create_new_return_order', 'draft_email', 'send_email', 'search_products', 'get_stock_items', 'list_order', 'build_delivery_event'])
           const _orderCtxForTool = aiStep?.order_context ?? 'parent'
           const orderIdReady = !aiStep?.booqable_action
             || NO_ORDER_ID_NEEDED.has(aiStep.booqable_action)
