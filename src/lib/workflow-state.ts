@@ -623,6 +623,37 @@ CONSIGNE : Affiche la liste ci-dessus (format : "Qty x Produit ID-X"), puis dema
 N'appelle AUCUN outil. Attends la réponse tapée par l'opérateur.${context}`
     }
 
+    // ── Cas spécial : create_delivery_event → extrait les infos de delivery_options et crée l'événement ──
+    if (step.booqable_action === 'create_delivery_event') {
+      const inputCtx      = step.input_context ?? step.order_context ?? 'return'
+      const deliveryText  = vars[`${inputCtx}.delivery_options`] ?? vars['return.delivery_options'] ?? vars['original.delivery_options'] ?? ''
+      const orderNumber   = vars[`${inputCtx}.number`] ?? vars['return.number'] ?? vars['original.number'] ?? '?'
+      const customerEmail = vars[`${inputCtx}.customer_email`] ?? vars['return.customer_email'] ?? vars['original.customer_email'] ?? ''
+
+      return `══════════════════════════════════════════
+ÉTAPE ${stepIndex + 1}/${totalSteps} — CALENDRIER : ${step.title}
+${orderRef}
+══════════════════════════════════════════
+Analyse le champ "Options de livraison" ci-dessous et crée un événement dans le calendrier.
+
+OPTIONS DE LIVRAISON :
+"${deliveryText || '(non renseigné)'}"
+
+CLIENT : ${customerEmail || '(non renseigné)'}
+NUMÉRO DE COMMANDE : #${orderNumber}
+
+RÈGLES POUR L'ÉVÉNEMENT :
+- Appelle UNIQUEMENT l'outil "create_calendar_event"
+- Titre (summary) : "Livraison {NomClient} {HH:MM} (#{NumeroCommande})" — extrais le nom du client depuis customer_email ou les vars disponibles
+- Créneau : commence 1 heure AVANT l'heure de livraison, se termine à l'heure exacte de livraison
+- location : adresse extraite du texte ci-dessus
+- description : "Commande #${orderNumber} — ${deliveryText}"
+- Dates au format ISO 8601 avec timezone Europe/Paris, ex: "2025-08-15T09:30:00+02:00"
+- Si la date/heure n'est pas claire, indique-le à l'opérateur avant d'appeler l'outil
+
+INTERDIT : N'appelle pas d'autres outils que "create_calendar_event".${context}`
+    }
+
     // ── Cas spécial : log_case → mapping explicite des vars sur les paramètres ──
     if (step.booqable_action === 'log_case') {
       const toolArgs = buildToolArgs(step, vars)
