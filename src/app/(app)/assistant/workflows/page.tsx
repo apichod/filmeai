@@ -638,7 +638,7 @@ function StepList({
           </div>
 
           {/* execution — mode d'exécution */}
-          {(((step.type === 'action' || step.type === 'question') && !!step.booqable_action) || step.type === 'instruction') && (
+          {((step.type === 'action' && !!step.booqable_action) || step.type === 'question' || step.type === 'instruction') && (
             <div className="pl-7 flex items-center gap-3">
               <label className="text-xs text-gray-400">Exécution</label>
               <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
