@@ -272,15 +272,17 @@ export async function executeCodeStep(
       }
 
       case 'ask_yes_no': {
-        // Pose une question fermée (Oui/Non).
-        // Écrit toujours 'true' ou 'false' dans {output_context}.question_yes_no.
-        // Paramètre :
-        //   question (requis) — texte de la question affiché à l'opérateur
-        const question = String(params.question ?? 'Confirmez-vous ?')
+        // Pose une question fermée (Oui/Non) et écrit la réponse dans {output_context}.{output_var}.
+        // Paramètres :
+        //   question   (requis)  — texte de la question affiché à l'opérateur
+        //   output_var (optionnel, défaut: 'question_yes_no') — nom de la variable où stocker 'true'/'false'
+        const question  = String(params.question  ?? 'Confirmez-vous ?')
+        const outputVar = String(params.output_var ?? 'question_yes_no')
         return ok({
-          __type__: 'choices',
-          items:    [{ label: 'Oui', tag: 'true' }, { label: 'Non', tag: 'false' }],
-          message:  question,
+          __type__:   'choices',
+          output_var: outputVar,
+          items:      [{ label: 'Oui', tag: 'true' }, { label: 'Non', tag: 'false' }],
+          message:    question,
         })
       }
 

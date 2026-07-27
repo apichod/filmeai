@@ -1254,7 +1254,8 @@ Affiche les {{...}} littéralement, toujours.`
         } else if (leavingStep!.booqable_action === 'choose_article' && leavingStep!.execution === 'code') {
           wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.selected_ids`]: chosenTag } }
         } else if (leavingStep!.booqable_action === 'ask_yes_no') {
-          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.question_yes_no`]: chosenTag } }
+          const outputVar = String(leavingStep!.parameters?.output_var ?? 'question_yes_no')
+          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.${outputVar}`]: chosenTag } }
         }
 
         // ── Pour choose_article : construire chosen_lines (lignes structurées avec UUIDs) ──
@@ -1394,7 +1395,8 @@ Affiche les {{...}} littéralement, toujours.`
                 } else if (leavingStep2.booqable_action === 'choose_article') {
                   wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.selected_ids`]: selectionText2 } }
                 } else if (leavingStep2.booqable_action === 'ask_yes_no') {
-                  wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.question_yes_no`]: selectionText2 } }
+                  const outputVar2 = String(leavingStep2.parameters?.output_var ?? 'question_yes_no')
+                  wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.${outputVar2}`]: selectionText2 } }
                 }
               }
 
