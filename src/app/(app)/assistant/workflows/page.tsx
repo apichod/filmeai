@@ -13,7 +13,6 @@ const BOOQABLE_TOOLS = [
   { value: 'check_deposit',                      label: 'check_deposit — vérifier la caution (dépôt physique + autorisation carte)' },
   { value: 'check_insurance',                    label: 'check_insurance — vérifier si l\'assurance est prise sur la commande' },
   { value: 'check_insurance_request_status',     label: 'check_insurance_request_status — vérifier si l\'assurance a été demandée par le locataire' },
-  { value: 'ask_yes_no',                          label: 'ask_yes_no — poser une question Oui/Non et stocker la réponse dans une variable' },
   { value: 'choose_article',                     label: 'choose_article — sélectionner les articles de la commande' },
   { value: 'choose_problem_tag',                 label: 'choose_problem_tag — afficher boutons choix de tag (retard/perte/vol/dommage)' },
   { value: 'clear_tags',                         label: 'clear_tags — supprimer tous les tags' },
@@ -644,7 +643,11 @@ function StepList({
               <label className="text-xs text-gray-400">Exécution</label>
               <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
                 <button
-                  onClick={() => updateStep(idx, { execution: 'ai' })}
+                  onClick={() => updateStep(idx, {
+                    execution: 'ai',
+                    // Pour les questions en mode IA → retirer ask_yes_no
+                    ...(step.type === 'question' ? { booqable_action: undefined } : {}),
+                  })}
                   className={`px-3 py-1.5 transition-colors ${
                     (!step.execution || step.execution === 'ai')
                       ? 'bg-purple-500 text-white'
@@ -654,7 +657,11 @@ function StepList({
                   🤖 IA
                 </button>
                 <button
-                  onClick={() => updateStep(idx, { execution: 'code' })}
+                  onClick={() => updateStep(idx, {
+                    execution: 'code',
+                    // Pour les questions en mode code → force ask_yes_no
+                    ...(step.type === 'question' ? { booqable_action: 'ask_yes_no' } : {}),
+                  })}
                   className={`px-3 py-1.5 transition-colors border-l border-gray-200 ${
                     step.execution === 'code'
                       ? 'bg-green-500 text-white'
@@ -669,6 +676,19 @@ function StepList({
                   Exécuté sans LLM — rapide et fiable
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Paramètres ask_yes_no — visibles pour les questions en mode code */}
+          {step.type === 'question' && step.execution === 'code' && (
+            <div className="pl-7 space-y-1">
+              <p className="text-[10px] text-purple-500 font-medium">⚡ ask_yes_no — boutons Oui / Non</p>
+              <ParametersEditor
+                value={step.parameters}
+                hint={PARAMETERS_HINT['ask_yes_no']}
+                onChange={params => updateStep(idx, { parameters: params })}
+              />
+              <p className="text-[10px] text-gray-400">Condition dans le step suivant : <span className="font-mono">{step.output_context ?? step.order_context ?? 'return'}.{'<output_var>'} == &apos;true&apos;</span></p>
             </div>
           )}
 
