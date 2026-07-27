@@ -1107,8 +1107,12 @@ export async function executeCodeStep(
           `  Récence${daysSinceLast !== null ? ` (il y a ${daysSinceLast} j)` : ''} → +${recencyScore}`,
         ]
         if (incidentDetails.length > 0) {
+          const MAX_SHOWN = 5
+          const shown  = incidentDetails.slice(-MAX_SHOWN)
+          const hidden = incidentDetails.length - shown.length
           lines.push(``, `⚠️ Malus incidents`)
-          for (const inc of incidentDetails) {
+          if (hidden > 0) lines.push(`  … ${hidden} incident(s) plus ancien(s) masqué(s)`)
+          for (const inc of shown) {
             lines.push(`  #${inc.number} ${inc.tag} (×${inc.coeff}) → −${inc.penalty}`)
           }
         }
