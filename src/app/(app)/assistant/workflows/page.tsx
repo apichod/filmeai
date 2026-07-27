@@ -121,7 +121,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   send_email_with_quote_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
   set_replacement_price:    { reads: ['id', 'lines'],    writes: ['kept_product_names'] },
   fetch_order_amount:           { reads: ['id'], writes: ['grand_total_euros', 'deposit_euros'] },
-  ask_yes_no:                   { reads: [], writes: ['<output_var>'] },   // variable dynamique configurée dans parameters.output_var
+  ask_yes_no:                   { reads: [], writes: ['question_yes_no'] },
   calculate_customer_score:     { reads: ['customer_id'], writes: ['discount_proposal', 'customer_score'] },
   fetch_original_amount_HT:     { reads: ['id'], writes: ['grand_total_euros_HT'] },
   round_deposit:                { reads: ['security_deposit'], writes: ['security_deposit_rounded'] },
@@ -253,7 +253,7 @@ const PARAMETERS_HINT: Record<string, string> = {
   stop_order:              '{}',
   add_tag:                 '{"tags_add": ["R22_WAIVED"], "tags_remove": ["R21_OPEN"]}',
   duplicate_order:         '{}',
-  ask_yes_no:              '{"question": "Souhaites-tu conserver la caution ?", "output_var": "question_yes_no"}',
+  ask_yes_no:              '{"question": "Souhaites-tu conserver la caution ?"}',
   choose_problem_tag:      '{"options": [{"label": "Retard", "tag": "r21_open"}, {"label": "Perte", "tag": "r22_waived"}, {"label": "Dommage", "tag": "r23_security"}, {"label": "Facturé", "tag": "r24_billed"}]}',
   create_new_return_order: '{}',
   zero_out_order_lines:    '{}',
@@ -274,7 +274,7 @@ const PARAMETERS_HINT: Record<string, string> = {
 
 /** Documentation textuelle de chaque outil */
 const TOOL_DOC: Record<string, string> = {
-  ask_yes_no:                        'Pose une question fermée (Oui/Non) à l\'opérateur. La réponse ("true" ou "false") est écrite dans {output_context}.{output_var}. Paramètres requis : question (texte affiché) et output_var (nom de la variable). Les steps suivants peuvent utiliser une condition du type "return.deposit_confirmed == \'true\'".',
+  ask_yes_no:                        'Pose une question fermée (Oui/Non) à l\'opérateur. La réponse est toujours écrite dans {output_context}.question_yes_no ("true" ou "false"). Seul paramètre : question (texte affiché). Condition dans le step suivant : "return.question_yes_no == \'true\'" ou "return.question_yes_no == \'false\'".',
   add_new_product_line:              'Ajoute les articles sélectionnés (via choose_article) à la commande cible. Si l\'article a un product_group_id, crée une ligne produit Booqable ; sinon crée une ligne custom.',
   add_sav_comment:                   'Renseigne les champs SAV : order_sav (commande d\'origine) et notes_sav (commentaire). En mode Code, le commentaire est défini dans les paramètres ; en mode IA, il est rédigé par l\'IA.',
   add_tag:                           'Ajoute et/ou supprime des tags sur la commande cible. Les tags sont définis dans les paramètres (tags_add, tags_remove) ou déterminés par l\'IA.',
@@ -639,7 +639,7 @@ function StepList({
           </div>
 
           {/* execution — mode d'exécution */}
-          {((step.type === 'action' && !!step.booqable_action) || step.type === 'instruction') && (
+          {(((step.type === 'action' || step.type === 'question') && !!step.booqable_action) || step.type === 'instruction') && (
             <div className="pl-7 flex items-center gap-3">
               <label className="text-xs text-gray-400">Exécution</label>
               <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
