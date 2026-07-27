@@ -10,35 +10,33 @@
  *   → Ajouter l'email du service account avec permission "Apporter des modifications aux événements"
  */
 
-import { google } from 'googleapis'
-
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID ?? 'location@filme.fr'
 const SCOPES      = ['https://www.googleapis.com/auth/calendar.events']
 
-function getAuth() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON non défini dans les variables d\'environnement')
-  const credentials = JSON.parse(raw) as object
-  return new google.auth.GoogleAuth({ credentials, scopes: SCOPES })
-}
-
 export type CalendarEventInput = {
-  summary:     string        // titre de l'événement
-  location?:   string        // adresse
-  description?: string       // commentaire / notes
-  startIso:    string        // ISO 8601 avec timezone, ex: "2025-08-15T09:30:00+02:00"
-  endIso:      string        // ISO 8601 avec timezone
-  timeZone?:   string        // ex: "Europe/Paris" (défaut)
+  summary:      string
+  location?:    string
+  description?: string
+  startIso:     string   // ISO 8601 avec timezone, ex: "2025-08-15T09:30:00+02:00"
+  endIso:       string
+  timeZone?:    string   // défaut: "Europe/Paris"
 }
 
 export async function createCalendarEvent(event: CalendarEventInput): Promise<{
   eventId:  string
   htmlLink: string
 }> {
-  const auth     = getAuth()
-  const calendar = google.calendar({ version: 'v3', auth })
+  // Import dynamique — évite que webpack tente de bundler googleapis
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { google } = await import('googleapis')
 
-  const tz = event.timeZone ?? 'Europe/Paris'
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON non défini dans les variables d\'environnement')
+  const credentials = JSON.parse(raw) as object
+
+  const auth     = new google.auth.GoogleAuth({ credentials, scopes: SCOPES })
+  const calendar = google.calendar({ version: 'v3', auth })
+  const tz       = event.timeZone ?? 'Europe/Paris'
 
   const res = await calendar.events.insert({
     calendarId: CALENDAR_ID,
@@ -56,6 +54,6 @@ export async function createCalendarEvent(event: CalendarEventInput): Promise<{
 
   return {
     eventId:  data.id,
-    htmlLink: data.htmlLink ?? `https://calendar.google.com`,
+    htmlLink: data.htmlLink ?? 'https://calendar.google.com',
   }
 }
