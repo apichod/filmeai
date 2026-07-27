@@ -613,6 +613,21 @@ function StepList({
                 </div>
               )
             })()}
+
+            {/* Write badge for ask_yes_no (question + code) */}
+            {step.type === 'question' && step.execution === 'code' && (() => {
+              const ctx    = step.output_context ?? step.order_context ?? 'return'
+              const outVar = (step.parameters as Record<string, string> | undefined)?.output_var ?? 'question_yes_no'
+              return (
+                <div className="flex gap-3 flex-wrap text-[10px]">
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-400">📤 Write :</span>
+                    <span className="font-mono bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{ctx}.{outVar}</span>
+                    <span className="text-gray-400">→ <span className="font-mono">&apos;true&apos;</span> / <span className="font-mono">&apos;false&apos;</span></span>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           {/* condition — optionnelle, step sauté si non satisfaite */}
@@ -681,23 +696,12 @@ function StepList({
 
           {/* Paramètres ask_yes_no — visibles pour les questions en mode code */}
           {step.type === 'question' && step.execution === 'code' && (
-            <div className="pl-7 space-y-1.5">
+            <div className="pl-7">
               <ParametersEditor
                 value={step.parameters}
                 hint={PARAMETERS_HINT['ask_yes_no']}
                 onChange={params => updateStep(idx, { parameters: params })}
               />
-              {(() => {
-                const ctx     = step.output_context ?? step.order_context ?? 'return'
-                const outVar  = (step.parameters as Record<string, string> | undefined)?.output_var ?? 'question_yes_no'
-                return (
-                  <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
-                    <span>📤 Write :</span>
-                    <span className="font-mono bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{ctx}.{outVar}</span>
-                    <span className="text-gray-300">→ valeur : <span className="font-mono">&apos;true&apos;</span> ou <span className="font-mono">&apos;false&apos;</span></span>
-                  </div>
-                )
-              })()}
             </div>
           )}
 
