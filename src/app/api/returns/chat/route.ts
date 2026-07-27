@@ -37,6 +37,7 @@ import {
   addProductLineById,
   addProductInsurance8,
 } from '@/lib/booqable-orders'
+import { createCalendarEvent } from '@/lib/google-calendar'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -481,6 +482,24 @@ function buildTools(
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'create_calendar_event',
+      description: 'Crée un événement dans le calendrier partagé location@filme.fr. Le créneau doit démarrer 1 heure AVANT l\'heure de livraison et se terminer à l\'heure exacte de livraison. Titre : "Livraison {NomClient} {heure} (#{NumeroCommande})". À appeler après avoir extrait date, heure et adresse du champ delivery_options.',
+      parameters: {
+        type: 'object',
+        properties: {
+          summary:     { type: 'string',  description: 'Titre de l\'événement — format: "Livraison {NomClient} {HH:MM} (#{NumeroCommande})"' },
+          start_iso:   { type: 'string',  description: 'Début du créneau ISO 8601 avec timezone Europe/Paris — 1 heure avant la livraison. Ex: "2025-08-15T09:30:00+02:00"' },
+          end_iso:     { type: 'string',  description: 'Fin du créneau ISO 8601 — heure exacte de livraison. Ex: "2025-08-15T10:30:00+02:00"' },
+          location:    { type: 'string',  description: 'Adresse de livraison extraite du champ delivery_options' },
+          description: { type: 'string',  description: 'Commentaires : nom du client, numéro de commande, contenu du champ delivery_options' },
+        },
+        required: ['summary', 'start_iso', 'end_iso'],
+      },
+    },
+  },
   ] // fin buildTools
 }
 
@@ -865,6 +884,17 @@ async function executeTool(
         if (!orderId) return { result: 'Erreur : order_id manquant' }
         const ins = await checkInsuranceRequestStatus(orderId)
         return { result: JSON.stringify({ success: true, ...ins }) }
+      }
+
+      case 'create_calendar_event': {
+        const summary     = String(args.summary     ?? '')
+        const startIso    = String(args.start_iso   ?? '')
+        const endIso      = String(args.end_iso     ?? '')
+        const location    = args.location    ? String(args.location)    : undefined
+        const description = args.description ? String(args.description) : undefined
+        if (!summary || !startIso || !endIso) return { result: 'Erreur : summary, start_iso et end_iso sont requis' }
+        const event = await createCalendarEvent({ summary, startIso, endIso, location, description })
+        return { result: JSON.stringify({ success: true, event_id: event.eventId, link: event.htmlLink, message: `✅ Événement créé : "${summary}" — ${event.htmlLink}` }) }
       }
 
       default:

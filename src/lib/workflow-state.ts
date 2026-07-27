@@ -144,6 +144,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'number', 'kept_product_names'],
     writes: [],
   },
+  create_delivery_event: {
+    label:  'Créer un événement livraison dans le calendrier',
+    reads:  ['delivery_options', 'number'],
+    writes: [],
+    // Étape IA : extrait date/heure/adresse depuis delivery_options et appelle create_calendar_event
+  },
   add_discount_with_input_field: {
     label:  'Saisir une remise manuellement (champ texte)',
     reads:  [],
