@@ -44,6 +44,7 @@ import {
   addProductInsurance8,
   updateOrderDeposit,
   fetchCustomerOrders,
+  removeSecurityDeposit,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -350,6 +351,12 @@ export async function executeCodeStep(
         if (!orderId) return err('remove_discount : order_id manquant')
         await removeOrderDiscount(orderId)
         return ok({ success: true, message: `✓ Remise supprimée sur ${label}` })
+      }
+
+      case 'remove_security': {
+        if (!orderId) return err('remove_security : order_id manquant')
+        await removeSecurityDeposit(orderId)
+        return ok({ success: true, message: `✓ Caution supprimée sur ${label}` })
       }
 
       case 'finalize_invoice': {
