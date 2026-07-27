@@ -634,6 +634,7 @@ N'appelle AUCUN outil. Attends la réponse tapée par l'opérateur.${context}`
       const deliveryText  = vars[`${inputCtx}.delivery_options`] ?? vars['return.delivery_options'] ?? vars['original.delivery_options'] ?? ''
       const orderNumber   = vars[`${inputCtx}.number`] ?? vars['return.number'] ?? vars['original.number'] ?? '?'
       const customerEmail = vars[`${inputCtx}.customer_email`] ?? vars['return.customer_email'] ?? vars['original.customer_email'] ?? ''
+      const currentYear   = new Date().getFullYear()
 
       return `══════════════════════════════════════════
 ÉTAPE ${stepIndex + 1}/${totalSteps} — CALENDRIER : ${step.title}
@@ -646,14 +647,16 @@ OPTIONS DE LIVRAISON :
 
 CLIENT : ${customerEmail || '(non renseigné)'}
 NUMÉRO DE COMMANDE : #${orderNumber}
+ANNÉE EN COURS : ${currentYear}
 
 RÈGLES :
 - Appelle UNIQUEMENT l'outil "build_delivery_event" avec les champs extraits
 - event_summary : "Livraison {NomClient} {HH:MM} (#{NumeroCommande})"
-- event_start_iso : 1 heure AVANT la livraison, format ISO 8601 Europe/Paris
+- event_start_iso : 1 heure AVANT la livraison, format ISO 8601 Europe/Paris (ex: "${currentYear}-07-30T13:00:00+02:00")
 - event_end_iso : heure exacte de livraison
 - event_location : adresse extraite du texte
 - event_description : "Commande #${orderNumber} — ${deliveryText}"
+- Si aucune année n'est mentionnée, utiliser ${currentYear}
 - Si la date/heure n'est pas claire, demande à l'opérateur avant d'appeler l'outil${context}`
     }
 
