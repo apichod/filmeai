@@ -37,7 +37,6 @@ import {
   addProductLineById,
   addProductInsurance8,
 } from '@/lib/booqable-orders'
-import { createCalendarEvent } from '@/lib/google-calendar'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
