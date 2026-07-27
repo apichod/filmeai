@@ -306,6 +306,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes: ['customer_notes'],
     // customer_notes = texte du champ "commentaire" (vide si non renseigné)
   },
+  read_delivery_options: {
+    label:  'Lire et afficher les options de livraison',
+    reads:  ['id'],
+    writes: ['delivery_options'],
+    // delivery_options = texte du champ "date_et_heure_livraison_si_applicable" (vide si non renseigné)
+  },
   add_product_insurance_8: {
     label:  'Ajouter l\'assurance FILME à 8% du montant HT',
     reads:  ['id', 'grand_total_euros_HT'],

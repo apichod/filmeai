@@ -46,6 +46,7 @@ import {
   fetchCustomerOrders,
   removeDeposit,
   readCustomerNotes,
+  readDeliveryOptions,
   addDiscount,
 } from './booqable-orders'
 
@@ -1190,6 +1191,15 @@ export async function executeCodeStep(
         const result = await readCustomerNotes(orderId)
         return ok({
           customer_notes: result.notes ?? '',
+          message: result.message,
+        })
+      }
+
+      case 'read_delivery_options': {
+        if (!orderId) return err('read_delivery_options : order_id manquant — exécuter fetch_order avant')
+        const result = await readDeliveryOptions(orderId)
+        return ok({
+          delivery_options: result.delivery ?? '',
           message: result.message,
         })
       }

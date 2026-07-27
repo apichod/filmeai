@@ -81,6 +81,7 @@ function toolLabel(name: string) {
     add_discount_with_input_field:   'Saisie remise manuelle',
     remove_deposit:        'Suppression caution',
     read_customer_notes:   'Commentaires client',
+    read_delivery_options: 'Options de livraison',
     choose_article:         'Choix de l\'article',
     choose_problem_tag:     'Choix du type de problème',
     remove_other_lines:     'Suppression des autres lignes',

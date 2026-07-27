@@ -2488,6 +2488,32 @@ export async function readCustomerNotes(orderId: string): Promise<{
   return { notes, message: `💬 Commentaire client : ${notes}` }
 }
 
+// ── readDeliveryOptions ───────────────────────────────────────────────────────
+// Lit le champ custom "date_et_heure_livraison_si_applicable" sur une commande Booqable.
+export async function readDeliveryOptions(orderId: string): Promise<{
+  delivery: string | null
+  message: string
+}> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const url = `${BASE_BOOMERANG}/properties?filter[owner_id]=${orderId}&filter[owner_type]=orders&filter[identifier]=date_et_heure_livraison_si_applicable`
+
+  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(10000) })
+  if (!res.ok) throw new Error(`Booqable properties error: ${res.status}`)
+
+  const data = await res.json() as {
+    data?: Array<{ id: string; attributes: { identifier: string; value: string | null } }>
+  }
+
+  const property = data.data?.find(p => p.attributes.identifier === 'date_et_heure_livraison_si_applicable')
+
+  if (!property || !property.attributes.value) {
+    return { delivery: null, message: 'Aucune option de livraison renseignée sur cette commande.' }
+  }
+
+  const delivery = property.attributes.value.trim()
+  return { delivery, message: `🚚 Livraison : ${delivery}` }
+}
+
 // ── Check assurance ────────────────────────────────────────────────────────────
 
 export async function checkInsuranceRequestStatus(orderId: string): Promise<{
