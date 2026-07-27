@@ -46,6 +46,7 @@ import {
   fetchCustomerOrders,
   removeDeposit,
   readCustomerNotes,
+  addDiscount,
 } from './booqable-orders'
 
 function getSupabase() {
@@ -1125,6 +1126,15 @@ export async function executeCodeStep(
           customer_score:     String(finalScore),
           message: lines.join('\n'),
         })
+      }
+
+      case 'add_discount': {
+        if (!orderId) return err('add_discount : order_id manquant — exécuter fetch_order avant')
+        const inputCtx       = step.input_context ?? step.order_context ?? 'return'
+        const discountRaw    = String(vars[`${inputCtx}.discount_proposal`] ?? params.discount_value ?? '')
+        if (!discountRaw) return err('add_discount : discount_proposal introuvable dans les variables — exécuter calculate_customer_score avant')
+        await addDiscount(orderId, discountRaw)
+        return ok({ success: true, message: `✓ Remise de ${discountRaw} % appliquée sur ${label}` })
       }
 
       case 'round_deposit': {

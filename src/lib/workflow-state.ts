@@ -144,6 +144,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'number', 'kept_product_names'],
     writes: [],
   },
+  add_discount: {
+    label:  'Appliquer une remise en pourcentage sur la commande',
+    reads:  ['id', 'discount_proposal'],
+    writes: [],
+    // discount_proposal = pourcentage (string, ex: "15") — lu depuis input_context
+  },
   remove_discount: {
     label:  'Supprimer la remise de la commande',
     reads:  ['id'],

@@ -1751,6 +1751,32 @@ export async function updateOrderDeposit(orderId: string, depositValue: number):
   }
 }
 
+// ── addDiscount ───────────────────────────────────────────────────────────────
+// Applique une remise en pourcentage sur une commande Booqable.
+export async function addDiscount(orderId: string, discountValue: string): Promise<void> {
+  const BASE_BOOMERANG = `https://${process.env.BOOQABLE_SUBDOMAIN}.booqable.com/api/boomerang`
+  const body = {
+    id:      orderId,
+    include: 'tax_values',
+    order:   { discount_type: 'percentage', discount_value: discountValue },
+    data: {
+      type: 'orders',
+      id:   orderId,
+      attributes: { discount_type: 'percentage', discount_value: discountValue },
+    },
+  }
+  const res = await fetch(`${BASE_BOOMERANG}/orders/${orderId}`, {
+    method:  'PATCH',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+    signal:  AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`addDiscount error ${res.status}: ${text}`)
+  }
+}
+
 // ── removeDeposit ─────────────────────────────────────────────────────
 // Supprime la caution d'une commande Booqable (deposit_type: none, deposit_value: null).
 export async function removeDeposit(orderId: string): Promise<void> {

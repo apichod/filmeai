@@ -76,6 +76,7 @@ function toolLabel(name: string) {
     set_original_order:     'Commande d\'origine liée',
     send_email:             'Envoi email',
     ask_yes_no:             'Question Oui / Non',
+    add_discount:          'Application remise',
     remove_deposit:        'Suppression caution',
     read_customer_notes:   'Commentaires client',
     choose_article:         'Choix de l\'article',
