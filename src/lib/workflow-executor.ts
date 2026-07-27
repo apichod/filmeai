@@ -140,6 +140,7 @@ export async function executeCodeStep(
           status:         order.status,
           customer_id:    order.customer_id,
           customer_email: order.customer?.email ?? '',
+          customer_name:  order.customer?.name  ?? '',
           tags:           order.tags,
           lines:          order.lines,
         })

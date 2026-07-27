@@ -62,7 +62,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   fetch_order: {
     label:  'Récupérer une commande',
     reads:  ['id'],
-    writes: ['id', 'number', 'status', 'customer_id', 'tags', 'lines'],
+    writes: ['id', 'number', 'status', 'customer_id', 'customer_email', 'customer_name', 'tags', 'lines'],
   },
   fetch_original_from_field: {
     label:  'Résoudre l\'ID d\'une commande liée via un champ custom (ex: order_sav)',
@@ -633,7 +633,9 @@ N'appelle AUCUN outil. Attends la réponse tapée par l'opérateur.${context}`
       const inputCtx      = step.input_context ?? step.order_context ?? 'return'
       const deliveryText  = vars[`${inputCtx}.delivery_options`] ?? vars['return.delivery_options'] ?? vars['original.delivery_options'] ?? ''
       const orderNumber   = vars[`${inputCtx}.number`] ?? vars['return.number'] ?? vars['original.number'] ?? '?'
+      const customerName  = vars[`${inputCtx}.customer_name`]  ?? vars['return.customer_name']  ?? vars['original.customer_name']  ?? ''
       const customerEmail = vars[`${inputCtx}.customer_email`] ?? vars['return.customer_email'] ?? vars['original.customer_email'] ?? ''
+      const clientLabel   = customerName || customerEmail || '(non renseigné)'
       const currentYear   = new Date().getFullYear()
 
       return `══════════════════════════════════════════
@@ -645,13 +647,13 @@ Analyse le champ "Options de livraison" et formate les données pour l'événeme
 OPTIONS DE LIVRAISON :
 "${deliveryText || '(non renseigné)'}"
 
-CLIENT : ${customerEmail || '(non renseigné)'}
+CLIENT : ${clientLabel}
 NUMÉRO DE COMMANDE : #${orderNumber}
 ANNÉE EN COURS : ${currentYear}
 
 RÈGLES :
 - Appelle UNIQUEMENT l'outil "build_delivery_event" avec les champs extraits
-- event_summary : "Livraison {NomClient} {HH:MM} (#{NumeroCommande})"
+- event_summary : "Livraison ${clientLabel} {HH:MM} (#{NumeroCommande})"  ← utilise exactement ce nom client
 - event_start_iso : 1 heure AVANT la livraison, format ISO 8601 Europe/Paris (ex: "${currentYear}-07-30T13:00:00+02:00")
 - event_end_iso : heure exacte de livraison
 - event_location : adresse extraite du texte
