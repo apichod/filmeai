@@ -32,11 +32,12 @@ export type TemporaireRow = {
  * Retourne tous les stocks temporaires Booqable (attendus + actifs + expirés).
  * Utilise l'API V4 inventory_breakdowns avec filter[inventory_breakdown_type]=temporary.
  */
-export async function GET() {
+async function fetchByStatus(status: string): Promise<{ data: V4Resource[]; included: V4Resource[]; error?: string }> {
   const PAGE_SIZE = 100
   const baseUrl =
     `${BASE_V4}/inventory_breakdowns` +
     `?filter[inventory_breakdown_type]=temporary` +
+    `&filter[status]=${status}` +
     `&include=product,location` +
     `&page[size]=${PAGE_SIZE}`
 
@@ -51,10 +52,7 @@ export async function GET() {
     })
     if (!res.ok) {
       const text = await res.text()
-      return NextResponse.json(
-        { error: `Booqable ${res.status}: ${text}` },
-        { status: 500 },
-      )
+      return { data: [], included: [], error: `Booqable ${res.status}: ${text}` }
     }
     const data = await res.json() as V4Response
     allData.push(...(data.data || []))
@@ -62,6 +60,24 @@ export async function GET() {
     if ((data.data || []).length < PAGE_SIZE) break
     pageNum++
   }
+  return { data: allData, included: allIncluded }
+}
+
+export async function GET() {
+  // Booqable exige filter[status] — on fait 3 appels en parallèle
+  const [resInStock, resExpected, resExpired] = await Promise.all([
+    fetchByStatus('in_stock'),
+    fetchByStatus('expected'),
+    fetchByStatus('expired'),
+  ])
+
+  const firstError = resInStock.error ?? resExpected.error ?? resExpired.error
+  if (firstError) {
+    return NextResponse.json({ error: firstError }, { status: 500 })
+  }
+
+  const allData     = [...resInStock.data,     ...resExpected.data,     ...resExpired.data]
+  const allIncluded = [...resInStock.included, ...resExpected.included, ...resExpired.included]
 
   // Index products et locations depuis included
   const productMap  = new Map<string, { name: string; tracking_type: string }>()
