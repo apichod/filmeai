@@ -181,19 +181,26 @@ function toolSummary(name: string, result: string | undefined): string | null {
 // ── Props ──────────────────────────────────────────────────────────────────────
 
 interface WorkflowChatPanelProps {
-  chatType: 'retours' | 'planning'
+  chatType: 'retours' | 'planning' | 'sous-location'
 }
 
 // ── Composant ─────────────────────────────────────────────────────────────────
 
 export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) {
-  const isPlanning   = chatType === 'planning'
-  const iconColor    = isPlanning ? 'bg-indigo-500' : 'bg-blue-500'
-  const defaultTitle = isPlanning ? 'Assistant planning' : 'Assistant retours'
-  const backHref     = isPlanning ? '/requests' : '/returns'
-  const placeholder  = isPlanning ? 'Décrivez votre demande…' : 'Numéro d\'order et description du problème…'
+  const isPlanning     = chatType === 'planning'
+  const isSousLocation = chatType === 'sous-location'
+  const iconColor    = isPlanning ? 'bg-indigo-500' : isSousLocation ? 'bg-emerald-500' : 'bg-blue-500'
+  const defaultTitle = isPlanning ? 'Assistant planning' : isSousLocation ? 'Assistant sous-location' : 'Assistant retours'
+  const backHref     = isPlanning ? '/requests' : isSousLocation ? '/sous-location' : '/returns'
+  const placeholder  = isPlanning
+    ? 'Décrivez votre demande…'
+    : isSousLocation
+    ? 'Numéro d\'order ou question sur la sous-location…'
+    : 'Numéro d\'order et description du problème…'
   const defaultWelcome = isPlanning
     ? 'Bonjour ! Je suis l\'assistant planning. Comment puis-je vous aider ?'
+    : isSousLocation
+    ? 'Bonjour ! Je suis l\'assistant sous-location. Comment puis-je vous aider ?'
     : 'Bonjour ! Je suis l\'assistant retours. Donnez-moi le numéro d\'order et décrivez le problème.'
 
   const [messages, setMessages]                   = useState<ChatMessage[]>([{ id: 'welcome', role: 'assistant', content: defaultWelcome }])
