@@ -82,11 +82,11 @@ export async function GET() {
   }
 
   // Si des product_id ne sont pas dans included, fetch batch
-  const missingProductIds = [...new Set(
+  const missingProductIds = Array.from(new Set(
     allData
       .map(r => String((r.attributes as BreakdownAttrs).product_id ?? ''))
       .filter(id => id && !productMap.has(id))
-  )]
+  ))
 
   if (missingProductIds.length > 0) {
     try {
