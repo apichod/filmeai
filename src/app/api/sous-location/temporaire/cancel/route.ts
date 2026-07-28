@@ -106,7 +106,9 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // ── Bulk : ajustement inverse ──────────────────────────────────────────────
+  // ── Bulk : ajustement inverse via boomerang ────────────────────────────────
+  // La V4 /stock_adjustments attend les relations JSON:API ; le endpoint boomerang
+  // accepte product_id/location_id directement en attributs plats.
   const adjBody = {
     data: {
       type: 'stock_adjustments',
@@ -121,7 +123,7 @@ export async function POST(req: NextRequest) {
     },
   }
 
-  const adjRes = await fetch(`${BASE_V4}/stock_adjustments`, {
+  const adjRes = await fetch(`${BASE_BM}/stock_adjustments`, {
     method:  'POST',
     headers: headers(),
     body:    JSON.stringify(adjBody),
