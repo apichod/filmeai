@@ -78,6 +78,9 @@ function ShortageTable() {
   const [selected, setSelected]   = useState<Set<string>>(new Set())
   const [creating, setCreating]   = useState(false)
   const [createMsg, setCreateMsg] = useState<string | null>(null)
+  // Notes par product_id
+  const [notes, setNotes]         = useState<Record<string, string>>({})
+  const [savingNote, setSavingNote] = useState<string | null>(null)
 
   const STORAGE_KEY = 'bq_shortage_v2'
 
@@ -91,7 +94,25 @@ function ShortageTable() {
         setSynced(true)
       }
     } catch { /* ignore */ }
+    // Charge les notes Supabase au montage
+    fetch('/api/sous-location/product-notes')
+      .then(r => r.json())
+      .then((d: { notes?: Record<string, string> }) => { if (d.notes) setNotes(d.notes) })
+      .catch(() => { /* silencieux */ })
   }, [])
+
+  async function saveNote(productId: string, note: string) {
+    setSavingNote(productId)
+    try {
+      await fetch('/api/sous-location/product-notes', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ product_id: productId, note }),
+      })
+    } finally {
+      setSavingNote(null)
+    }
+  }
 
   async function sync() {
     setLoading(true)
@@ -230,13 +251,14 @@ function ShortageTable() {
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Client</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Début</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Fin</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Source sous-location</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-14 text-center text-gray-400">
+                  <td colSpan={10} className="px-4 py-14 text-center text-gray-400">
                     Aucun article en pénurie. 🎉
                   </td>
                 </tr>
@@ -262,6 +284,21 @@ function ShortageTable() {
                     <td className="px-4 py-3 text-gray-500">{item.customer_name}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(item.starts_at)}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(item.stops_at)}</td>
+                    <td className="px-4 py-3 min-w-[180px]" onClick={e => e.stopPropagation()}>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Chez…"
+                          value={notes[item.product_id] ?? ''}
+                          onChange={e => setNotes(prev => ({ ...prev, [item.product_id]: e.target.value }))}
+                          onBlur={e => { void saveNote(item.product_id, e.target.value) }}
+                          className="w-full text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-gray-400 bg-white placeholder-gray-300"
+                        />
+                        {savingNote === item.product_id && (
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">⏳</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                       <a href={item.order_url} target="_blank" rel="noopener noreferrer"
                         className="text-xs font-medium text-gray-500 hover:text-black border border-gray-200 rounded px-2.5 py-1 hover:border-gray-400 transition-colors">

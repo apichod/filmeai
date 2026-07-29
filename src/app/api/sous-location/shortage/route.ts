@@ -120,8 +120,8 @@ export async function GET() {
 
   const items = results.flat()
 
-  // Tri : shortage le plus élevé d'abord, puis par date de début
-  items.sort((a, b) => b.shortage_amount - a.shortage_amount || a.starts_at.localeCompare(b.starts_at))
+  // Tri : date de début décroissante
+  items.sort((a, b) => b.starts_at.localeCompare(a.starts_at))
 
   return NextResponse.json({ items, total: items.length })
 }
