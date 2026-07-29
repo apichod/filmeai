@@ -56,6 +56,7 @@ const BOOQABLE_TOOLS = [
   { value: 'start_order',                        label: 'start_order — démarrer la commande (pickup)' },
   { value: 'stop_order',                         label: 'stop_order — retourner le matériel (started → stopped)' },
   { value: 'update_return_date',                 label: 'update_return_date — changer la date de retour à aujourd\'hui' },
+  { value: 'redirect_url',                       label: 'redirect_url — rediriger la page vers une URL (arrête le workflow)' },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -140,6 +141,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   round_deposit:                { reads: ['security_deposit'], writes: ['security_deposit_rounded'] },
   create_payment_link:       { reads: ['id', 'grand_total_euros'],                   writes: ['payment_charge_id', 'checkout_url'] },
   capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'payment_charge_id', 'captured_amount'] },
+  redirect_url:              { reads: [], writes: [] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
@@ -193,6 +195,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   round_deposit:                     'code',
   create_payment_link:               'code',
   capture_stripe_deposit:            'code',
+  redirect_url:                      'code',
 }
 
 /** Compatibilité d'exécution par outil */
@@ -254,6 +257,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   round_deposit:                     'code',
   create_payment_link:               'code',
   capture_stripe_deposit:            'code',
+  redirect_url:                      'code',
 }
 
 /** Description comportement par mode (pour les outils 'both') */
@@ -295,6 +299,7 @@ const PARAMETERS_HINT: Record<string, string> = {
   draft_email:             '{"template_id": "retour_ok"}',
   log_case:                '{"problem_type": "manquant"}',
   add_product_line_by_id:  '{"product_group_id": "uuid-du-produit", "quantity": 1}',
+  redirect_url:            '{"url": "https://filme.booqable.com/orders/{parent.id}"}',
 }
 
 /** Documentation textuelle de chaque outil */
@@ -346,6 +351,7 @@ const TOOL_DOC: Record<string, string> = {
   check_insurance_request_status:   'Vérifie si le locataire a demandé l\'assurance FILME sur sa commande. Retourne YES (assuré par FILME), NO (assurance personnelle multirisques), ou NOT_SET (non renseigné). Appeler après fetch_order avec l\'UUID de la commande.',
   add_product_line_by_id:           'Ajoute une ligne produit à la commande en utilisant un product_group_id fixe défini dans les paramètres du step. Utile pour ajouter automatiquement un produit standard. Requiert product_group_id dans les paramètres JSON.',
   add_product_insurance_8:          'Ajoute la ligne assurance FILME (product_group_id fixe) et fixe automatiquement son prix à 8% du montant HT. Lire grand_total_euros_HT depuis fetch_original_amount_HT avant d\'appeler ce step.',
+  redirect_url:                     'Redirige la page entière du chat vers l\'URL spécifiée et arrête le workflow. Supporte les placeholders {context.field} interpolés depuis les vars (ex: {parent.id}). Paramètre requis : url.',
 }
 
 type WorkflowCategory = 'retours' | 'planning' | 'sous-location'
