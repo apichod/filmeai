@@ -54,6 +54,7 @@ type ActiveWorkflow = {
   parent_category: string | null
   welcome: string | null
   is_active: boolean
+  steps?: Array<{ booqable_action?: string }>
 }
 
 type SubOption = { label: string; scenario: string; welcome: string }
@@ -265,14 +266,14 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
 
   // ── Streaming helper ─────────────────────────────────────────────────────────
 
-  async function streamChat(apiMessages: { role: string; content: string }[], assistantId: string) {
+  async function streamChat(apiMessages: { role: string; content: string }[], assistantId: string, scenarioOverride?: string | null) {
     const res = await fetch('/api/returns/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: apiMessages,
         caseId,
-        scenario,
+        scenario: scenarioOverride !== undefined ? scenarioOverride : scenario,
         customerId: fetchedCustomerId,
         customerName: fetchedCustomerName,
         customerEmail: fetchedCustomerEmail,
@@ -475,6 +476,20 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
     setFetchedCustomerId(null)
     setFetchedCustomerName(null)
     setFetchedCustomerEmail(null)
+
+    // Auto-run si le premier step est redirect_url (pas besoin de saisie utilisateur)
+    if (wf.steps?.[0]?.booqable_action === 'redirect_url') {
+      const assistantId = `a-${Date.now()}`
+      setSending(true)
+      setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', toolCalls: [] }])
+      streamChat([], assistantId, wf.slug)
+        .catch(err => {
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId ? { ...m, content: `Erreur : ${err instanceof Error ? err.message : String(err)}` } : m
+          ))
+        })
+        .finally(() => setSending(false))
+    }
   }
 
   // ── Menu piloté par Supabase ───────────────────────────────────────────────
