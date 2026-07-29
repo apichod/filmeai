@@ -148,7 +148,23 @@ export default function TemporaireTable() {
     }
   }, [syncedAt])
 
-  const displayed = statusFilter === 'all' ? rows : rows.filter(r => r.status === statusFilter)
+  const STATUS_ORDER: Record<string, number> = { in_stock: 0, expected: 1, expired: 2 }
+  const byFromDesc = (a: TemporaireRow, b: TemporaireRow) =>
+    (b.from ?? '').localeCompare(a.from ?? '')
+
+  const displayed = (() => {
+    if (statusFilter === 'all') {
+      return [...rows].sort((a, b) => {
+        const byStatus = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
+        return byStatus !== 0 ? byStatus : byFromDesc(a, b)
+      })
+    }
+    const filtered = rows.filter(r => r.status === statusFilter)
+    if (statusFilter === 'expired' || statusFilter === 'expected') {
+      return [...filtered].sort(byFromDesc)
+    }
+    return filtered
+  })()
 
   const counts = {
     all:      rows.length,
