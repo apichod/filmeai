@@ -306,7 +306,7 @@ export default function TemporaireTable() {
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">Début</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">Fin</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">Statut</th>
-                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Source sous-location</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Sous-location</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">Référence</th>
                   <th className="px-4 py-3" />
                 </tr>
