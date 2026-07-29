@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const SUBDOMAIN = process.env.BOOQABLE_SUBDOMAIN || ''
 const KEY       = process.env.BOOQABLE_API_KEY    || ''
-const BASE_V4   = `https://${SUBDOMAIN}.booqable.com/api/4`
 const BASE_BM   = `https://${SUBDOMAIN}.booqable.com/api/boomerang`
 
 function headers() {
