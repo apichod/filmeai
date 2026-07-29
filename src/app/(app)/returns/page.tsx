@@ -298,6 +298,7 @@ type ActiveWorkflow = {
   name: string
   chat_label: string | null
   description: string
+  category: string | null
   parent_category: string | null
   welcome: string | null
 }
@@ -361,7 +362,7 @@ function ChatPanel() {
       .then(([cats, wfs]) => {
         const categories = (cats.categories ?? []) as Array<{ key: string; label: string; is_active: boolean }>
         setLevel1Items(categories.filter(c => c.is_active).map(c => ({ key: c.key, label: c.label })))
-        const allWfs = (wfs.workflows ?? []) as Array<{ slug: string; name: string; chat_label: string | null; description: string; is_active: boolean; parent_category: string | null; welcome: string | null }>
+        const allWfs = (wfs.workflows ?? []) as Array<{ slug: string; name: string; chat_label: string | null; description: string; is_active: boolean; category: string | null; parent_category: string | null; welcome: string | null }>
         setAvailableWorkflows(allWfs.filter(w => w.is_active))
         setWorkflowsLoaded(true)
       })
@@ -757,8 +758,8 @@ function ChatPanel() {
     })
   }
 
-  // Workflows sans catégorie parent → affichés directement en niveau 1
-  const otherWorkflows = availableWorkflows.filter(w => !w.parent_category)
+  // Workflows sans catégorie parent ET dont la catégorie est 'retours' (ou absente)
+  const otherWorkflows = availableWorkflows.filter(w => !w.parent_category && (!w.category || w.category === 'retours'))
 
   // Catégories visibles = celles qui ont au moins un workflow actif rattaché
   const visibleLevel1Items = level1Items.filter(item => {
