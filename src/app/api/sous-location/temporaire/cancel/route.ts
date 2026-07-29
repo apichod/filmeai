@@ -13,12 +13,13 @@ function headers() {
 }
 
 export type CancelRequest = {
-  tracking_type:   'trackable' | 'bulk'
-  product_id:      string
-  location_id:     string
-  stock_count:     number
-  from:            string | null
-  till:            string | null
+  tracking_type:    'trackable' | 'bulk'
+  product_id:       string
+  product_group_id: string
+  location_id:      string
+  stock_count:      number
+  from:             string | null
+  till:             string | null
   confirm_shortage?: boolean
 }
 
@@ -35,7 +36,7 @@ export type CancelRequest = {
  */
 export async function POST(req: NextRequest) {
   const body = await req.json() as CancelRequest
-  const { tracking_type, product_id, location_id, stock_count, from, till, confirm_shortage = false } = body
+  const { tracking_type, product_id, product_group_id, location_id, stock_count, from, till, confirm_shortage = false } = body
 
   if (!product_id || !location_id) {
     return NextResponse.json({ error: 'product_id et location_id requis' }, { status: 400 })
@@ -105,35 +106,54 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // ── Bulk : ajustement inverse via boomerang ────────────────────────────────
-  // La V4 /stock_adjustments attend les relations JSON:API ; le endpoint boomerang
-  // accepte product_id/location_id directement en attributs plats.
-  const adjBody = {
-    data: {
-      type: 'stock_adjustments',
-      attributes: {
-        product_id,
-        location_id,
-        quantity:         -Math.abs(stock_count),
-        ...(from ? { from } : {}),
-        ...(till ? { till } : {}),
-        confirm_shortage,
+  // ── Bulk : ajustement inverse ──────────────────────────────────────────────
+  // Essaie product_group_id en priorité (attendu par boomerang stock_adjustments),
+  // puis product_id si le premier échoue.
+  const effectiveProductId = product_group_id || product_id
+
+  async function tryAdjustment(pid: string) {
+    const body = {
+      data: {
+        type: 'stock_adjustments',
+        attributes: {
+          product_id:       pid,
+          location_id,
+          quantity:         -Math.abs(stock_count),
+          ...(from ? { from } : {}),
+          ...(till ? { till } : {}),
+          confirm_shortage,
+        },
       },
-    },
+    }
+    return fetch(`${BASE_BM}/stock_adjustments`, {
+      method:  'POST',
+      headers: headers(),
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(10000),
+    })
   }
 
-  const adjRes = await fetch(`${BASE_BM}/stock_adjustments`, {
-    method:  'POST',
-    headers: headers(),
-    body:    JSON.stringify(adjBody),
-    signal:  AbortSignal.timeout(10000),
-  })
+  let adjRes = await tryAdjustment(effectiveProductId)
+
+  // Si le premier échoue avec l'erreur "products/product group" et qu'on a un fallback, réessaie
+  if (!adjRes.ok && effectiveProductId !== product_id) {
+    const peek = await adjRes.text()
+    if (peek.includes('product')) {
+      adjRes = await tryAdjustment(product_id)
+    } else {
+      // Autre erreur — parse et retourne
+      let detail = peek
+      try { detail = (JSON.parse(peek) as { errors?: Array<{ detail?: string }> }).errors?.[0]?.detail ?? peek } catch { /* ignore */ }
+      const isShortage = detail.toLowerCase().includes('shortage')
+      return NextResponse.json({ error: detail, shortage: isShortage }, { status: 422 })
+    }
+  }
 
   if (!adjRes.ok) {
     const text = await adjRes.text()
     let detail = text
     try { detail = (JSON.parse(text) as { errors?: Array<{ detail?: string }> }).errors?.[0]?.detail ?? text } catch { /* ignore */ }
-    const isShortage = detail.toLowerCase().includes('shortage') || detail.toLowerCase().includes('pénurie')
+    const isShortage = detail.toLowerCase().includes('shortage')
     return NextResponse.json({ error: detail, shortage: isShortage }, { status: 422 })
   }
 
