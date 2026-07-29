@@ -1635,6 +1635,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   }, [primaryTag, storageKey])
 
   useEffect(() => {
+    let lastSyncedAt: string | null = null
     try {
       const stored = localStorage.getItem(storageKey)
       if (stored) {
@@ -1642,10 +1643,12 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
         setAllRows(parsed.rows)
         setSyncedAt(parsed.syncedAt)
         setSynced(true)
+        lastSyncedAt = parsed.syncedAt
       }
     } catch { /* ignore */ }
-    // Auto-sync au chargement
-    void sync()
+    // Auto-sync sauf si dernière sync < 2 minutes
+    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 2 * 60 * 1000
+    if (!tooRecent) void sync()
   }, [sync])
 
   // Filtre côté client par tag secondaire
@@ -2084,6 +2087,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
   }, [tags, storageKey])
 
   useEffect(() => {
+    let lastSyncedAt: string | null = null
     try {
       const stored = localStorage.getItem(storageKey)
       if (stored) {
@@ -2091,10 +2095,12 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
         setAllRows(parsed.rows)
         setSyncedAt(parsed.syncedAt)
         setSynced(true)
+        lastSyncedAt = parsed.syncedAt
       }
     } catch { /* ignore */ }
-    // Auto-sync au chargement
-    void sync()
+    // Auto-sync sauf si dernière sync < 2 minutes
+    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 2 * 60 * 1000
+    if (!tooRecent) void sync()
   }, [sync, storageKey])
 
   function fmtDate(iso: string) {

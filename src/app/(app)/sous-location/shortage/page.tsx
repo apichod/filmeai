@@ -58,6 +58,7 @@ export default function ShortageTable() {
 
   useEffect(() => {
     // Cache localStorage affiché immédiatement pendant le fetch
+    let lastSyncedAt: string | null = null
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
@@ -65,14 +66,16 @@ export default function ShortageTable() {
         setItems(parsed.items)
         setSyncedAt(parsed.syncedAt)
         setSynced(true)
+        lastSyncedAt = parsed.syncedAt
       }
     } catch { /* ignore */ }
     fetch('/api/sous-location/product-notes')
       .then(r => r.json())
       .then((d: { notes?: Record<string, string> }) => { if (d.notes) setNotes(d.notes) })
       .catch(() => { /* silencieux */ })
-    // Auto-sync au chargement
-    void sync()
+    // Auto-sync sauf si dernière sync < 2 minutes
+    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 2 * 60 * 1000
+    if (!tooRecent) void sync()
   }, [sync])
 
   async function saveNote(productId: string, note: string) {
