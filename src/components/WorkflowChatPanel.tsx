@@ -695,7 +695,9 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
             <div className="max-w-[80%] space-y-1.5">
               {msg.toolCalls && msg.toolCalls.length > 0 && (
                 <div className="space-y-1">
-                  {msg.toolCalls.map((tc, i) => {
+                  {msg.toolCalls.filter(tc => {
+                    try { return (JSON.parse(tc.result ?? '') as Record<string, unknown>).__type__ !== 'redirect' } catch { return true }
+                  }).map((tc, i) => {
                     const status  = toolStatus(tc.result)
                     const summary = toolSummary(tc.name, tc.result)
                     return (
