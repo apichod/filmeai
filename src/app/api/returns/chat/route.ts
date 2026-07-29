@@ -1589,7 +1589,7 @@ Affiche les {{...}} littéralement, toujours.`
             // Si le résultat est un choix ou un éditeur email → SSE + waiting_for_input + pas d'avance
             let isChoicesResult = false
             try {
-              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; document_id?: string; name?: string; output_var?: string; placeholder?: string; unit?: string }
+              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; document_id?: string; name?: string; output_var?: string; placeholder?: string; unit?: string; url?: string }
               if (choicesParsed.__type__ === 'choices') {
                 const promptText = codeStep.description ?? choicesParsed.message ?? codeStep.title ?? ''
                 if (promptText) send(JSON.stringify({ type: 'text', content: promptText }))
@@ -1613,6 +1613,10 @@ Affiche les {{...}} littéralement, toujours.`
                 send(JSON.stringify({ type: 'email_preview', document_id: choicesParsed.document_id ?? '', subject: choicesParsed.subject ?? '', body: choicesParsed.body ?? '', name: choicesParsed.name ?? '' }))
                 wfState = { ...wfState, status: 'waiting_for_input' }
                 isChoicesResult = true
+              }
+              if (choicesParsed.__type__ === 'redirect') {
+                send(JSON.stringify({ type: 'redirect', url: choicesParsed.url ?? '' }))
+                // Pas de waiting_for_input — le workflow avance normalement
               }
             } catch { /* pas JSON */ }
 
@@ -1836,7 +1840,7 @@ Affiche les {{...}} littéralement, toujours.`
               // → waiting_for_input, ne pas avancer l'étape
               let isChoicesResultAI = false
               try {
-                const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean; subject?: string; body?: string }
+                const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean; subject?: string; body?: string; url?: string }
                 if (parsed.__type__ === 'choices') {
                   send(JSON.stringify({ type: 'choices', order_id: parsed.order_id, items: parsed.items, multiSelect: parsed.multiSelect ?? false }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
@@ -1846,6 +1850,9 @@ Affiche les {{...}} littéralement, toujours.`
                   send(JSON.stringify({ type: 'email_editor', subject: parsed.subject ?? '', body: parsed.body ?? '' }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   isChoicesResultAI = true
+                }
+                if (parsed.__type__ === 'redirect') {
+                  send(JSON.stringify({ type: 'redirect', url: parsed.url ?? '' }))
                 }
               } catch { /* pas JSON, continuer */ }
 
@@ -1914,7 +1921,7 @@ Affiche les {{...}} littéralement, toujours.`
               // choices / email_editor → SSE + waiting_for_input, pas d'avance
               let postIsChoices = false
               try {
-                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; output_var?: string; placeholder?: string; unit?: string }
+                const postParsed = JSON.parse(codeRes.resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; output_var?: string; placeholder?: string; unit?: string; url?: string }
                 if (postParsed.__type__ === 'choices') {
                   const postPrompt = postCodeStep.description ?? postParsed.message ?? postCodeStep.title ?? ''
                   if (postPrompt) send(JSON.stringify({ type: 'text', content: postPrompt }))
@@ -1933,6 +1940,9 @@ Affiche les {{...}} littéralement, toujours.`
                   send(JSON.stringify({ type: 'email_editor', subject: postParsed.subject ?? '', body: postParsed.body ?? '' }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
                   postIsChoices = true
+                }
+                if (postParsed.__type__ === 'redirect') {
+                  send(JSON.stringify({ type: 'redirect', url: postParsed.url ?? '' }))
                 }
               } catch { /* pas JSON */ }
 

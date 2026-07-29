@@ -29,6 +29,7 @@ type StreamEvent =
   | { type: 'text_input'; output_var: string; placeholder: string; unit: string }
   | { type: 'email_editor'; subject: string; body: string }
   | { type: 'email_preview'; document_id: string; subject: string; body: string; name: string }
+  | { type: 'redirect'; url: string }
   | { type: 'done'; caseId: string | null; workflowState?: WorkflowState | null }
   | { type: 'error'; message: string }
 
@@ -350,6 +351,9 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
                 ? { ...m, emailPreview: { document_id: event.document_id, subject: event.subject, body: event.body, name: event.name } }
                 : m
             ))
+          }
+          if (event.type === 'redirect') {
+            window.location.href = event.url
           }
           if (event.type === 'done') {
             finishedCaseId = event.caseId

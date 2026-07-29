@@ -374,6 +374,13 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['selected_ids', 'lines'],
     writes: ['kept_product_names', 'sav_tag'],
   },
+  redirect_url: {
+    label:  'Rediriger le navigateur vers une URL',
+    reads:  [],
+    writes: [],
+    // Param requis : url (string, supporte les placeholders {context.field} interpolés depuis vars)
+    // Ex: { url: "https://filme.booqable.com/orders/{parent.id}" }
+  },
 }
 
 // ── Évaluateur de conditions ──────────────────────────────────────────────────

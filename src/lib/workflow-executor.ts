@@ -1328,6 +1328,14 @@ export async function executeCodeStep(
         })
       }
 
+      case 'redirect_url': {
+        const rawUrl = String(params.url ?? '')
+        if (!rawUrl) return err('redirect_url : paramètre url manquant')
+        // Interpoler les placeholders {context.field} depuis vars
+        const url = rawUrl.replace(/\{([^}]+)\}/g, (_: string, key: string) => vars[key] ?? '')
+        return ok({ __type__: 'redirect', url, message: `↗ Redirection vers ${url}` })
+      }
+
       default:
         return err(`Action "${step.booqable_action}" non supportée en mode code`)
     }
