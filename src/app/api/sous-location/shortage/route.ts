@@ -18,6 +18,8 @@ export type ShortageItem = {
   order_number:     number
   customer_name:    string
   item_name:        string
+  product_id:       string
+  location_id:      string
   quantity:         number
   shortage_amount:  number
   starts_at:        string
@@ -64,10 +66,11 @@ export async function GET() {
 
   // ── Étape 2 : plannings en shortage pour chaque commande (parallèle) ────────
   const results = await Promise.all(orders.map(async order => {
-    const a           = order.attributes as OrderAttrs
-    const orderNumber = Number(a.number ?? 0)
+    const a            = order.attributes as OrderAttrs
+    const orderNumber  = Number(a.number ?? 0)
     const customerName = customerMap.get(String(a.customer_id ?? '')) ?? '—'
-    const orderUrl    = `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`
+    const orderUrl     = `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`
+    const locationId   = String(a.start_location_id ?? '')
 
     const planUrl =
       `${BASE_BM}/plannings` +
@@ -101,6 +104,8 @@ export async function GET() {
           order_number:    orderNumber,
           customer_name:   customerName,
           item_name:       itemMap.get(itemId) ?? itemId,
+          product_id:      itemId,
+          location_id:     locationId,
           quantity:        Number(pa.quantity             ?? 0),
           shortage_amount: Number(pa.location_shortage_amount ?? 0),
           starts_at:       String(pa.starts_at ?? a.starts_at ?? ''),
@@ -131,7 +136,7 @@ type V4Resource = {
 }
 type V4Response = { data?: V4Resource[]; included?: V4Resource[] }
 
-type OrderAttrs    = { number?: number; starts_at?: string; stops_at?: string; customer_id?: string }
+type OrderAttrs    = { number?: number; starts_at?: string; stops_at?: string; customer_id?: string; start_location_id?: string }
 type CustomerAttrs = { name?: string }
 type PlanningAttrs = { quantity?: number; location_shortage_amount?: number; starts_at?: string; stops_at?: string }
 type ItemAttrs     = { name?: string }
