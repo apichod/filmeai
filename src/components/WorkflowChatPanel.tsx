@@ -29,7 +29,7 @@ type StreamEvent =
   | { type: 'text_input'; output_var: string; placeholder: string; unit: string }
   | { type: 'email_editor'; subject: string; body: string }
   | { type: 'email_preview'; document_id: string; subject: string; body: string; name: string }
-  | { type: 'redirect'; url: string }
+  | { type: 'redirect'; url: string; message?: string }
   | { type: 'done'; caseId: string | null; workflowState?: WorkflowState | null }
   | { type: 'error'; message: string }
 
@@ -40,6 +40,7 @@ type ChatMessage = {
   toolCalls?: { name: string; result?: string }[]
   emailEditor?: { subject: string; body: string }
   emailPreview?: { document_id: string; subject: string; body: string; name: string }
+  redirectAction?: { url: string; label: string }
   workflowDone?: boolean
 }
 
@@ -354,7 +355,12 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
             ))
           }
           if (event.type === 'redirect') {
-            window.location.href = event.url
+            const label = event.message || '↗ Ouvrir'
+            setMessages(prev => prev.map(m =>
+              m.id === assistantId
+                ? { ...m, content: label, redirectAction: { url: event.url, label } }
+                : m
+            ))
           }
           if (event.type === 'done') {
             finishedCaseId = event.caseId
@@ -709,6 +715,18 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
                       </div>
                     )
                   })}
+                </div>
+              )}
+              {/* Bouton de redirection */}
+              {msg.redirectAction && (
+                <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                  <span className="text-sm text-gray-700 flex-1">{msg.redirectAction.label}</span>
+                  <button
+                    onClick={() => { window.location.href = msg.redirectAction!.url }}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors whitespace-nowrap"
+                  >
+                    Ouvrir ↗
+                  </button>
                 </div>
               )}
               {/* Éditeur email */}

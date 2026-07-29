@@ -1589,7 +1589,7 @@ Affiche les {{...}} littéralement, toujours.`
             // Si le résultat est un choix ou un éditeur email → SSE + waiting_for_input + pas d'avance
             let isChoicesResult = false
             try {
-              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; document_id?: string; name?: string; output_var?: string; placeholder?: string; unit?: string; url?: string }
+              const choicesParsed = JSON.parse(resultText) as { __type__?: string; items?: unknown; order_id?: string; message?: string; multiSelect?: boolean; subject?: string; body?: string; document_id?: string; name?: string; output_var?: string; placeholder?: string; unit?: string; url?: string; redirect_message?: string }
               if (choicesParsed.__type__ === 'choices') {
                 const promptText = codeStep.description ?? choicesParsed.message ?? codeStep.title ?? ''
                 if (promptText) send(JSON.stringify({ type: 'text', content: promptText }))
@@ -1615,7 +1615,7 @@ Affiche les {{...}} littéralement, toujours.`
                 isChoicesResult = true
               }
               if (choicesParsed.__type__ === 'redirect') {
-                send(JSON.stringify({ type: 'redirect', url: choicesParsed.url ?? '' }))
+                send(JSON.stringify({ type: 'redirect', url: choicesParsed.url ?? '', message: choicesParsed.message ?? '' }))
                 wfState = { ...wfState, status: 'completed' }
                 isChoicesResult = true  // empêche advanceStep
               }
@@ -1841,7 +1841,7 @@ Affiche les {{...}} littéralement, toujours.`
               // → waiting_for_input, ne pas avancer l'étape
               let isChoicesResultAI = false
               try {
-                const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean; subject?: string; body?: string; url?: string }
+                const parsed = JSON.parse(result) as { __type__?: string; items?: unknown; order_id?: string; multiSelect?: boolean; subject?: string; body?: string; url?: string; message?: string }
                 if (parsed.__type__ === 'choices') {
                   send(JSON.stringify({ type: 'choices', order_id: parsed.order_id, items: parsed.items, multiSelect: parsed.multiSelect ?? false }))
                   wfState = { ...wfState, status: 'waiting_for_input' }
@@ -1853,7 +1853,7 @@ Affiche les {{...}} littéralement, toujours.`
                   isChoicesResultAI = true
                 }
                 if (parsed.__type__ === 'redirect') {
-                  send(JSON.stringify({ type: 'redirect', url: parsed.url ?? '' }))
+                  send(JSON.stringify({ type: 'redirect', url: parsed.url ?? '', message: parsed.message ?? '' }))
                   wfState = { ...wfState, status: 'completed' }
                   isChoicesResultAI = true  // empêche advanceStep et sort du loop
                 }
@@ -1945,7 +1945,7 @@ Affiche les {{...}} littéralement, toujours.`
                   postIsChoices = true
                 }
                 if (postParsed.__type__ === 'redirect') {
-                  send(JSON.stringify({ type: 'redirect', url: postParsed.url ?? '' }))
+                  send(JSON.stringify({ type: 'redirect', url: postParsed.url ?? '', message: postParsed.message ?? '' }))
                   wfState = { ...wfState, status: 'completed' }
                   postIsChoices = true  // empêche advanceStep
                 }

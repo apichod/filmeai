@@ -1333,7 +1333,8 @@ export async function executeCodeStep(
         if (!rawUrl) return err('redirect_url : paramètre url manquant')
         // Interpoler les placeholders {context.field} depuis vars
         const url = rawUrl.replace(/\{([^}]+)\}/g, (_: string, key: string) => vars[key] ?? '')
-        return ok({ __type__: 'redirect', url, message: `↗ Redirection vers ${url}` })
+        const message = String(params.message ?? '') || `↗ Redirection vers ${url}`
+        return ok({ __type__: 'redirect', url, message })
       }
 
       default:
