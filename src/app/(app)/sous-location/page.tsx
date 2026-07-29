@@ -145,7 +145,7 @@ function ShortageTable() {
   }
 
   function toggleRow(id: string) {
-    setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+    setSelected(prev => { const s = new Set(prev); if (s.has(id)) { s.delete(id) } else { s.add(id) } return s })
   }
   function toggleAll() {
     setSelected(selected.size === items.length ? new Set() : new Set(items.map(i => i.planning_id)))
