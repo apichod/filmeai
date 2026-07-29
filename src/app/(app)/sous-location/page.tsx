@@ -647,13 +647,15 @@ export default function SousLocationPage() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {tab === 'chat' && (
-          <div className="h-full" style={{ minHeight: '540px' }}>
-            <WorkflowChatPanel chatType="sous-location" />
-          </div>
-        )}
-        {tab === 'shortage'   && <ShortageTable />}
-        {tab === 'temporaire' && <TemporaireTable />}
+        <div className={tab === 'chat' ? 'h-full' : 'hidden'} style={{ minHeight: '540px' }}>
+          <WorkflowChatPanel chatType="sous-location" />
+        </div>
+        <div className={tab === 'shortage' ? '' : 'hidden'}>
+          <ShortageTable />
+        </div>
+        <div className={tab === 'temporaire' ? '' : 'hidden'}>
+          <TemporaireTable />
+        </div>
       </div>
     </div>
   )
