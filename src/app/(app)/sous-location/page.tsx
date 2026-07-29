@@ -5,20 +5,33 @@ import WorkflowChatPanel from '@/components/WorkflowChatPanel'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type TemporaireRow = {
-  id:            string
-  product_id:    string
-  product_name:  string
-  tracking_type: 'trackable' | 'bulk'
-  location_id:   string
-  location_name: string
-  stock_count:   number
-  from:          string | null
-  till:          string | null
-  status:        'expected' | 'in_stock' | 'expired'
+type ShortageRow = {
+  id:           string
+  number:       number
+  status:       string
+  starts_at:    string
+  stops_at:     string
+  customer_name: string
+  item_count:   number
+  grand_total_with_tax_in_cents: number
+  url:          string
 }
 
-type Tab = 'chat' | 'temporaire'
+type TemporaireRow = {
+  id:               string
+  product_id:       string
+  product_group_id: string
+  product_name:     string
+  tracking_type:    'trackable' | 'bulk'
+  location_id:      string
+  location_name:    string
+  stock_count:      number
+  from:             string | null
+  till:             string | null
+  status:           'expected' | 'in_stock' | 'expired'
+}
+
+type Tab = 'chat' | 'shortage' | 'temporaire'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -48,6 +61,163 @@ function TrackingBadge({ type }: { type: TemporaireRow['tracking_type'] }) {
     }`}>
       {type === 'trackable' ? 'Trackable' : 'Bulk'}
     </span>
+  )
+}
+
+// ── Table des pénuries ────────────────────────────────────────────────────────
+
+function ShortageTable() {
+  const [rows, setRows]         = useState<ShortageRow[]>([])
+  const [loading, setLoading]   = useState(false)
+  const [synced, setSynced]     = useState(false)
+  const [syncedAt, setSyncedAt] = useState<string | null>(null)
+  const [error, setError]       = useState<string | null>(null)
+
+  const STORAGE_KEY = 'bq_shortage_v1'
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as { rows: ShortageRow[]; syncedAt: string }
+        setRows(parsed.rows)
+        setSyncedAt(parsed.syncedAt)
+        setSynced(true)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  async function sync() {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await fetch('/api/sous-location/shortage').then(r => r.json()) as { rows?: ShortageRow[]; error?: string }
+      if (data.error) { setError(data.error); return }
+      const now = new Date().toISOString()
+      setRows(data.rows ?? [])
+      setSyncedAt(now)
+      setSynced(true)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ rows: data.rows ?? [], syncedAt: now }))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur réseau')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function formatPrice(cents: number) {
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(cents / 100)
+  }
+
+  function statusLabel(s: string) {
+    if (s === 'reserved') return 'Réservé'
+    if (s === 'draft')    return 'Brouillon'
+    return s
+  }
+
+  function statusClass(s: string) {
+    if (s === 'reserved') return 'bg-blue-50 text-blue-700'
+    return 'bg-amber-50 text-amber-700'
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {synced && syncedAt && (
+            <span className="text-sm text-gray-500">
+              Sync : {new Date(syncedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+          {synced && (
+            <span className="text-sm font-semibold text-red-600">
+              {rows.length} commande{rows.length > 1 ? 's' : ''} en pénurie
+            </span>
+          )}
+        </div>
+        <button
+          onClick={sync}
+          disabled={loading}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+        >
+          {loading ? (
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          )}
+          {loading ? 'Synchronisation…' : 'Synchroniser'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+      )}
+
+      {!synced && !loading && (
+        <div className="p-10 text-center text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
+          Cliquez sur <strong>Synchroniser</strong> pour charger les commandes en pénurie.
+        </div>
+      )}
+
+      {synced && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Commande</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Client</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Statut</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Début</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Fin</th>
+                <th className="text-center px-4 py-3 font-semibold text-gray-700">Articles</th>
+                <th className="text-right px-4 py-3 font-semibold text-gray-700">Montant TTC</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-14 text-center text-gray-400">
+                    Aucune commande en pénurie. 🎉
+                  </td>
+                </tr>
+              ) : (
+                rows.map(row => (
+                  <tr key={row.id} className="hover:bg-red-50/30 transition-colors">
+                    <td className="px-4 py-3 font-semibold text-gray-900">#{row.number}</td>
+                    <td className="px-4 py-3 text-gray-700">{row.customer_name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusClass(row.status)}`}>
+                        {statusLabel(row.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(row.starts_at)}</td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(row.stops_at)}</td>
+                    <td className="px-4 py-3 text-center text-gray-700">{row.item_count}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">{formatPrice(row.grand_total_with_tax_in_cents)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <a
+                        href={row.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium text-gray-500 hover:text-black border border-gray-200 rounded px-2.5 py-1 hover:border-gray-400 transition-colors"
+                      >
+                        Voir ↗
+                      </a>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -108,6 +278,7 @@ function TemporaireTable() {
         body: JSON.stringify({
           tracking_type:    row.tracking_type,
           product_id:       row.product_id,
+          product_group_id: row.product_group_id,
           location_id:      row.location_id,
           stock_count:      row.stock_count,
           from:             row.from,
@@ -315,6 +486,7 @@ export default function SousLocationPage() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',       label: 'Chat' },
+    { id: 'shortage',   label: 'Shortage' },
     { id: 'temporaire', label: 'Temporaire' },
   ]
 
@@ -348,6 +520,7 @@ export default function SousLocationPage() {
             <WorkflowChatPanel chatType="sous-location" />
           </div>
         )}
+        {tab === 'shortage'   && <ShortageTable />}
         {tab === 'temporaire' && <TemporaireTable />}
       </div>
     </div>
