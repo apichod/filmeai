@@ -287,7 +287,7 @@ function TemporaireTable() {
   const [synced, setSynced]     = useState(false)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'in_stock' | 'expected' | 'expired'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'in_stock' | 'expected' | 'expired'>('in_stock')
 
   // Confirmation / suppression
   const [confirming, setConfirming]   = useState<string | null>(null) // row.id en cours
@@ -413,10 +413,10 @@ function TemporaireTable() {
           {/* Filtres statut */}
           <div className="flex gap-1">
             {([
-              { id: 'all',      label: `Tous (${counts.all})`           },
               { id: 'in_stock', label: `Actifs (${counts.in_stock})`    },
               { id: 'expected', label: `À venir (${counts.expected})`   },
               { id: 'expired',  label: `Expirés (${counts.expired})`    },
+              { id: 'all',      label: `Tous (${counts.all})`           },
             ] as { id: typeof statusFilter; label: string }[]).map(f => (
               <button
                 key={f.id}
