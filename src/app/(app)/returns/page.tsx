@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUserRole } from '@/lib/user-role-context'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -1614,20 +1614,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
     }
   }
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(storageKey)
-      if (stored) {
-        const parsed = JSON.parse(stored) as { rows: BooqableOrderRow[]; syncedAt: string }
-        setAllRows(parsed.rows)
-        setSyncedAt(parsed.syncedAt)
-        setSynced(true)
-      }
-    } catch { /* ignore */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function sync() {
+  const sync = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -1645,7 +1632,21 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [primaryTag, storageKey])
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey)
+      if (stored) {
+        const parsed = JSON.parse(stored) as { rows: BooqableOrderRow[]; syncedAt: string }
+        setAllRows(parsed.rows)
+        setSyncedAt(parsed.syncedAt)
+        setSynced(true)
+      }
+    } catch { /* ignore */ }
+    // Auto-sync au chargement
+    void sync()
+  }, [sync])
 
   // Filtre côté client par tag secondaire
   const rows = filterTag
@@ -2057,19 +2058,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
     }
   }
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(storageKey)
-      if (stored) {
-        const parsed = JSON.parse(stored) as { rows: TaggedOrderRow[]; syncedAt: string }
-        setAllRows(parsed.rows)
-        setSyncedAt(parsed.syncedAt)
-        setSynced(true)
-      }
-    } catch { /* ignore */ }
-  }, [storageKey])
-
-  async function sync() {
+  const sync = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -2092,7 +2081,21 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
     } finally {
       setLoading(false)
     }
-  }
+  }, [tags, storageKey])
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey)
+      if (stored) {
+        const parsed = JSON.parse(stored) as { rows: TaggedOrderRow[]; syncedAt: string }
+        setAllRows(parsed.rows)
+        setSyncedAt(parsed.syncedAt)
+        setSynced(true)
+      }
+    } catch { /* ignore */ }
+    // Auto-sync au chargement
+    void sync()
+  }, [sync, storageKey])
 
   function fmtDate(iso: string) {
     const d = parseFrDate(iso)
