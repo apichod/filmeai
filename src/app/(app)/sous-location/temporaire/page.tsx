@@ -62,36 +62,7 @@ export default function TemporaireTable() {
 
   const STORAGE_KEY = 'bq_temporaire_v1'
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored) as { rows: TemporaireRow[]; syncedAt: string }
-        setRows(parsed.rows)
-        setSyncedAt(parsed.syncedAt)
-        setSynced(true)
-      }
-    } catch { /* ignore */ }
-    fetch('/api/sous-location/product-notes')
-      .then(r => r.json())
-      .then((d: { notes?: Record<string, string> }) => { if (d.notes) setNotes(d.notes) })
-      .catch(() => { /* silencieux */ })
-  }, [])
-
-  async function saveNote(productId: string, note: string) {
-    setSavingNote(productId)
-    try {
-      await fetch('/api/sous-location/product-notes', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ product_id: productId, note }),
-      })
-    } finally {
-      setSavingNote(null)
-    }
-  }
-
-  async function sync() {
+  const sync = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -106,6 +77,37 @@ export default function TemporaireTable() {
       setError(e instanceof Error ? e.message : 'Erreur réseau')
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as { rows: TemporaireRow[]; syncedAt: string }
+        setRows(parsed.rows)
+        setSyncedAt(parsed.syncedAt)
+        setSynced(true)
+      }
+    } catch { /* ignore */ }
+    fetch('/api/sous-location/product-notes')
+      .then(r => r.json())
+      .then((d: { notes?: Record<string, string> }) => { if (d.notes) setNotes(d.notes) })
+      .catch(() => { /* silencieux */ })
+    // Auto-sync au chargement
+    void sync()
+  }, [sync])
+
+  async function saveNote(productId: string, note: string) {
+    setSavingNote(productId)
+    try {
+      await fetch('/api/sous-location/product-notes', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ product_id: productId, note }),
+      })
+    } finally {
+      setSavingNote(null)
     }
   }
 

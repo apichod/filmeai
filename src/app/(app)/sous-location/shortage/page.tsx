@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 type ShortageItem = {
   planning_id:     string
@@ -36,36 +36,7 @@ export default function ShortageTable() {
 
   const STORAGE_KEY = 'bq_shortage_v2'
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored) as { items: ShortageItem[]; syncedAt: string }
-        setItems(parsed.items)
-        setSyncedAt(parsed.syncedAt)
-        setSynced(true)
-      }
-    } catch { /* ignore */ }
-    fetch('/api/sous-location/product-notes')
-      .then(r => r.json())
-      .then((d: { notes?: Record<string, string> }) => { if (d.notes) setNotes(d.notes) })
-      .catch(() => { /* silencieux */ })
-  }, [])
-
-  async function saveNote(productId: string, note: string) {
-    setSavingNote(productId)
-    try {
-      await fetch('/api/sous-location/product-notes', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ product_id: productId, note }),
-      })
-    } finally {
-      setSavingNote(null)
-    }
-  }
-
-  async function sync() {
+  const sync = useCallback(async () => {
     setLoading(true)
     setError(null)
     setCreateMsg(null)
@@ -83,7 +54,40 @@ export default function ShortageTable() {
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    // Cache localStorage affiché immédiatement pendant le fetch
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as { items: ShortageItem[]; syncedAt: string }
+        setItems(parsed.items)
+        setSyncedAt(parsed.syncedAt)
+        setSynced(true)
+      }
+    } catch { /* ignore */ }
+    fetch('/api/sous-location/product-notes')
+      .then(r => r.json())
+      .then((d: { notes?: Record<string, string> }) => { if (d.notes) setNotes(d.notes) })
+      .catch(() => { /* silencieux */ })
+    // Auto-sync au chargement
+    void sync()
+  }, [sync])
+
+  async function saveNote(productId: string, note: string) {
+    setSavingNote(productId)
+    try {
+      await fetch('/api/sous-location/product-notes', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ product_id: productId, note }),
+      })
+    } finally {
+      setSavingNote(null)
+    }
   }
+
 
   async function createTemporaires() {
     if (selected.size === 0) return
