@@ -479,8 +479,8 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
 
   // ── Menu piloté par Supabase ───────────────────────────────────────────────
 
-  // Filtre strict : uniquement les workflows de la bonne catégorie
-  const chatWorkflows = availableWorkflows.filter(w => w.category === chatType)
+  // Workflows de la bonne catégorie + workflows sans catégorie (globaux, niveau 1 universel)
+  const chatWorkflows = availableWorkflows.filter(w => w.category === chatType || !w.category)
 
   const level2Map: Record<string, SubOption[]> = {}
   for (const wf of chatWorkflows) {
