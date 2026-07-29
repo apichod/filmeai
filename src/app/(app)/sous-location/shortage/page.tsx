@@ -33,6 +33,8 @@ export default function ShortageTable() {
   const [createMsg, setCreateMsg]   = useState<string | null>(null)
   const [notes, setNotes]           = useState<Record<string, string>>({})
   const [savingNote, setSavingNote] = useState<string | null>(null)
+  const [references, setReferences] = useState<Record<string, string>>({})
+  const [savingRef, setSavingRef]   = useState<string | null>(null)
 
   const STORAGE_KEY = 'bq_shortage_v2'
 
@@ -71,7 +73,10 @@ export default function ShortageTable() {
     } catch { /* ignore */ }
     fetch('/api/sous-location/product-notes')
       .then(r => r.json())
-      .then((d: { notes?: Record<string, string> }) => { if (d.notes) setNotes(d.notes) })
+      .then((d: { notes?: Record<string, string>; references?: Record<string, string> }) => {
+        if (d.notes)      setNotes(d.notes)
+        if (d.references) setReferences(d.references)
+      })
       .catch(() => { /* silencieux */ })
     // Auto-sync sauf si dernière sync < 2 minutes
     const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 5 * 60 * 1000
@@ -88,6 +93,19 @@ export default function ShortageTable() {
       })
     } finally {
       setSavingNote(null)
+    }
+  }
+
+  async function saveReference(productId: string, reference: string) {
+    setSavingRef(productId)
+    try {
+      await fetch('/api/sous-location/product-notes', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ product_id: productId, reference }),
+      })
+    } finally {
+      setSavingRef(null)
     }
   }
 
@@ -209,14 +227,15 @@ export default function ShortageTable() {
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Client</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Début</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Fin</th>
-                <th className="text-left px-4 py-3 font-semibold text-gray-700">Source sous-location</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Sous-location</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Référence</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-14 text-center text-gray-400">
+                  <td colSpan={11} className="px-4 py-14 text-center text-gray-400">
                     Aucun article en pénurie. 🎉
                   </td>
                 </tr>
@@ -253,6 +272,21 @@ export default function ShortageTable() {
                           className="w-full text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-gray-400 bg-white placeholder-gray-300"
                         />
                         {savingNote === item.product_id && (
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">⏳</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 min-w-[160px]" onClick={e => e.stopPropagation()}>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Réf…"
+                          value={references[item.product_id] ?? ''}
+                          onChange={e => setReferences(prev => ({ ...prev, [item.product_id]: e.target.value }))}
+                          onBlur={e => { void saveReference(item.product_id, e.target.value) }}
+                          className="w-full text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-gray-400 bg-white placeholder-gray-300"
+                        />
+                        {savingRef === item.product_id && (
                           <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">⏳</span>
                         )}
                       </div>
