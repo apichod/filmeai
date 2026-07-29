@@ -746,9 +746,11 @@ function ChatPanel() {
   }
 
   // ── Menu dynamique piloté par Supabase ─────────────────────────────────────
+  // Même règle générique que WorkflowChatPanel : category === chatType OU pas de category
+  const retourWorkflows = availableWorkflows.filter(w => !w.category || w.category === 'retours')
   // Level 2 : workflows groupés par parent_category
   const level2Map: Record<string, SubOption[]> = {}
-  for (const wf of availableWorkflows) {
+  for (const wf of retourWorkflows) {
     if (!wf.parent_category) continue
     if (!level2Map[wf.parent_category]) level2Map[wf.parent_category] = []
     level2Map[wf.parent_category].push({
@@ -758,8 +760,8 @@ function ChatPanel() {
     })
   }
 
-  // Workflows sans catégorie parent ET dont la catégorie est 'retours' (ou absente)
-  const otherWorkflows = availableWorkflows.filter(w => !w.parent_category && (!w.category || w.category === 'retours'))
+  // Workflows sans catégorie parent → affichés directement en niveau 1
+  const otherWorkflows = retourWorkflows.filter(w => !w.parent_category)
 
   // Catégories visibles = celles qui ont au moins un workflow actif rattaché
   const visibleLevel1Items = level1Items.filter(item => {
