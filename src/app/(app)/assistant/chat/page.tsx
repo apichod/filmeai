@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-type ChatType = 'retours' | 'planning'
+type ChatType = 'retours' | 'planning' | 'sous-location'
 
 type Category = {
   id: string
@@ -181,7 +181,7 @@ export default function ChatPage() {
 
       {/* Tabs Retours / Planning */}
       <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm font-medium w-fit">
-        {(['retours', 'planning'] as ChatType[]).map(tab => (
+        {(['retours', 'planning', 'sous-location'] as ChatType[]).map(tab => (
           <button
             key={tab}
             onClick={() => { setActiveTab(tab); setShowForm(false); setEditingId(null) }}
@@ -189,7 +189,7 @@ export default function ChatPage() {
               activeTab === tab ? 'bg-black text-white' : 'text-gray-500 hover:bg-gray-50'
             }`}
           >
-            {tab === 'retours' ? 'Assistant retours' : 'Assistant planning'}
+            {tab === 'retours' ? 'Assistant retours' : tab === 'planning' ? 'Assistant planning' : 'Sous-location'}
           </button>
         ))}
       </div>

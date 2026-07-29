@@ -348,7 +348,7 @@ const TOOL_DOC: Record<string, string> = {
   add_product_insurance_8:          'Ajoute la ligne assurance FILME (product_group_id fixe) et fixe automatiquement son prix à 8% du montant HT. Lire grand_total_euros_HT depuis fetch_original_amount_HT avant d\'appeler ce step.',
 }
 
-type WorkflowCategory = 'retours' | 'planning'
+type WorkflowCategory = 'retours' | 'planning' | 'sous-location'
 
 type Workflow = {
   id: string
@@ -1140,7 +1140,7 @@ export default function WorkflowsPage() {
         <div className="w-52 shrink-0">
           {/* Tabs Retours / Planning */}
           <div className="flex mb-3 border border-gray-200 rounded-lg overflow-hidden text-xs font-medium">
-            {(['retours', 'planning'] as WorkflowCategory[]).map(tab => (
+            {(['retours', 'planning', 'sous-location'] as WorkflowCategory[]).map(tab => (
               <button
                 key={tab}
                 onClick={() => {
@@ -1155,7 +1155,7 @@ export default function WorkflowsPage() {
                     : 'text-gray-500 hover:bg-gray-50'
                 }`}
               >
-                {tab === 'retours' ? 'Retours' : 'Planning'}
+                {tab === 'retours' ? 'Retours' : tab === 'planning' ? 'Planning' : 'Sous-location'}
               </button>
             ))}
           </div>
@@ -1251,6 +1251,7 @@ export default function WorkflowsPage() {
                   >
                     <option value="retours">Retours</option>
                     <option value="planning">Planning</option>
+                    <option value="sous-location">Sous-location</option>
                   </select>
                 </div>
               </div>
