@@ -74,7 +74,7 @@ export default function ShortageTable() {
       .then((d: { notes?: Record<string, string> }) => { if (d.notes) setNotes(d.notes) })
       .catch(() => { /* silencieux */ })
     // Auto-sync sauf si dernière sync < 2 minutes
-    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 2 * 60 * 1000
+    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 5 * 60 * 1000
     if (!tooRecent) void sync()
   }, [sync])
 

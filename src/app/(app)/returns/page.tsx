@@ -1647,7 +1647,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
       }
     } catch { /* ignore */ }
     // Auto-sync sauf si dernière sync < 2 minutes
-    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 2 * 60 * 1000
+    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 5 * 60 * 1000
     if (!tooRecent) void sync()
   }, [sync])
 
@@ -2099,7 +2099,7 @@ function MultiTagBooqableOrdersTable({ tags, showPaymentStatus = false, showPaym
       }
     } catch { /* ignore */ }
     // Auto-sync sauf si dernière sync < 2 minutes
-    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 2 * 60 * 1000
+    const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 5 * 60 * 1000
     if (!tooRecent) void sync()
   }, [sync, storageKey])
 
