@@ -5,16 +5,17 @@ import WorkflowChatPanel from '@/components/WorkflowChatPanel'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type ShortageRow = {
-  id:           string
-  number:       number
-  status:       string
-  starts_at:    string
-  stops_at:     string
-  customer_name: string
-  item_count:   number
-  grand_total_with_tax_in_cents: number
-  url:          string
+type ShortageItem = {
+  planning_id:     string
+  order_id:        string
+  order_number:    number
+  customer_name:   string
+  item_name:       string
+  quantity:        number
+  shortage_amount: number
+  starts_at:       string
+  stops_at:        string
+  order_url:       string
 }
 
 type TemporaireRow = {
@@ -67,20 +68,20 @@ function TrackingBadge({ type }: { type: TemporaireRow['tracking_type'] }) {
 // ── Table des pénuries ────────────────────────────────────────────────────────
 
 function ShortageTable() {
-  const [rows, setRows]         = useState<ShortageRow[]>([])
+  const [items, setItems]       = useState<ShortageItem[]>([])
   const [loading, setLoading]   = useState(false)
   const [synced, setSynced]     = useState(false)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
 
-  const STORAGE_KEY = 'bq_shortage_v1'
+  const STORAGE_KEY = 'bq_shortage_v2'
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
-        const parsed = JSON.parse(stored) as { rows: ShortageRow[]; syncedAt: string }
-        setRows(parsed.rows)
+        const parsed = JSON.parse(stored) as { items: ShortageItem[]; syncedAt: string }
+        setItems(parsed.items)
         setSyncedAt(parsed.syncedAt)
         setSynced(true)
       }
@@ -91,13 +92,13 @@ function ShortageTable() {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetch('/api/sous-location/shortage').then(r => r.json()) as { rows?: ShortageRow[]; error?: string }
+      const data = await fetch('/api/sous-location/shortage').then(r => r.json()) as { items?: ShortageItem[]; error?: string }
       if (data.error) { setError(data.error); return }
       const now = new Date().toISOString()
-      setRows(data.rows ?? [])
+      setItems(data.items ?? [])
       setSyncedAt(now)
       setSynced(true)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ rows: data.rows ?? [], syncedAt: now }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ items: data.items ?? [], syncedAt: now }))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur réseau')
     } finally {
@@ -105,20 +106,8 @@ function ShortageTable() {
     }
   }
 
-  function formatPrice(cents: number) {
-    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(cents / 100)
-  }
-
-  function statusLabel(s: string) {
-    if (s === 'reserved') return 'Réservé'
-    if (s === 'draft')    return 'Brouillon'
-    return s
-  }
-
-  function statusClass(s: string) {
-    if (s === 'reserved') return 'bg-blue-50 text-blue-700'
-    return 'bg-amber-50 text-amber-700'
-  }
+  // Compte de commandes distinctes en shortage
+  const orderCount = new Set(items.map(i => i.order_id)).size
 
   return (
     <div className="space-y-4">
@@ -129,9 +118,9 @@ function ShortageTable() {
               Sync : {new Date(syncedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
-          {synced && (
+          {synced && items.length > 0 && (
             <span className="text-sm font-semibold text-red-600">
-              {rows.length} commande{rows.length > 1 ? 's' : ''} en pénurie
+              {items.length} article{items.length > 1 ? 's' : ''} en pénurie sur {orderCount} commande{orderCount > 1 ? 's' : ''}
             </span>
           )}
         </div>
@@ -160,7 +149,7 @@ function ShortageTable() {
 
       {!synced && !loading && (
         <div className="p-10 text-center text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
-          Cliquez sur <strong>Synchroniser</strong> pour charger les commandes en pénurie.
+          Cliquez sur <strong>Synchroniser</strong> pour charger les articles en pénurie.
         </div>
       )}
 
@@ -169,40 +158,40 @@ function ShortageTable() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Article</th>
+                <th className="text-center px-4 py-3 font-semibold text-gray-700">Pénurie</th>
+                <th className="text-center px-4 py-3 font-semibold text-gray-700">Réservé</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Commande</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Client</th>
-                <th className="text-left px-4 py-3 font-semibold text-gray-700">Statut</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Début</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Fin</th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-700">Articles</th>
-                <th className="text-right px-4 py-3 font-semibold text-gray-700">Montant TTC</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.length === 0 ? (
+              {items.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-14 text-center text-gray-400">
-                    Aucune commande en pénurie. 🎉
+                    Aucun article en pénurie. 🎉
                   </td>
                 </tr>
               ) : (
-                rows.map(row => (
-                  <tr key={row.id} className="hover:bg-red-50/30 transition-colors">
-                    <td className="px-4 py-3 font-semibold text-gray-900">#{row.number}</td>
-                    <td className="px-4 py-3 text-gray-700">{row.customer_name}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusClass(row.status)}`}>
-                        {statusLabel(row.status)}
+                items.map(item => (
+                  <tr key={item.planning_id} className="hover:bg-red-50/30 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-900">{item.item_name}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-700 font-bold text-sm">
+                        -{item.shortage_amount}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(row.starts_at)}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(row.stops_at)}</td>
-                    <td className="px-4 py-3 text-center text-gray-700">{row.item_count}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">{formatPrice(row.grand_total_with_tax_in_cents)}</td>
+                    <td className="px-4 py-3 text-center text-gray-600">{item.quantity}</td>
+                    <td className="px-4 py-3 font-semibold text-gray-700">#{item.order_number}</td>
+                    <td className="px-4 py-3 text-gray-500">{item.customer_name}</td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(item.starts_at)}</td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(item.stops_at)}</td>
                     <td className="px-4 py-3 text-right">
                       <a
-                        href={row.url}
+                        href={item.order_url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs font-medium text-gray-500 hover:text-black border border-gray-200 rounded px-2.5 py-1 hover:border-gray-400 transition-colors"

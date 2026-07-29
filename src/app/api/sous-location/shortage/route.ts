@@ -12,88 +12,126 @@ function headers() {
   }
 }
 
-export type ShortageRow = {
-  id:           string
-  number:       number
-  status:       string
-  starts_at:    string
-  stops_at:     string
-  customer_name: string
-  item_count:   number
-  grand_total_with_tax_in_cents: number
-  url:          string
+export type ShortageItem = {
+  planning_id:      string
+  order_id:         string
+  order_number:     number
+  customer_name:    string
+  item_name:        string
+  quantity:         number
+  shortage_amount:  number
+  starts_at:        string
+  stops_at:         string
+  order_url:        string
 }
 
 /**
  * GET /api/sous-location/shortage
  *
- * Commandes en pénurie (location_shortage=true, statuts draft ou reserved).
+ * 1. Récupère toutes les commandes avec location_shortage=true (draft + reserved)
+ * 2. Pour chaque commande, récupère les articles en pénurie via plannings
+ * 3. Retourne une liste plate d'articles en shortage
  */
 export async function GET() {
-  const PAGE_SIZE = 100
-  const baseUrl =
+  // ── Étape 1 : commandes en pénurie ──────────────────────────────────────────
+  const ordersUrl =
     `${BASE_BM}/orders` +
     `?sort=-starts_at` +
     `&filter[statuses][]=draft` +
     `&filter[statuses][]=reserved` +
     `&filter[location_shortage]=true` +
     `&include=customer` +
-    `&page[size]=${PAGE_SIZE}`
+    `&page[size]=100`
 
-  const allData:     V4Resource[] = []
-  const allIncluded: V4Resource[] = []
-  let pageNum = 1
-
-  while (true) {
-    const res = await fetch(`${baseUrl}&page[number]=${pageNum}`, {
-      headers: headers(),
-      signal:  AbortSignal.timeout(15000),
-    })
-    if (!res.ok) {
-      const text = await res.text()
-      return NextResponse.json({ error: `Booqable ${res.status}: ${text}` }, { status: 500 })
-    }
-    const data = await res.json() as V4Response
-    allData.push(...(data.data || []))
-    allIncluded.push(...(data.included || []))
-    if ((data.data || []).length < PAGE_SIZE) break
-    pageNum++
+  const ordersRes = await fetch(ordersUrl, { headers: headers(), signal: AbortSignal.timeout(15000) })
+  if (!ordersRes.ok) {
+    const text = await ordersRes.text()
+    return NextResponse.json({ error: `Booqable orders ${ordersRes.status}: ${text}` }, { status: 500 })
   }
 
+  const ordersData = await ordersRes.json() as V4Response
+  const orders     = ordersData.data ?? []
+  const included   = ordersData.included ?? []
+
   const customerMap = new Map<string, string>()
-  for (const item of allIncluded) {
+  for (const item of included) {
     if (item.type === 'customers') {
       customerMap.set(item.id, String((item.attributes as CustomerAttrs).name ?? '—'))
     }
   }
 
-  const rows: ShortageRow[] = allData.map(order => {
-    const a = order.attributes as OrderAttrs
-    return {
-      id:           order.id,
-      number:       Number(a.number ?? 0),
-      status:       String(a.status ?? ''),
-      starts_at:    String(a.starts_at ?? ''),
-      stops_at:     String(a.stops_at  ?? ''),
-      customer_name: customerMap.get(String(a.customer_id ?? '')) ?? '—',
-      item_count:   Number(a.item_count ?? 0),
-      grand_total_with_tax_in_cents: Number(a.grand_total_with_tax_in_cents ?? 0),
-      url:          `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`,
+  if (orders.length === 0) return NextResponse.json({ items: [], total: 0 })
+
+  // ── Étape 2 : plannings en shortage pour chaque commande (parallèle) ────────
+  const results = await Promise.all(orders.map(async order => {
+    const a           = order.attributes as OrderAttrs
+    const orderNumber = Number(a.number ?? 0)
+    const customerName = customerMap.get(String(a.customer_id ?? '')) ?? '—'
+    const orderUrl    = `https://${SUBDOMAIN}.booqable.com/orders/${order.id}`
+
+    const planUrl =
+      `${BASE_BM}/plannings` +
+      `?filter[order_id]=${order.id}` +
+      `&filter[location_shortage_amount][gt]=0` +
+      `&include=item` +
+      `&page[size]=100`
+
+    try {
+      const planRes = await fetch(planUrl, { headers: headers(), signal: AbortSignal.timeout(10000) })
+      if (!planRes.ok) return []
+
+      const planData = await planRes.json() as V4Response
+      const plannings = planData.data ?? []
+      const planIncluded = planData.included ?? []
+
+      const itemMap = new Map<string, string>()
+      for (const inc of planIncluded) {
+        if (inc.type === 'products' || inc.type === 'product_groups' || inc.type === 'bundles') {
+          itemMap.set(inc.id, String((inc.attributes as ItemAttrs).name ?? inc.id))
+        }
+      }
+
+      return plannings.map(p => {
+        const pa      = p.attributes as PlanningAttrs
+        const itemRel = (p.relationships?.item as { data?: { id?: string } } | undefined)?.data
+        const itemId  = itemRel?.id ?? ''
+        return {
+          planning_id:     p.id,
+          order_id:        order.id,
+          order_number:    orderNumber,
+          customer_name:   customerName,
+          item_name:       itemMap.get(itemId) ?? itemId,
+          quantity:        Number(pa.quantity             ?? 0),
+          shortage_amount: Number(pa.location_shortage_amount ?? 0),
+          starts_at:       String(pa.starts_at ?? a.starts_at ?? ''),
+          stops_at:        String(pa.stops_at  ?? a.stops_at  ?? ''),
+          order_url:       orderUrl,
+        } satisfies ShortageItem
+      })
+    } catch {
+      return []
     }
-  })
+  }))
 
-  return NextResponse.json({ rows, total: rows.length })
+  const items = results.flat()
+
+  // Tri : shortage le plus élevé d'abord, puis par date de début
+  items.sort((a, b) => b.shortage_amount - a.shortage_amount || a.starts_at.localeCompare(b.starts_at))
+
+  return NextResponse.json({ items, total: items.length })
 }
 
-type V4Resource = { id: string; type: string; attributes: Record<string, unknown> }
+// ── Types internes ─────────────────────────────────────────────────────────────
+
+type V4Resource = {
+  id:            string
+  type:          string
+  attributes:    Record<string, unknown>
+  relationships?: Record<string, unknown>
+}
 type V4Response = { data?: V4Resource[]; included?: V4Resource[] }
-type OrderAttrs = {
-  number?: number
-  status?: string
-  starts_at?: string
-  stops_at?: string
-  customer_id?: string
-  item_count?: number
-  grand_total_with_tax_in_cents?: number
-}
+
+type OrderAttrs    = { number?: number; starts_at?: string; stops_at?: string; customer_id?: string }
 type CustomerAttrs = { name?: string }
+type PlanningAttrs = { quantity?: number; location_shortage_amount?: number; starts_at?: string; stops_at?: string }
+type ItemAttrs     = { name?: string }
