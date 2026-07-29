@@ -152,6 +152,21 @@ export default function TemporaireTable() {
   const byFromDesc = (a: TemporaireRow, b: TemporaireRow) =>
     (b.from ?? '').localeCompare(a.from ?? '')
 
+  // Remove rows where a +qty and -qty cancel each other out (same product, same from/till)
+  function removeCancelledPairs(subset: TemporaireRow[]): TemporaireRow[] {
+    const groups = new Map<string, number>()
+    for (const row of subset) {
+      const key = `${row.product_id}|${row.from ?? ''}|${row.till ?? ''}`
+      groups.set(key, (groups.get(key) ?? 0) + row.stock_count)
+    }
+    return subset.filter(row => {
+      const key = `${row.product_id}|${row.from ?? ''}|${row.till ?? ''}`
+      return (groups.get(key) ?? 0) !== 0
+    })
+  }
+
+  const expectedRows = removeCancelledPairs(rows.filter(r => r.status === 'expected'))
+
   const displayed = (() => {
     if (statusFilter === 'all') {
       return [...rows].sort((a, b) => {
@@ -159,8 +174,11 @@ export default function TemporaireTable() {
         return byStatus !== 0 ? byStatus : byFromDesc(a, b)
       })
     }
+    if (statusFilter === 'expected') {
+      return [...expectedRows].sort(byFromDesc)
+    }
     const filtered = rows.filter(r => r.status === statusFilter)
-    if (statusFilter === 'expired' || statusFilter === 'expected') {
+    if (statusFilter === 'expired') {
       return [...filtered].sort(byFromDesc)
     }
     return filtered
@@ -169,7 +187,7 @@ export default function TemporaireTable() {
   const counts = {
     all:      rows.length,
     in_stock: rows.filter(r => r.status === 'in_stock').length,
-    expected: rows.filter(r => r.status === 'expected').length,
+    expected: expectedRows.length,
     expired:  rows.filter(r => r.status === 'expired').length,
   }
 
