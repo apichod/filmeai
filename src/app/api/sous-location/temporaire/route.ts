@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 const SUBDOMAIN = process.env.BOOQABLE_SUBDOMAIN || ''
 const KEY       = process.env.BOOQABLE_API_KEY    || ''
 const BASE_V4   = `https://${SUBDOMAIN}.booqable.com/api/4`
-const BASE_BM   = `https://${SUBDOMAIN}.booqable.com/api/boomerang`
 
 function headers() {
   return {
@@ -14,31 +13,43 @@ function headers() {
 }
 
 export type TemporaireRow = {
-  id:             string
-  product_id:     string
-  product_name:   string
-  tracking_type:  'trackable' | 'bulk'
-  location_id:    string
-  location_name:  string
-  stock_count:    number
-  from:           string | null
-  till:           string | null
-  status:         'expected' | 'in_stock' | 'expired'
+  id:               string
+  product_id:       string
+  product_group_id: string
+  product_name:     string
+  tracking_type:    'trackable' | 'bulk'
+  location_id:      string
+  location_name:    string
+  stock_count:      number
+  from:             string | null
+  till:             string | null
+  status:           'expected' | 'in_stock' | 'expired'
+}
+
+function computeStatus(from: string | null, till: string | null): TemporaireRow['status'] {
+  const now  = Date.now()
+  const tillMs = till ? new Date(till).getTime() : null
+  const fromMs = from ? new Date(from).getTime() : null
+  if (tillMs && tillMs <= now) return 'expired'
+  if (fromMs && fromMs > now) return 'expected'
+  return 'in_stock'
 }
 
 /**
  * GET /api/sous-location/temporaire
  *
- * Retourne tous les stocks temporaires Booqable (attendus + actifs + expirés).
- * Utilise l'API V4 inventory_breakdowns avec filter[inventory_breakdown_type]=temporary.
+ * Utilise stock_counts V4 : tous les enregistrements ayant une date till
+ * sont des stocks temporaires (sous-locations).
+ * On filtre till[gt]=2020-01-01 pour ne récupérer que les lignes ayant un till.
  */
-async function fetchByStatus(status: string): Promise<{ data: V4Resource[]; included: V4Resource[]; error?: string }> {
+export async function GET() {
   const PAGE_SIZE = 100
+  // Filtre : tout stock avec un till > 2020 = temporaire (passé, présent, futur)
   const baseUrl =
-    `${BASE_V4}/inventory_breakdowns` +
-    `?filter[inventory_breakdown_type]=temporary` +
-    `&filter[status]=${status}` +
+    `${BASE_V4}/stock_counts` +
+    `?filter[till][gt]=2020-01-01T00:00:00Z` +
     `&include=product,location` +
+    `&sort=from` +
     `&page[size]=${PAGE_SIZE}`
 
   const allData:     V4Resource[] = []
@@ -52,7 +63,10 @@ async function fetchByStatus(status: string): Promise<{ data: V4Resource[]; incl
     })
     if (!res.ok) {
       const text = await res.text()
-      return { data: [], included: [], error: `Booqable ${res.status}: ${text}` }
+      return NextResponse.json(
+        { error: `Booqable ${res.status}: ${text}` },
+        { status: 500 },
+      )
     }
     const data = await res.json() as V4Response
     allData.push(...(data.data || []))
@@ -60,35 +74,18 @@ async function fetchByStatus(status: string): Promise<{ data: V4Resource[]; incl
     if ((data.data || []).length < PAGE_SIZE) break
     pageNum++
   }
-  return { data: allData, included: allIncluded }
-}
-
-export async function GET() {
-  // Booqable exige filter[status] — on fait 3 appels en parallèle
-  const [resInStock, resExpected, resExpired] = await Promise.all([
-    fetchByStatus('in_stock'),
-    fetchByStatus('expected'),
-    fetchByStatus('expired'),
-  ])
-
-  const firstError = resInStock.error ?? resExpected.error ?? resExpired.error
-  if (firstError) {
-    return NextResponse.json({ error: firstError }, { status: 500 })
-  }
-
-  const allData     = [...resInStock.data,     ...resExpected.data,     ...resExpired.data]
-  const allIncluded = [...resInStock.included, ...resExpected.included, ...resExpired.included]
 
   // Index products et locations depuis included
-  const productMap  = new Map<string, { name: string; tracking_type: string }>()
+  const productMap  = new Map<string, { name: string; tracking_type: string; product_group_id: string }>()
   const locationMap = new Map<string, string>()
 
   for (const item of allIncluded) {
-    if (item.type === 'products') {
+    if (item.type === 'products' || item.type === 'product_groups') {
       const a = item.attributes as ProductAttrs
       productMap.set(item.id, {
-        name:          a.name          ?? a.slug ?? item.id,
-        tracking_type: a.tracking_type ?? 'bulk',
+        name:             a.name ?? a.slug ?? item.id,
+        tracking_type:    a.tracking_type ?? 'bulk',
+        product_group_id: String(a.product_group_id ?? item.id),
       })
     }
     if (item.type === 'locations') {
@@ -97,53 +94,35 @@ export async function GET() {
     }
   }
 
-  // Si des product_id ne sont pas dans included, fetch batch
-  const missingProductIds = Array.from(new Set(
-    allData
-      .map(r => String((r.attributes as BreakdownAttrs).product_id ?? ''))
-      .filter(id => id && !productMap.has(id))
-  ))
+  const rows: TemporaireRow[] = allData
+    .filter(item => {
+      // Ne garder que les lignes avec un till (= stock temporaire)
+      const a = item.attributes as StockCountAttrs
+      return !!a.till
+    })
+    .map(item => {
+      const a              = item.attributes as StockCountAttrs
+      const productId      = String(a.product_id ?? a.item_id ?? '')
+      const locationId     = String(a.location_id ?? '')
+      const product        = productMap.get(productId)
+      const locName        = locationMap.get(locationId) ?? locationId
+      const fromVal        = a.from ?? null
+      const tillVal        = a.till ?? null
 
-  if (missingProductIds.length > 0) {
-    try {
-      const ids   = missingProductIds.join(',')
-      const pRes  = await fetch(
-        `${BASE_BM}/products?filter[id][]=${ids.split(',').join('&filter[id][]=')}`,
-        { headers: headers(), signal: AbortSignal.timeout(10000) },
-      )
-      if (pRes.ok) {
-        const pData = await pRes.json() as { data?: V4Resource[] }
-        for (const p of pData.data ?? []) {
-          const a = p.attributes as ProductAttrs
-          productMap.set(p.id, {
-            name:          a.name          ?? a.slug ?? p.id,
-            tracking_type: a.tracking_type ?? 'bulk',
-          })
-        }
+      return {
+        id:               item.id,
+        product_id:       productId,
+        product_group_id: product?.product_group_id ?? productId,
+        product_name:     product?.name ?? productId,
+        tracking_type:    (product?.tracking_type === 'trackable' ? 'trackable' : 'bulk') as 'trackable' | 'bulk',
+        location_id:      locationId,
+        location_name:    locName,
+        stock_count:      Number(a.quantity ?? a.stock_count ?? 0),
+        from:             fromVal,
+        till:             tillVal,
+        status:           computeStatus(fromVal, tillVal),
       }
-    } catch { /* silencieux */ }
-  }
-
-  const rows: TemporaireRow[] = allData.map(item => {
-    const a          = item.attributes as BreakdownAttrs
-    const productId  = String(a.product_id  ?? '')
-    const locationId = String(a.location_id ?? '')
-    const product    = productMap.get(productId)
-    const locName    = locationMap.get(locationId) ?? locationId
-
-    return {
-      id:            item.id,
-      product_id:    productId,
-      product_name:  product?.name ?? productId,
-      tracking_type: (product?.tracking_type === 'trackable' ? 'trackable' : 'bulk') as 'trackable' | 'bulk',
-      location_id:   locationId,
-      location_name: locName,
-      stock_count:   Number(a.stock_count ?? a.quantity ?? 0),
-      from:          a.from  ?? null,
-      till:          a.till  ?? null,
-      status:        (a.status ?? 'in_stock') as TemporaireRow['status'],
-    }
-  })
+    })
 
   // Tri : actifs d'abord, puis à venir, puis expirés
   const ORDER: Record<string, number> = { in_stock: 0, expected: 1, expired: 2 }
@@ -165,20 +144,21 @@ type V4Response = {
   included?: V4Resource[]
 }
 
-type BreakdownAttrs = {
+type StockCountAttrs = {
   product_id?:  string
+  item_id?:     string
   location_id?: string
-  stock_count?: number
   quantity?:    number
+  stock_count?: number
   from?:        string | null
   till?:        string | null
-  status?:      string
 }
 
 type ProductAttrs = {
-  name?:          string
-  slug?:          string
-  tracking_type?: string
+  name?:             string
+  slug?:             string
+  tracking_type?:    string
+  product_group_id?: string
 }
 
 type LocationAttrs = {
