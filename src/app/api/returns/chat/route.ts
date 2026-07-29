@@ -1616,7 +1616,8 @@ Affiche les {{...}} littéralement, toujours.`
               }
               if (choicesParsed.__type__ === 'redirect') {
                 send(JSON.stringify({ type: 'redirect', url: choicesParsed.url ?? '' }))
-                // Pas de waiting_for_input — le workflow avance normalement
+                wfState = { ...wfState, status: 'completed' }
+                isChoicesResult = true  // empêche advanceStep
               }
             } catch { /* pas JSON */ }
 
@@ -1853,6 +1854,8 @@ Affiche les {{...}} littéralement, toujours.`
                 }
                 if (parsed.__type__ === 'redirect') {
                   send(JSON.stringify({ type: 'redirect', url: parsed.url ?? '' }))
+                  wfState = { ...wfState, status: 'completed' }
+                  isChoicesResultAI = true  // empêche advanceStep et sort du loop
                 }
               } catch { /* pas JSON, continuer */ }
 
@@ -1943,6 +1946,8 @@ Affiche les {{...}} littéralement, toujours.`
                 }
                 if (postParsed.__type__ === 'redirect') {
                   send(JSON.stringify({ type: 'redirect', url: postParsed.url ?? '' }))
+                  wfState = { ...wfState, status: 'completed' }
+                  postIsChoices = true  // empêche advanceStep
                 }
               } catch { /* pas JSON */ }
 
