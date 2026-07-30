@@ -718,6 +718,8 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
       action: 'start_stock_items', planning_id: planId, product_id: g.productId, stock_item_ids: g.siIds,
     }))
 
+    const fulfillErrors: string[] = []
+
     if (trackableActions.length > 0) {
       console.log(`startSAVOrder: ${trackableActions.length} trackable action(s) pour ${orderId}`)
       const fulfillRes = await fetch(`${BASE4}/order_fulfillments`, {
@@ -731,6 +733,7 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
       if (!fulfillRes.ok) {
         const errText = await fulfillRes.text()
         console.warn('[startSAVOrder] start_stock_items failed:', fulfillRes.status, errText.slice(0, 300))
+        fulfillErrors.push(`trackable (${fulfillRes.status})`)
       } else {
         console.log(`startSAVOrder: trackable items started ✓`)
       }
@@ -752,10 +755,12 @@ export async function startSAVOrder(orderId: string): Promise<{ error?: string }
       } else {
         const errText = await bulkRes.text()
         console.warn(`[startSAVOrder] start_product failed: ${bulkRes.status} ${errText.slice(0, 300)}`)
+        fulfillErrors.push(`bulk (${bulkRes.status})`)
       }
     }
 
     if (trackableActions.length > 0 || bulkActions.length > 0) {
+      if (fulfillErrors.length > 0) return { error: `Erreur pickup Booqable : ${fulfillErrors.join(', ')}` }
       return {}
     } else if (sipAllStarted && bulkActions.length === 0) {
       // Rien à démarrer

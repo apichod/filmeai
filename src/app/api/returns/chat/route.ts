@@ -1552,11 +1552,8 @@ Affiche les {{...}} littéralement, toujours.`
             const codeStep = activeSteps[wfState.step_index] as WorkflowStep
             if (codeStep.execution !== 'code' && codeStep.type !== 'instruction') break
 
-            // ── Condition : si non satisfaite, on log le skip et on saute ──
+            // ── Condition : si non satisfaite, sauter silencieusement ──
             if (!evaluateCondition(codeStep.condition, wfState.vars)) {
-              const skipName = codeStep.title ?? codeStep.booqable_action ?? 'step'
-              send(JSON.stringify({ type: 'tool_call', name: skipName }))
-              send(JSON.stringify({ type: 'tool_result', name: skipName, result: `⏭ Sauté — condition non remplie : ${codeStep.condition}` }))
               wfState = advanceStep(wfState, activeSteps.length)
               continue
             }

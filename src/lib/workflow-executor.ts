@@ -323,8 +323,8 @@ export async function executeCodeStep(
         if (!orderId) return err('start_order : order_id manquant')
         const { error } = await startSAVOrder(orderId)
         if (error) return ok({ success: true, warning: error,
-          message: `⚠️ start_order non bloquant : ${error}` })
-        return ok({ success: true, message: `✓ Commande ${label} démarrée` })
+          message: `⚠️ Pickup non bloquant — ${error}` })
+        return ok({ success: true, message: `⚡ Pickup demandé pour ${label}` })
       }
 
       case 'stop_order': {
@@ -523,16 +523,24 @@ export async function executeCodeStep(
         const emailTemplateId = String(params.document_id ?? '')
         if (!emailTemplateId) return err('draft_email_booqable : document_id (email_template_id) manquant')
         if (!orderId)         return err('draft_email_booqable : order_id manquant')
-        const rendered = await renderBooqableEmailTemplate(emailTemplateId, orderId)
-        if (!rendered) return err(`draft_email_booqable : rendu template ${emailTemplateId} échoué`)
-        return ok({
+        const rendered      = await renderBooqableEmailTemplate(emailTemplateId, orderId)
+        const templateName  = step.title ?? emailTemplateId
+        const previewSubject = rendered?.subject ?? ''
+        const previewBody    = rendered?.body    ?? `⚠️ Aperçu indisponible — le template n'a pas pu être rendu par Booqable.\nL'email sera quand même envoyé si vous confirmez.`
+        const result: Record<string, unknown> = {
           __type__:           'email_preview',
           document_id:        emailTemplateId,
           active_document_id: emailTemplateId,   // permet à send_email_booqable de le pick up via vars
-          name:               emailTemplateId,
-          subject:            rendered.subject,
-          body:               rendered.body,
-        })
+          name:               templateName,
+          subject:            previewSubject,
+          body:               previewBody,
+        }
+        // Stocker le contenu pré-rendu dans vars pour send_email_booqable (évite un 2ème appel Booqable)
+        if (rendered) {
+          result.email_subject = rendered.subject
+          result.email_body    = rendered.body
+        }
+        return ok(result)
       }
 
       case 'send_email': {
@@ -574,12 +582,20 @@ export async function executeCodeStep(
         if (!customerId)     return err('send_email_booqable : customer_id introuvable')
         if (!recipientEmail) return err('send_email_booqable : email client introuvable')
 
-        // Rend le template
-        const rendered = await renderBooqableEmailTemplate(emailTemplateId, orderId)
-        if (!rendered) return err(`send_email_booqable : rendu template ${emailTemplateId} échoué`)
+        // Réutilise le pré-rendu stocké par draft_email_booqable — évite un 2ème appel Booqable
+        const preRenderedSubject = String(vars[`${inputCtx}.email_subject`] ?? '')
+        const preRenderedBody    = String(vars[`${inputCtx}.email_body`]    ?? '')
+        let emailSubject = preRenderedSubject
+        let emailBody    = preRenderedBody
+        if (!emailSubject) {
+          const rendered = await renderBooqableEmailTemplate(emailTemplateId, orderId)
+          if (!rendered) return err(`send_email_booqable : rendu template ${emailTemplateId} échoué`)
+          emailSubject = rendered.subject
+          emailBody    = rendered.body
+        }
 
         // Envoie avec customer_id + document_ids pour l'historique Booqable
-        await sendEmailViaBooqable(orderId, rendered.subject, rendered.body, recipientEmail, customerId, emailTemplateId)
+        await sendEmailViaBooqable(orderId, emailSubject, emailBody, recipientEmail, customerId, emailTemplateId)
         return ok({ success: true, message: `✓ Email template envoyé pour ${label}` })
       }
 
