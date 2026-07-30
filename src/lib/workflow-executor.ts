@@ -525,8 +525,8 @@ export async function executeCodeStep(
         if (!orderId)         return err('draft_email_booqable : order_id manquant')
         const rendered      = await renderBooqableEmailTemplate(emailTemplateId, orderId)
         const templateName  = step.title ?? emailTemplateId
-        const previewSubject = rendered?.subject ?? ''
-        const previewBody    = rendered?.body    ?? `⚠️ Aperçu indisponible — le template n'a pas pu être rendu par Booqable.\nL'email sera quand même envoyé si vous confirmez.`
+        const previewSubject = rendered?.subject || ''
+        const previewBody    = rendered?.body    || `⚠️ Aperçu indisponible — le template n'a pas pu être rendu (body vide ou erreur Booqable).\nL'email sera quand même envoyé si vous confirmez.`
         return ok({
           __type__:           'email_preview',
           document_id:        emailTemplateId,

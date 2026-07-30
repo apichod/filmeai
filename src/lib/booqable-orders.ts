@@ -2260,6 +2260,11 @@ export async function renderBooqableEmailTemplateWithInvoice(
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({
+      rendered_email: {
+        order_id:          orderId,
+        email_template_id: emailTemplateId,
+        document_id:       documentId,
+      },
       data: {
         type: 'rendered_emails',
         attributes: {
@@ -2332,6 +2337,10 @@ export async function renderBooqableEmailTemplate(
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({
+      rendered_email: {
+        order_id:          orderId,
+        email_template_id: emailTemplateId,
+      },
       data: {
         type: 'rendered_emails',
         attributes: {
