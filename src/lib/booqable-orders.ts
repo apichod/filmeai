@@ -167,46 +167,20 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     indexIncluded(included1)
 
 
-    // Identifier les lignes bundle : parent_line_id = null ET extra_information contient du HTML
-    // On élargit la détection au-delà de 'pack-includes' car Booqable peut utiliser une structure HTML
-    // différente pour les bundles avec qty > 1 (ex: pas de classe "pack-includes" dans le HTML)
-    const bundleHeaderIds: string[] = []
+    // Détecter les bundle headers : toute ligne dont l'id apparaît comme parent_line_id d'une autre ligne.
+    // Booqable retourne déjà les enfants dans la réponse filter[order_id], donc pas de passe 2 nécessaire.
+    const bundleHeaderIdSet = new Set<string>()
     for (const line of topLines) {
-      const extraInfo = String(line.attributes.extra_information || '')
-      const parentLineId = line.attributes.parent_line_id
-      if (parentLineId === null && (extraInfo.includes('pack-includes') || extraInfo.includes('<'))) {
-        bundleHeaderIds.push(line.id)
-      }
-    }
-
-    // ── Passe 2 : sous-lignes de chaque bundle ───────────────────────────────
-    let childLines: BoomNode[] = []
-    if (bundleHeaderIds.length > 0) {
-      const childFetches = await Promise.all(
-        bundleHeaderIds.map(lineId =>
-          fetch(
-            `${BASE_BOOMERANG}/lines?filter[parent_line_id]=${lineId}&include=item,stock_item&page[size]=200`,
-            { headers: headers(), signal: AbortSignal.timeout(12000) }
-          ).then(r => r.ok ? r.json() as Promise<{ data?: BoomNode[]; included?: BoomNode[] }> : { data: [], included: [] })
-        )
-      )
-      for (const res of childFetches) {
-        childLines = childLines.concat(res.data || [])
-        indexIncluded(res.included || [])
-      }
+      const pid = line.attributes.parent_line_id
+      if (pid != null) bundleHeaderIdSet.add(String(pid))
     }
 
     // ── Construction des lignes finales ──────────────────────────────────────
-    // top-level : garder uniquement les non-bundles avec qty > 0
-    // sous-lignes : toutes incluses (qty peut être 0 pour les items gratuits dans un pack)
-    const bundleHeaderIdSet = new Set(bundleHeaderIds)
-
-    const buildLine = (r: BoomNode, isChild: boolean): BooqableOrderLine | null => {
+    const buildLine = (r: BoomNode): BooqableOrderLine | null => {
       const attrs = r.attributes
       const qty = Number(attrs.quantity) || 0
-      if (!isChild && qty <= 0) return null   // top-level à 0 → ignorer
-      if (!isChild && attrs.parent_line_id != null) return null  // bundle child → géré en passe 2
-      if (bundleHeaderIdSet.has(r.id)) return null  // header de bundle → ignorer
+      if (attrs.parent_line_id == null && qty <= 0) return null  // top-level à 0 → ignorer
+      if (bundleHeaderIdSet.has(r.id)) return null               // header de bundle → ignorer
 
       type Rel = { data?: { type: string; id: string } | null }
       const rels = r.relationships as Record<string, Rel> | undefined
@@ -235,11 +209,7 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
 
     const lines: BooqableOrderLine[] = []
     for (const r of topLines) {
-      const l = buildLine(r, false)
-      if (l) lines.push(l)
-    }
-    for (const r of childLines) {
-      const l = buildLine(r, true)
+      const l = buildLine(r)
       if (l) lines.push(l)
     }
 
@@ -417,34 +387,14 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
       }
       indexIncluded(linesData.included || [])
 
-      // Identifier les bundle headers (même logique étendue que fetchOrderByNumber)
-      const bundleHeaderIds: string[] = []
+      // Détecter les bundle headers : toute ligne dont l'id apparaît comme parent_line_id d'une autre ligne.
+      // Booqable retourne déjà les enfants dans la réponse filter[order_id], donc pas de passe 2 nécessaire.
+      const bundleHeaderIdSet = new Set<string>()
       for (const line of topLines) {
-        const parentId  = line.attributes.parent_line_id
-        const extraInfo = String(line.attributes.extra_information || '')
-        if (parentId === null && (extraInfo.includes('pack-includes') || extraInfo.includes('<'))) {
-          bundleHeaderIds.push(line.id)
-        }
+        const pid = line.attributes.parent_line_id
+        if (pid != null) bundleHeaderIdSet.add(String(pid))
       }
 
-      // Passe 2 : sous-lignes de chaque bundle
-      let childLines: BoomNode[] = []
-      if (bundleHeaderIds.length > 0) {
-        const childFetches = await Promise.all(
-          bundleHeaderIds.map(lineId =>
-            fetch(
-              `${BASE_BOOMERANG}/lines?filter[parent_line_id]=${lineId}&include=item,stock_item&page[size]=200`,
-              { headers: headers(), signal: AbortSignal.timeout(12000) }
-            ).then(r => r.ok ? r.json() as Promise<{ data?: BoomNode[]; included?: BoomNode[] }> : { data: [], included: [] })
-          )
-        )
-        for (const res of childFetches) {
-          childLines = childLines.concat(res.data || [])
-          indexIncluded(res.included || [])
-        }
-      }
-
-      const bundleHeaderIdSet = new Set(bundleHeaderIds)
       const mapLine = (line: BoomNode): BooqableOrderLine => {
         const itemRelId  = (line.relationships?.item       as { data?: { id?: string } })?.data?.id ?? ''
         const stockRelId = (line.relationships?.stock_item as { data?: { id?: string } })?.data?.id ?? ''
@@ -462,11 +412,7 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
 
       const finalLines: BooqableOrderLine[] = []
       for (const line of topLines) {
-        if (bundleHeaderIdSet.has(line.id)) continue         // bundle header → skip
-        if (line.attributes.parent_line_id != null) continue // child top-level → handled in childLines
-        finalLines.push(mapLine(line))
-      }
-      for (const line of childLines) {
+        if (bundleHeaderIdSet.has(line.id)) continue  // bundle header → skip
         finalLines.push(mapLine(line))
       }
       if (finalLines.length > 0) order.lines = finalLines
