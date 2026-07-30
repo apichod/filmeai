@@ -360,7 +360,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   draft_email_booqable: {
     label:  'Aperçu template Booqable (lecture seule)',
     reads:  ['id'],
-    writes: ['active_document_id', 'email_subject', 'email_body'],  // pré-rendu stocké pour send_email_booqable
+    writes: ['active_document_id'],  // stocké pour que send_email_booqable le pick up automatiquement
     // Paramètre requis : document_id (UUID du template Booqable)
   },
   send_email_booqable: {
