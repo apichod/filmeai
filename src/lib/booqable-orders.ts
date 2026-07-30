@@ -167,13 +167,14 @@ export async function fetchOrderByNumber(orderNumber: string): Promise<BooqableO
     indexIncluded(included1)
 
 
-    // Identifier les lignes bundle (extra_information contenant un pack-includes HTML, ou bundle_item_id absent mais sub-lignes existent)
-    // On détecte les bundles : parent_line_id = null ET extra_information non vide → header de bundle
+    // Identifier les lignes bundle : parent_line_id = null ET extra_information contient du HTML
+    // On élargit la détection au-delà de 'pack-includes' car Booqable peut utiliser une structure HTML
+    // différente pour les bundles avec qty > 1 (ex: pas de classe "pack-includes" dans le HTML)
     const bundleHeaderIds: string[] = []
     for (const line of topLines) {
       const extraInfo = String(line.attributes.extra_information || '')
       const parentLineId = line.attributes.parent_line_id
-      if (parentLineId === null && extraInfo.includes('pack-includes')) {
+      if (parentLineId === null && (extraInfo.includes('pack-includes') || extraInfo.includes('<'))) {
         bundleHeaderIds.push(line.id)
       }
     }
@@ -397,50 +398,86 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
     )
     if (linesRes.ok) {
       const linesData = await linesRes.json() as { data?: BoomNode[]; included?: BoomNode[] }
-      const included = linesData.included || []
+      const topLines = linesData.data || []
       const itemNameMap  = new Map<string, string>()
       const itemGroupMap = new Map<string, string>()
       const stockItemMap = new Map<string, string>()
-      for (const r of included) {
-        const name = String(r.attributes.name || r.attributes.display_name || '')
-        if (r.type === 'products' || r.type === 'product') {
-          itemNameMap.set(r.id, name)
-          const pgId = String(r.attributes.product_group_id || '')
-          if (pgId) itemGroupMap.set(r.id, pgId)
-        }
-        if (r.type === 'product_groups' || r.type === 'product_group') itemNameMap.set(r.id, name)
-        if (r.type === 'stock_items' || r.type === 'stock_item') stockItemMap.set(r.id, String(r.attributes.identifier || ''))
-      }
-      order.lines = (linesData.data || [])
-        .filter(line => {
-          // Exclure les bundle headers (conteneurs sans article physique)
-          const parentId  = line.attributes.parent_line_id
-          const extraInfo = String(line.attributes.extra_information || '')
-          if (parentId === null && extraInfo.includes('pack-includes')) return false
-          return true
-        })
-        .map(line => {
-          const itemRelId  = (line.relationships?.item         as { data?: { id?: string } })?.data?.id ?? ''
-          const stockRelId = (line.relationships?.stock_item   as { data?: { id?: string } })?.data?.id ?? ''
-          return {
-            id:               line.id,
-            product_id:       itemRelId,
-            product_name:     itemNameMap.get(itemRelId) || String(line.attributes.title || ''),
-            product_group_id: itemGroupMap.get(itemRelId) || '',
-            stock_item_id:    stockRelId || '',
-            stock_item_identifier: stockItemMap.get(stockRelId) || '',
-            quantity:         Number(line.attributes.quantity ?? 1),
-            price_in_cents:   Number(line.attributes.price_in_cents ?? 0),
-            planning_id:      String(line.attributes.planning_id || '') || undefined,
+
+      const indexIncluded = (inc: BoomNode[]) => {
+        for (const r of inc) {
+          const name = String(r.attributes.name || r.attributes.display_name || '')
+          if (r.type === 'products' || r.type === 'product') {
+            itemNameMap.set(r.id, name)
+            const pgId = String(r.attributes.product_group_id || '')
+            if (pgId) itemGroupMap.set(r.id, pgId)
           }
-        })
+          if (r.type === 'product_groups' || r.type === 'product_group') itemNameMap.set(r.id, name)
+          if (r.type === 'stock_items' || r.type === 'stock_item') stockItemMap.set(r.id, String(r.attributes.identifier || ''))
+        }
+      }
+      indexIncluded(linesData.included || [])
+
+      // Identifier les bundle headers (même logique étendue que fetchOrderByNumber)
+      const bundleHeaderIds: string[] = []
+      for (const line of topLines) {
+        const parentId  = line.attributes.parent_line_id
+        const extraInfo = String(line.attributes.extra_information || '')
+        if (parentId === null && (extraInfo.includes('pack-includes') || extraInfo.includes('<'))) {
+          bundleHeaderIds.push(line.id)
+        }
+      }
+
+      // Passe 2 : sous-lignes de chaque bundle
+      let childLines: BoomNode[] = []
+      if (bundleHeaderIds.length > 0) {
+        const childFetches = await Promise.all(
+          bundleHeaderIds.map(lineId =>
+            fetch(
+              `${BASE_BOOMERANG}/lines?filter[parent_line_id]=${lineId}&include=item,stock_item&page[size]=200`,
+              { headers: headers(), signal: AbortSignal.timeout(12000) }
+            ).then(r => r.ok ? r.json() as Promise<{ data?: BoomNode[]; included?: BoomNode[] }> : { data: [], included: [] })
+          )
+        )
+        for (const res of childFetches) {
+          childLines = childLines.concat(res.data || [])
+          indexIncluded(res.included || [])
+        }
+      }
+
+      const bundleHeaderIdSet = new Set(bundleHeaderIds)
+      const mapLine = (line: BoomNode): BooqableOrderLine => {
+        const itemRelId  = (line.relationships?.item       as { data?: { id?: string } })?.data?.id ?? ''
+        const stockRelId = (line.relationships?.stock_item as { data?: { id?: string } })?.data?.id ?? ''
+        return {
+          id:                    line.id,
+          product_id:            itemRelId,
+          product_name:          itemNameMap.get(itemRelId) || String(line.attributes.title || ''),
+          product_group_id:      itemGroupMap.get(itemRelId) || '',
+          stock_item_id:         stockRelId || '',
+          stock_item_identifier: stockItemMap.get(stockRelId) || '',
+          quantity:              Number(line.attributes.quantity ?? 1),
+          planning_id:           String(line.attributes.planning_id || '') || undefined,
+        }
+      }
+
+      const finalLines: BooqableOrderLine[] = []
+      for (const line of topLines) {
+        if (bundleHeaderIdSet.has(line.id)) continue         // bundle header → skip
+        if (line.attributes.parent_line_id != null) continue // child top-level → handled in childLines
+        finalLines.push(mapLine(line))
+      }
+      for (const line of childLines) {
+        finalLines.push(mapLine(line))
+      }
+      if (finalLines.length > 0) order.lines = finalLines
     }
   } catch (e) {
     console.warn('fetchOrderById: lines fetch failed:', e)
   }
 
-  // Pass 3 : stock_item_plannings → expansion des lignes qty>1
-  if ((order.lines || []).some(l => l.quantity > 1)) {
+  // Pass 3 : stock_item_plannings → enrichissement des identifiants + expansion qty>1
+  // Même condition que fetchOrderByNumber : déclencher aussi pour les items sans stock_item_identifier
+  if ((order.lines || []).some(l => (l.product_group_id || l.planning_id) && (!l.stock_item_identifier || l.quantity > 1))) {
     try {
       type SIPNode2 = { id: string; type: string; attributes: Record<string, unknown> }
       const sipRes2 = await fetch(
@@ -475,6 +512,19 @@ export async function fetchOrderById(orderId: string): Promise<BooqableOrder | n
             pgToSI2.set(pgId, list)
           }
         }
+        // Enrichir les lignes qty=1 sans stock_item_identifier (même logique que fetchOrderByNumber)
+        for (const line of order.lines || []) {
+          if (line.stock_item_identifier) continue
+          let info: SIInfo2 | undefined
+          if (line.planning_id) info = (planToSIs2.get(line.planning_id) || [])[0]
+          if (!info && line.product_group_id) info = pgToSI2.get(line.product_group_id)?.[0]
+          if (info?.ident) {
+            line.stock_item_identifier = info.ident
+            if (!line.stock_item_id)    line.stock_item_id    = info.siId
+            if (!line.product_group_id) line.product_group_id = info.pgId
+          }
+        }
+        // Expansion des lignes qty>1
         const expandedLines2: BooqableOrderLine[] = []
         for (const line of order.lines || []) {
           if (line.quantity <= 1) { expandedLines2.push(line); continue }
