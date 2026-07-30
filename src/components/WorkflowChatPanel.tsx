@@ -887,7 +887,7 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
         )}
         {pendingChoices && pendingChoicesMulti && (
           <div className="flex flex-col gap-2 px-1">
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
               {pendingChoices.map(c => {
                 const selected = selectedChoiceTags.has(c.tag)
                 return (
