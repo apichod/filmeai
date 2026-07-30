@@ -520,7 +520,7 @@ export async function executeCodeStep(
 
       case 'draft_email_booqable': {
         // Booqable résout les {{variables}} via /rendered_emails — aucune substitution manuelle
-        const emailTemplateId = String(params.document_id ?? '')
+        const emailTemplateId = String(params.email_template_id ?? params.document_id ?? '')
         if (!emailTemplateId) return err('draft_email_booqable : document_id (email_template_id) manquant')
         if (!orderId)         return err('draft_email_booqable : order_id manquant')
         const rendered      = await renderBooqableEmailTemplate(emailTemplateId, orderId)
@@ -559,11 +559,11 @@ export async function executeCodeStep(
         // 2. Envoie le contenu rendu via /emails
         if (!orderId) return err('send_email_booqable : order_id manquant')
         const inputCtx      = step.input_context ?? step.order_context ?? 'parent'
-        // Priorité : active_document_id stocké par draft_email_booqable dans vars > params.document_id
+        // Priorité : active_document_id stocké par draft_email_booqable dans vars > params.email_template_id > params.document_id
         const emailTemplateId = String(
-          vars[`${inputCtx}.active_document_id`] ?? params.document_id ?? ''
+          vars[`${inputCtx}.active_document_id`] ?? params.email_template_id ?? params.document_id ?? ''
         )
-        if (!emailTemplateId) return err('send_email_booqable : document_id (email_template_id) manquant — spécifiez-le en paramètre ou exécutez draft_email_booqable avant')
+        if (!emailTemplateId) return err('send_email_booqable : email_template_id manquant — spécifiez-le en paramètre ou exécutez draft_email_booqable avant')
 
         // Récupère l'email du client
         let customerId     = String(vars[`${inputCtx}.customer_id`]    ?? '')
@@ -584,7 +584,7 @@ export async function executeCodeStep(
 
       case 'draft_email_with_invoice_booqable': {
         // Comme draft_email_booqable mais inclut document_id (facture) dans le rendu
-        const emailTemplateId = String(params.document_id ?? '')
+        const emailTemplateId = String(params.email_template_id ?? params.document_id ?? '')
         if (!emailTemplateId) return err('draft_email_with_invoice_booqable : document_id (email_template_id) manquant')
         if (!orderId)         return err('draft_email_with_invoice_booqable : order_id manquant')
         const inputCtx   = step.input_context ?? step.order_context ?? 'return'
@@ -604,7 +604,7 @@ export async function executeCodeStep(
 
       case 'draft_email_with_quote_booqable': {
         // Comme draft_email_with_invoice_booqable mais pour un devis
-        const emailTemplateId = String(params.document_id ?? '')
+        const emailTemplateId = String(params.email_template_id ?? params.document_id ?? '')
         if (!emailTemplateId) return err('draft_email_with_quote_booqable : document_id (email_template_id) manquant')
         if (!orderId)         return err('draft_email_with_quote_booqable : order_id manquant')
         const inputCtx  = step.input_context ?? step.order_context ?? 'return'
@@ -626,8 +626,8 @@ export async function executeCodeStep(
         // Comme send_email_booqable mais joint la facture (document_ids)
         if (!orderId) return err('send_email_with_invoice_booqable : order_id manquant')
         const inputCtx      = step.input_context ?? step.order_context ?? 'return'
-        const emailTemplateId = String(vars[`${inputCtx}.active_document_id`] ?? params.document_id ?? '')
-        if (!emailTemplateId) return err('send_email_with_invoice_booqable : template manquant — exécutez draft_email_with_invoice_booqable avant')
+        const emailTemplateId = String(vars[`${inputCtx}.active_document_id`] ?? params.email_template_id ?? params.document_id ?? '')
+        if (!emailTemplateId) return err('send_email_with_invoice_booqable : email_template_id manquant — exécutez draft_email_with_invoice_booqable avant')
         const invoiceDocId = String(vars[`${inputCtx}.document_id`] ?? params.invoice_document_id ?? '')
         if (!invoiceDocId) return err('send_email_with_invoice_booqable : document_id facture introuvable — exécutez finalize_invoice avant')
 
@@ -652,8 +652,8 @@ export async function executeCodeStep(
         // Comme send_email_with_invoice_booqable mais joint le devis
         if (!orderId) return err('send_email_with_quote_booqable : order_id manquant')
         const inputCtx      = step.input_context ?? step.order_context ?? 'return'
-        const emailTemplateId = String(vars[`${inputCtx}.active_document_id`] ?? params.document_id ?? '')
-        if (!emailTemplateId) return err('send_email_with_quote_booqable : template manquant — exécutez draft_email_with_quote_booqable avant')
+        const emailTemplateId = String(vars[`${inputCtx}.active_document_id`] ?? params.email_template_id ?? params.document_id ?? '')
+        if (!emailTemplateId) return err('send_email_with_quote_booqable : email_template_id manquant — exécutez draft_email_with_quote_booqable avant')
         const quoteDocId = String(vars[`${inputCtx}.document_id`] ?? params.quote_document_id ?? '')
         if (!quoteDocId) return err('send_email_with_quote_booqable : document_id devis introuvable — exécutez finalize_quote avant')
 
