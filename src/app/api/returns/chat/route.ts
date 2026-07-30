@@ -1370,7 +1370,7 @@ Affiche les {{...}} littéralement, toujours.`
               }
 
               if (chosenLines.length > 0) {
-                wfState = { ...wfState, vars: { ...wfState.vars, [`${srcCtx}.chosen_lines`]: JSON.stringify(chosenLines) } }
+                wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.chosen_lines`]: JSON.stringify(chosenLines) } }
               }
             } catch { /* ignore parse errors */ }
           }
@@ -1496,7 +1496,7 @@ Affiche les {{...}} littéralement, toujours.`
                         }
                       }
                     }
-                    if (chosenLines2.length > 0) wfState = { ...wfState, vars: { ...wfState.vars, [`${srcCtx2}.chosen_lines`]: JSON.stringify(chosenLines2) } }
+                    if (chosenLines2.length > 0) wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.chosen_lines`]: JSON.stringify(chosenLines2) } }
                   } catch { /* ignore */ }
                 }
               }
