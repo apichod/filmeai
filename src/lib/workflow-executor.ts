@@ -215,7 +215,7 @@ export async function executeCodeStep(
             }
           })
           return ok({ __type__: 'choices', multiSelect: true, order_id: orderId ?? '', items,
-            message: `Quels articles souhaitez-vous conserver sur la commande ${label} ? Les autres seront supprimés automatiquement.` })
+            message: `Quels articles souhaitez-vous sélectionner sur la commande ${label} ?` })
         } catch {
           return err('choose_article : impossible de parser les lignes')
         }
