@@ -1604,11 +1604,17 @@ export async function finalizeInvoice(orderId: string): Promise<{ document_id: s
     const text = await docsRes.text()
     throw new Error(`finalizeInvoice fetch documents error ${docsRes.status}: ${text}`)
   }
-  const docsData = await docsRes.json() as { data: Array<{ id: string; attributes: { number?: string; finalized?: boolean } }> }
+  const docsData = await docsRes.json() as { data: Array<{ id: string; attributes: { number?: string; finalized?: boolean; finalized_at?: string | null } }> }
   const invoice = docsData.data?.[0]
   if (!invoice) throw new Error('finalizeInvoice : aucune facture trouvée pour cette commande')
 
   const documentId = invoice.id
+  const alreadyFinalized = invoice.attributes?.finalized === true || !!invoice.attributes?.finalized_at
+
+  // Garde-fou : facture déjà finalisée → on retourne directement sans re-finaliser
+  if (alreadyFinalized) {
+    return { document_id: documentId, number: String(invoice.attributes?.number ?? '') }
+  }
 
   // 2. Finaliser la facture
   const finalRes = await fetch(`${BASE_BOOMERANG}/invoice_finalizations`, {
