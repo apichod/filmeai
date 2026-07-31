@@ -1175,6 +1175,7 @@ function ChatPanel({ prefill, onPrefillConsumed }: { prefill?: { orderNumber: st
             <div className="flex items-center flex-1 border border-gray-300 rounded-lg overflow-hidden bg-white">
               <input
                 type="text"
+                autoFocus
                 value={textInputValue}
                 onChange={e => setTextInputValue(e.target.value)}
                 placeholder={pendingTextInput.placeholder}
@@ -1275,27 +1276,31 @@ function ChatPanel({ prefill, onPrefillConsumed }: { prefill?: { orderNumber: st
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2 bg-gray-50 rounded-xl border border-gray-200 px-3 py-2">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKey}
-            placeholder="Numéro d'order et description du problème…"
-            rows={1}
-            className="flex-1 bg-transparent text-sm resize-none outline-none text-gray-800 placeholder-gray-400 max-h-32"
-            style={{ fieldSizing: 'content' } as React.CSSProperties}
-          />
-          <button
-            onClick={send}
-            disabled={!input.trim() || sending}
-            className="shrink-0 w-7 h-7 bg-black text-white rounded-lg flex items-center justify-center disabled:opacity-30 transition-opacity"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-            </svg>
-          </button>
-        </div>
-        <p className="text-xs text-gray-400 mt-1.5 px-1">Entrée pour envoyer · Shift+Entrée pour nouvelle ligne</p>
+        {!pendingTextInput && (
+          <>
+            <div className="flex items-end gap-2 bg-gray-50 rounded-xl border border-gray-200 px-3 py-2">
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder={workflowState ? 'Votre réponse…' : "Numéro d'order et description du problème…"}
+                rows={1}
+                className="flex-1 bg-transparent text-sm resize-none outline-none text-gray-800 placeholder-gray-400 max-h-32"
+                style={{ fieldSizing: 'content' } as React.CSSProperties}
+              />
+              <button
+                onClick={send}
+                disabled={!input.trim() || sending}
+                className="shrink-0 w-7 h-7 bg-black text-white rounded-lg flex items-center justify-center disabled:opacity-30 transition-opacity"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5 px-1">Entrée pour envoyer · Shift+Entrée pour nouvelle ligne</p>
+          </>
+        )}
       </div>
     </div>
   )
