@@ -1534,8 +1534,14 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [filterTag, setFilterTag] = useState<string | null>('r21_open')
   const storageKey = `bq_cat_${primaryTag}`
 
-  // Workflow de relance selon l'onglet (r11_late → r11, r12_missing → r12, …)
-  const relanceWorkflow = `${primaryTag.split('_')[0]}_24_missing_billed_05_RMD`
+  // Workflow de relance selon l'onglet
+  const RELANCE_WORKFLOW: Record<string, string> = {
+    r11_late:    'r11_24_late_billed_05_RMD',
+    r12_missing: 'r12_24_missing_billed_05_RMD',
+    r13_theft:   'r13_24_theft_billed_05_RMD',
+    r14_damage:  'r14_24_damage_billed_05_RMD',
+  }
+  const relanceWorkflow = RELANCE_WORKFLOW[primaryTag] ?? ''
 
   // Modal dernier email
   const [emailModal, setEmailModal]     = useState<{ orderId: string; orderNum: string | number; returnNum: string | number; hasBilled: boolean } | null>(null)
