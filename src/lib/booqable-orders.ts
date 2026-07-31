@@ -1597,7 +1597,7 @@ export async function finalizeInvoice(orderId: string): Promise<{ document_id: s
 
   // 1. Récupérer les documents de la commande
   const docsRes = await fetch(
-    `${BASE_BOOMERANG}/documents?filter[order_id]=${orderId}&filter[type]=invoice&page[size]=10`,
+    `${BASE_BOOMERANG}/documents?filter[order_id]=${orderId}&filter[document_type]=invoice&page[size]=10`,
     { headers: headers(), signal: AbortSignal.timeout(10000) }
   )
   if (!docsRes.ok) {
