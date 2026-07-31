@@ -1525,7 +1525,7 @@ const SECONDARY_STATUS_TAGS = [
   { tag: 'r24_billed',  label: 'Facturé',    bgClass: 'bg-blue-50',   textClass: 'text-blue-700',   paymentColored: true },
 ]
 
-function CategoryTable({ primaryTag, onOpenChat }: { primaryTag: string; onOpenChat?: (returnOrderNumber: string) => void }) {
+function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [allRows, setAllRows]   = useState<BooqableOrderRow[]>([])
   const [loading, setLoading]   = useState(false)
   const [synced, setSynced]     = useState(false)
@@ -1899,23 +1899,24 @@ function CategoryTable({ primaryTag, onOpenChat }: { primaryTag: string; onOpenC
                 </div>
               )}
             </div>
-            {onOpenChat && (
-              <div className="px-6 py-3 border-t border-gray-100 flex justify-end">
-                <button
-                  onClick={() => {
-                    const rn = emailModal?.returnNum
-                    setEmailModal(null)
-                    if (rn != null) onOpenChat(String(rn))
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black text-white text-xs font-medium hover:bg-gray-800 transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  Relancer
-                </button>
-              </div>
-            )}
+            <div className="px-6 py-3 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => {
+                  const rn = emailModal?.returnNum
+                  setEmailModal(null)
+                  if (rn != null) {
+                    const url = `/returns?prefill_order=${encodeURIComponent(String(rn))}&prefill_workflow=r12_24_missing_billed_05_RMD`
+                    window.open(url, '_blank')
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black text-white text-xs font-medium hover:bg-gray-800 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                Relancer
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2504,6 +2505,17 @@ export default function ReturnsPage() {
   const [tab, setTab] = useState<Tab>('chat')
   const [chatPrefill, setChatPrefill] = useState<{ orderNumber: string; workflow: string } | null>(null)
 
+  // Lecture des params URL pour le bouton Relancer (ouvre un nouvel onglet)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const order    = params.get('prefill_order')
+    const workflow = params.get('prefill_workflow')
+    if (order && workflow) {
+      setChatPrefill({ orderNumber: order, workflow })
+      setTab('chat')
+    }
+  }, [])
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chat',        label: 'Nouveau cas' },
     { id: 'open',        label: 'Retards' },
@@ -2549,15 +2561,7 @@ export default function ReturnsPage() {
           </div>
         )}
         {tab === 'open'        && <CategoryTable primaryTag="r11_late"    />}
-        {tab === 'pertes'      && (
-          <CategoryTable
-            primaryTag="r12_missing"
-            onOpenChat={(returnOrderNumber) => {
-              setChatPrefill({ orderNumber: returnOrderNumber, workflow: 'r12_24_missing_billed_05_RMD' })
-              setTab('chat')
-            }}
-          />
-        )}
+        {tab === 'pertes'      && <CategoryTable primaryTag="r12_missing" />}
         {tab === 'vols'        && <CategoryTable primaryTag="r13_theft"   />}
         {tab === 'dommages'    && <CategoryTable primaryTag="r14_damage"  />}
         {tab === 'replacement' && <MultiTagBooqableOrdersTable tags={REPLACE_TAGS} />}
