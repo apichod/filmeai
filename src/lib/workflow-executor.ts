@@ -124,6 +124,37 @@ export async function executeCodeStep(
         return ok({ success: true, message: `Articles de la commande ${label} :\n${formatted}` })
       }
 
+      case 'fetch_lines': {
+        // Récupère les lignes d'une commande et construit kept_product_names
+        // Format : "Qty x Nom du produit ID"  (ID = stock_item_identifier numérique si dispo)
+        const ctx = step.order_context ?? 'parent'
+        let order = null
+        if (orderId) {
+          order = await fetchOrderById(orderId)
+        } else {
+          const fallbackNum = vars[`${ctx}.number`] ?? String(params.order_number ?? '')
+          if (fallbackNum) order = await fetchOrderByNumber(fallbackNum)
+        }
+        if (!order) return err(`fetch_lines : commande ${label} introuvable`)
+
+        type RawLine = { product_name?: string; quantity?: number; stock_item_identifier?: string }
+        const lines = (order.lines ?? []) as RawLine[]
+        if (!lines.length) return ok({ kept_product_names: '', message: `Aucun article sur la commande ${label}` })
+
+        const kept_product_names = lines.map(l => {
+          const qty   = l.quantity ?? 1
+          const name  = l.product_name ?? '?'
+          const rawId = l.stock_item_identifier ?? ''
+          const shortId = rawId.match(/(\d+)$/)?.[1] ?? rawId
+          return `${qty} x ${name}${shortId ? ' ID ' + shortId : ''}`
+        }).join('\n')
+
+        return ok({
+          kept_product_names,
+          message: `Articles de la commande ${label} :\n${kept_product_names}`,
+        })
+      }
+
       case 'fetch_order': {
         const ctx = step.order_context ?? 'parent'
         let order = null

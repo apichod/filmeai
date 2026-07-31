@@ -328,6 +328,11 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'grand_total_euros_HT'],
     writes: [],
   },
+  fetch_lines: {
+    label:  'Récupérer les lignes de la commande (Qty x Nom ID)',
+    reads:  ['id'],
+    writes: ['kept_product_names'],
+  },
   create_payment_link: {
     label:  'Créer un lien de paiement et le stocker dans le champ custom lien_paiement',
     reads:  ['id', 'grand_total_euros'],
