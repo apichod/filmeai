@@ -210,7 +210,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   set_replacement_price: {
     label:  'Prix de remplacement — saisie des montants',
     reads:  ['id', 'lines', 'selected_ids', 'chosen_lines'],
-    writes: ['replacement_lines_json'],
+    writes: ['replacement_lines_json', 'replacement_prices_raw'],
     // Mode code : affiche les lignes, retourne text_input → replacement_prices_raw capturé par la route
     // Mode AI conservé via executeTool dans returns/chat/route.ts (line_id, price_euros, charge_label)
   },

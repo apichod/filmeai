@@ -136,7 +136,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   draft_email_with_quote_booqable:    { reads: ['id', 'document_id'], writes: ['active_document_id'] },
   send_email_with_invoice_booqable:   { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
   send_email_with_quote_booqable:     { reads: ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'], writes: [] },
-  set_replacement_price:       { reads: ['id', 'lines', 'selected_ids', 'chosen_lines'], writes: ['replacement_lines_json'] },
+  set_replacement_price:       { reads: ['id', 'lines', 'selected_ids', 'chosen_lines'], writes: ['replacement_lines_json', 'replacement_prices_raw'] },
   apply_replacement_prices:    { reads: ['replacement_prices_raw', 'replacement_lines_json'],  writes: ['kept_product_names'] },
   fetch_order_amount:           { reads: ['id'], writes: ['grand_total_euros', 'deposit_euros'] },
   ask_yes_no:                   { reads: [], writes: ['<output_var>'] },
