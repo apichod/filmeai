@@ -9,7 +9,7 @@ const BOOQABLE_TOOLS = [
   { value: 'add_original_order',                 label: 'add_original_order — renseigner la commande d\'origine (order_sav)' },
   { value: 'add_product_insurance_8',            label: 'add_product_insurance_8 — ajouter l\'assurance FILME à 8% du montant HT (grand_total_euros_HT)' },
   { value: 'add_product_line_by_id',             label: 'add_product_line_by_id — ajouter un produit fixe via son product_group_id (paramètre JSON)' },
-  { value: 'add_replacement_price',              label: 'add_replacement_price — demander les prix de remplacement article par article' },
+  { value: 'add_replacement_price',              label: 'add_replacement_price — demander le prix de remplacement article par article (nécessite apply_replacement_prices)' },
   { value: 'add_sav_comment',                    label: 'add_sav_comment — commentaire SAV (notes_sav)' },
   { value: 'add_sav_date',                       label: 'add_sav_date — inscrire la date du jour dans le champ date_sav' },
   { value: 'add_tag',                            label: 'add_tag — ajouter / supprimer des tags' },
