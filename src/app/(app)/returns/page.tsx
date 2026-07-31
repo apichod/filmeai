@@ -143,7 +143,8 @@ function toolLabel(name: string) {
     add_internal_note:      'Note interne',
     create_new_return_order:'Création commande de retour',
     zero_out_order_lines:   'Remise à zéro des lignes',
-    set_original_order:     'Commande d\'origine liée',
+    add_original_order:     'Commande d\'origine liée',
+    set_original_order:     'Commande d\'origine liée',   // rétrocompat
     send_email:             'Envoi email',
     choose_article:         'Choix de l\'article',
     choose_problem_tag:     'Choix du type de problème',

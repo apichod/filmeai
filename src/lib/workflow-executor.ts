@@ -418,7 +418,8 @@ export async function executeCodeStep(
         })
       }
 
-      case 'set_replacement_price': {
+      case 'add_replacement_price':
+      case 'set_replacement_price': {   // alias rétrocompat
         // MODE CODE : demande les prix un par un (article par article)
         // Chaque appel vérifie quelles lignes ont déjà un prix (replacement_price_0, _1, …)
         // et demande le suivant. Quand tous sont collectés, retourne replacement_prices_raw (joint par |).
@@ -598,20 +599,22 @@ export async function executeCodeStep(
         return ok({ success: true, message: `✓ Lignes remises à 0 sur ${label}` })
       }
 
-      case 'set_sav_date': {
-        if (!orderId) return err('set_sav_date : order_id manquant')
+      case 'add_sav_date':
+      case 'set_sav_date': {   // alias rétrocompat
+        if (!orderId) return err('add_sav_date : order_id manquant')
         await setSavDate(orderId)
         const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
         return ok({ success: true, message: `✓ Date SAV inscrite (${today}) sur ${label}` })
       }
 
-      case 'set_original_order': {
+      case 'add_original_order':
+      case 'set_original_order': {   // alias rétrocompat
         // order_context = la return order (cible du champ Commande Origine)
         // input_context = la commande source dont on lit le numéro (défaut: 'original')
-        if (!orderId) return err('set_original_order : return order_id manquant')
+        if (!orderId) return err('add_original_order : return order_id manquant')
         const srcCtx = step.input_context ?? 'original'
         const originalNumber = vars[`${srcCtx}.number`]
-        if (!originalNumber) return err(`set_original_order : ${srcCtx}.number manquant dans les variables`)
+        if (!originalNumber) return err(`add_original_order : ${srcCtx}.number manquant dans les variables`)
         await setOriginalOrder(orderId, originalNumber)
         return ok({ success: true, message: `✓ Commande d'origine #${originalNumber} renseignée sur ${label}` })
       }

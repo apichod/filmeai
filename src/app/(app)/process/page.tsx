@@ -137,7 +137,7 @@ function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
       i++; continue
     }
 
-    if (s.booqable_action === 'set_original_order') {
+    if (s.booqable_action === 'add_original_order' || s.booqable_action === 'set_original_order') {
       stepNum++
       result.push({ id: String(stepNum), type: 'step', text: `Renseigner la **commande d'origine** (original_order)` })
       result.push({ id: `${stepNum}b`, type: 'info', lines: ['= numéro de la commande d\'origine'] })

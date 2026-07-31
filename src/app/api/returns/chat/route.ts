@@ -135,7 +135,7 @@ function buildTools(
   {
     type: 'function',
     function: {
-      name: 'set_original_order',
+      name: 'add_original_order',
       description: 'Renseigne la propriété "original_order" sur la return_order. À appeler après create_new_return_order pour lier la return_order à l\'original_order.',
       parameters: {
         type: 'object',
@@ -336,7 +336,7 @@ function buildTools(
   {
     type: 'function',
     function: {
-      name: 'set_replacement_price',
+      name: 'add_replacement_price',
       description: 'Fixe le prix de remplacement d\'une ligne Booqable. Demander le prix à l\'utilisateur pour chaque article, puis appeler ce tool une fois par ligne.',
       parameters: {
         type: 'object',
@@ -585,7 +585,7 @@ async function executeTool(
         const sav = await createSAVOrder({ customerId })
         if (!sav) return { result: 'Erreur : return_order non créée' }
         const numDisplay = sav.number ? ` (numéro: ${sav.number})` : ''
-        return { result: `✓ return_order créée${numDisplay} | id: ${sav.id} | customer_id: ${customerId} | date de fin: 31 déc 23h45\nUtilise cet "id" pour add_new_product_line, add_tag, add_sav_comment, set_original_order.` }
+        return { result: `✓ return_order créée${numDisplay} | id: ${sav.id} | customer_id: ${customerId} | date de fin: 31 déc 23h45\nUtilise cet "id" pour add_new_product_line, add_tag, add_sav_comment, add_original_order.` }
       }
 
       case 'add_tag': {
@@ -653,7 +653,8 @@ async function executeTool(
         return { result: `✓ Ligne ${args.line_id} supprimée` }
       }
 
-      case 'set_replacement_price': {
+      case 'add_replacement_price':
+      case 'set_replacement_price': {   // alias rétrocompat
         const priceEuros  = Number(args.price_euros)
         const chargeLabel = String(args.charge_label ?? 'Prix de remplacement')
         await setLineReplacementPrice(String(args.line_id), priceEuros, chargeLabel)
@@ -699,7 +700,8 @@ async function executeTool(
         return { result: `✓ Commentaire SAV (order #${args.origin_order_number}) : ${String(args.comment)}` }
       }
 
-      case 'set_original_order': {
+      case 'add_original_order':
+      case 'set_original_order': {   // alias rétrocompat
         await setOriginalOrder(
           String(args.return_order_id),
           String(args.original_order_number)
@@ -1379,7 +1381,7 @@ Affiche les {{...}} littéralement, toujours.`
     }
     // set_replacement_price : capture le prix de l'article courant et reste sur le même step
     // (le step se ré-exécute jusqu'à ce que tous les articles aient leur prix)
-    if (leavingStep?.booqable_action === 'set_replacement_price' && leavingStep?.execution === 'code') {
+    if ((leavingStep?.booqable_action === 'add_replacement_price' || leavingStep?.booqable_action === 'set_replacement_price') && leavingStep?.execution === 'code') {
       const lastUserMsgPrice = [...messages].reverse().find(m => m.role === 'user')
       const priceText = typeof lastUserMsgPrice?.content === 'string' ? lastUserMsgPrice.content.trim() : ''
       if (priceText) {
@@ -1514,7 +1516,7 @@ Affiche les {{...}} littéralement, toujours.`
             }
           }
           // set_replacement_price : capture le prix de l'article courant et reste sur le même step
-          if (leavingStep2?.booqable_action === 'set_replacement_price' && leavingStep2?.execution === 'code') {
+          if ((leavingStep2?.booqable_action === 'add_replacement_price' || leavingStep2?.booqable_action === 'set_replacement_price') && leavingStep2?.execution === 'code') {
             const lastUserMsgPrice2 = [...messages].reverse().find(m => m.role === 'user')
             const priceText2 = typeof lastUserMsgPrice2?.content === 'string' ? lastUserMsgPrice2.content.trim() : ''
             if (priceText2) {
@@ -1837,7 +1839,7 @@ Affiche les {{...}} littéralement, toujours.`
             if (newCaseId) currentCaseId = newCaseId
 
             // Accumulation set_replacement_price → kept_product_names
-            if (entry.name === 'set_replacement_price' && args.product_name && args.price_euros) {
+            if ((entry.name === 'add_replacement_price' || entry.name === 'set_replacement_price') && args.product_name && args.price_euros) {
               replacementLines.push(`${String(args.product_name)} : ${Number(args.price_euros)}€`)
             }
 

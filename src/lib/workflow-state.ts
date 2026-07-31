@@ -207,12 +207,15 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'],
     writes: [],
   },
-  set_replacement_price: {
+  add_replacement_price: {
     label:  'Prix de remplacement — saisie des montants',
     reads:  ['id', 'lines', 'selected_ids', 'chosen_lines'],
     writes: ['replacement_lines_json', 'replacement_price_index', 'replacement_prices_raw'],
-    // Mode code : affiche les lignes, retourne text_input → replacement_prices_raw capturé par la route
-    // Mode AI conservé via executeTool dans returns/chat/route.ts (line_id, price_euros, charge_label)
+  },
+  set_replacement_price: {   // alias rétrocompat
+    label:  'Prix de remplacement — saisie des montants',
+    reads:  ['id', 'lines', 'selected_ids', 'chosen_lines'],
+    writes: ['replacement_lines_json', 'replacement_price_index', 'replacement_prices_raw'],
   },
   apply_replacement_prices: {
     label:  'Appliquer les prix de remplacement',
@@ -253,15 +256,25 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id'],
     writes: [],
   },
-  set_sav_date: {
+  add_sav_date: {
     label:  'Inscrire la date du jour dans date_sav',
     reads:  ['id'],
     writes: [],
   },
-  set_original_order: {
-    label:  'Renseigner la commande d\'origine',
-    reads:  ['number'],   // lit input_context.number (la commande source)
-    writes: [],           // modifie order_context (la return order)
+  set_sav_date: {   // alias rétrocompat
+    label:  'Inscrire la date du jour dans date_sav',
+    reads:  ['id'],
+    writes: [],
+  },
+  add_original_order: {
+    label:  'Renseigner la commande d\'origine (order_sav)',
+    reads:  ['number'],
+    writes: [],
+  },
+  set_original_order: {   // alias rétrocompat
+    label:  'Renseigner la commande d\'origine (order_sav)',
+    reads:  ['number'],
+    writes: [],
   },
   add_internal_note: {
     label:  'Ajouter une note interne',

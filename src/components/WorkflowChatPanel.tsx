@@ -77,7 +77,8 @@ function toolLabel(name: string) {
     add_internal_note:      'Note interne',
     create_new_return_order:'Création commande de retour',
     zero_out_order_lines:   'Remise à zéro des lignes',
-    set_original_order:     'Commande d\'origine liée',
+    add_original_order:     'Commande d\'origine liée',
+    set_original_order:     'Commande d\'origine liée',   // rétrocompat
     send_email:             'Envoi email',
     ask_yes_no:             'Question Oui / Non',
     add_discount:                    'Application remise',
