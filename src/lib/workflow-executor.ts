@@ -574,7 +574,7 @@ export async function executeCodeStep(
         }
 
         if (!comment) return err('add_sav_comment : tag ou produits manquants (choose_problem_tag + remove_other_lines requis avant)')
-        await addSAVComment(orderId, originNum, comment)
+        await addSAVComment(orderId, comment)
         return ok({ success: true, message: `✓ Commentaire SAV : "${comment}"` })
       }
 

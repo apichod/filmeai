@@ -694,7 +694,6 @@ async function executeTool(
         if (!savOrderId) return { result: `Erreur : commande "${args.order_id}" introuvable` }
         await addSAVComment(
           savOrderId,
-          String(args.origin_order_number),
           String(args.comment)
         )
         return { result: `✓ Commentaire SAV (order #${args.origin_order_number}) : ${String(args.comment)}` }

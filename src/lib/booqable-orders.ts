@@ -964,7 +964,6 @@ export async function setSavDate(orderId: string): Promise<void> {
  */
 export async function addSAVComment(
   orderId: string,
-  originOrderNumber: string,
   comment: string
 ): Promise<void> {
   const res = await fetch(`${BASE}/orders/${orderId}`, {
@@ -973,7 +972,6 @@ export async function addSAVComment(
     body: JSON.stringify({
       order: {
         properties_attributes: [
-          { name: 'Order SAV', identifier: 'order_sav', value: originOrderNumber },
           { name: 'Notes SAV', identifier: 'notes_sav', value: comment },
         ],
       },
