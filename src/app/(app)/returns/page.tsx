@@ -1534,8 +1534,11 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
   const [filterTag, setFilterTag] = useState<string | null>('r21_open')
   const storageKey = `bq_cat_${primaryTag}`
 
+  // Workflow de relance selon l'onglet (r11_late → r11, r12_missing → r12, …)
+  const relanceWorkflow = `${primaryTag.split('_')[0]}_24_missing_billed_05_RMD`
+
   // Modal dernier email
-  const [emailModal, setEmailModal]     = useState<{ orderId: string; orderNum: string | number; returnNum: string | number } | null>(null)
+  const [emailModal, setEmailModal]     = useState<{ orderId: string; orderNum: string | number; returnNum: string | number; hasBilled: boolean } | null>(null)
   const [emailData, setEmailData]       = useState<EmailData | null>(null)
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailError, setEmailError]     = useState<string | null>(null)
@@ -1582,8 +1585,8 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
     return () => { cancelled = true }
   }, [allRows, filterTag, page])
 
-  async function openEmail(orderId: string, orderNum: string | number, currentDateSav?: string, returnNum?: string | number) {
-    setEmailModal({ orderId, orderNum, returnNum: returnNum ?? orderNum })
+  async function openEmail(orderId: string, orderNum: string | number, currentDateSav?: string, returnNum?: string | number, hasBilled?: boolean) {
+    setEmailModal({ orderId, orderNum, returnNum: returnNum ?? orderNum, hasBilled: hasBilled ?? false })
     setEmailData(null)
     setEmailError(null)
     setEmailLoading(true)
@@ -1827,7 +1830,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                     )}
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => openEmail(o.id, o.number, o.date_sav, o.number)}
+                        onClick={() => openEmail(o.id, o.number, o.date_sav, o.number, o.tag_list.includes('r24_billed'))}
                         title="Voir le dernier email Booqable"
                         className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
                       >
@@ -1899,24 +1902,26 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
                 </div>
               )}
             </div>
-            <div className="px-6 py-3 border-t border-gray-100 flex justify-end">
-              <button
-                onClick={() => {
-                  const rn = emailModal?.returnNum
-                  setEmailModal(null)
-                  if (rn != null) {
-                    const url = `/returns?prefill_order=${encodeURIComponent(String(rn))}&prefill_workflow=r12_24_missing_billed_05_RMD`
-                    window.open(url, '_blank')
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black text-white text-xs font-medium hover:bg-gray-800 transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                Relancer
-              </button>
-            </div>
+            {emailModal?.hasBilled && (
+              <div className="px-6 py-3 border-t border-gray-100 flex justify-end">
+                <button
+                  onClick={() => {
+                    const rn = emailModal?.returnNum
+                    setEmailModal(null)
+                    if (rn != null) {
+                      const url = `/returns?prefill_order=${encodeURIComponent(String(rn))}&prefill_workflow=${encodeURIComponent(relanceWorkflow)}`
+                      window.open(url, '_blank')
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black text-white text-xs font-medium hover:bg-gray-800 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  Relancer
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
