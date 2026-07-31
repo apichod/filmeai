@@ -1987,8 +1987,8 @@ export async function fetchOrderAmount(orderId: string): Promise<{
   }
   const attrs = data.data?.[0]?.attributes ?? {}
   return {
-    grandTotalCents: Number(attrs.grand_total_in_cents ?? 0),
-    priceCents:      Number(attrs.price_in_cents       ?? 0),
+    grandTotalCents: Number(attrs.grand_total_with_tax_in_cents ?? attrs.total_in_cents ?? attrs.grand_total_in_cents ?? 0),
+    priceCents:      Number(attrs.grand_total_in_cents ?? attrs.price_in_cents ?? 0),
     depositCents:    Number(attrs.deposit_in_cents     ?? 0),
   }
 }
