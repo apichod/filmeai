@@ -39,6 +39,7 @@ import {
   fetchOrderAmount,
   createManualPaymentCharge,
   createPaymentLink,
+  checkPaymentLink,
   setSavDate,
   checkInsuranceRequestStatus,
   addProductInsurance8,
@@ -1324,6 +1325,43 @@ export async function executeCodeStep(
           payment_charge_id: paymentChargeId,
           checkout_url:      checkoutUrl,
           message: `✅ Lien de paiement créé : ${checkoutUrl}`,
+        })
+      }
+
+      case 'check_payment_link': {
+        // Vérifie si le lien de paiement de la commande est actif ou expiré.
+        // Lit l'URL depuis vars (checkout_url ou lien_paiement) ou depuis le champ custom de la commande.
+        // Params :
+        //   field_name  (optionnel) – identifiant du champ custom (défaut: 'lien_paiement')
+        if (!orderId) return err('check_payment_link : order_id manquant — exécuter fetch_order avant')
+
+        const orderCtx = step.order_context ?? step.input_context ?? 'return'
+        const fieldName = params.field_name ? String(params.field_name) : undefined
+
+        // Tenter de lire l'URL depuis vars si déjà connue
+        const urlFromVars = String(
+          vars[`${orderCtx}.checkout_url`] ||
+          vars[`${orderCtx}.lien_paiement`] ||
+          ''
+        ) || undefined
+
+        const { status, checkoutUrl, paymentChargeId } = await checkPaymentLink({
+          orderId,
+          checkoutUrl: urlFromVars,
+          fieldName,
+        })
+
+        const messages: Record<string, string> = {
+          active:  `✅ Lien de paiement actif : ${checkoutUrl}`,
+          expired: `⚠️ Lien de paiement expiré`,
+          missing: `ℹ️ Aucun lien de paiement trouvé pour cette commande`,
+        }
+
+        return ok({
+          payment_link_status: status,
+          checkout_url:        checkoutUrl,
+          payment_charge_id:   paymentChargeId,
+          message:             messages[status] ?? `status: ${status}`,
         })
       }
 

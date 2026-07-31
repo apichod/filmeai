@@ -1879,6 +1879,59 @@ export async function createPaymentLink(opts: {
   return { paymentChargeId: chargeId, checkoutUrl }
 }
 
+// ── checkPaymentLink ──────────────────────────────────────────────────────────
+// Vérifie si le lien de paiement d'une commande est encore actif ou expiré.
+// Lit l'URL depuis le champ custom "lien_paiement" (ou checkoutUrl passé directement),
+// extrait l'UUID du payment charge, et interroge /api/4/payments/{id}.
+export async function checkPaymentLink(opts: {
+  orderId:       string
+  checkoutUrl?:  string   // URL déjà connue (prioritaire sur lecture API)
+  fieldName?:    string   // identifiant du champ custom (défaut: 'lien_paiement')
+}): Promise<{ status: 'active' | 'expired' | 'missing'; checkoutUrl: string | null; paymentChargeId: string | null }> {
+  const fieldId = opts.fieldName ?? 'lien_paiement'
+
+  // 1. Obtenir l'URL existante
+  let url: string | null = opts.checkoutUrl ?? null
+
+  if (!url) {
+    const propRes = await fetch(
+      `${BASE4}/properties?filter[owner_id][eq]=${encodeURIComponent(opts.orderId)}&filter[owner_type][eq]=orders&filter[identifier][eq]=${encodeURIComponent(fieldId)}&page[size]=1`,
+      { headers: headers(), signal: AbortSignal.timeout(8000) }
+    )
+    if (propRes.ok) {
+      const propData = await propRes.json() as { data?: { attributes: { value?: string } }[] }
+      url = propData.data?.[0]?.attributes?.value ?? null
+    }
+  }
+
+  if (!url) return { status: 'missing', checkoutUrl: null, paymentChargeId: null }
+
+  // 2. Extraire l'UUID depuis .../pay/<uuid>
+  const m = String(url).match(/\/pay\/([0-9a-fA-F-]{36})/)
+  const chargeId = m ? m[1] : null
+  if (!chargeId) return { status: 'missing', checkoutUrl: url, paymentChargeId: null }
+
+  // 3. Vérifier le statut du payment charge via l'API v4
+  const chargeRes = await fetch(
+    `${BASE4}/payments/${chargeId}`,
+    { headers: headers(), signal: AbortSignal.timeout(8000) }
+  )
+  if (!chargeRes.ok) {
+    // 404 ou autre erreur → lien invalide/expiré
+    return { status: 'expired', checkoutUrl: url, paymentChargeId: chargeId }
+  }
+  const chargeData = await chargeRes.json() as { data?: { attributes: Record<string, unknown> } }
+  const attrs    = chargeData.data?.attributes ?? {}
+  const status   = String(attrs.status ?? '')
+  const expiredAt = attrs.expired_at
+
+  return {
+    status:          (status === 'expired' || !!expiredAt) ? 'expired' : 'active',
+    checkoutUrl:     url,
+    paymentChargeId: chargeId,
+  }
+}
+
 // ── createManualPaymentCharge ─────────────────────────────────────────────────
 // Enregistre un paiement manuel dans Booqable sur une commande donnée.
 // Utilisé après une capture Stripe directe pour garder Booqable en sync.

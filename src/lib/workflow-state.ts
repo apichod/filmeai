@@ -336,6 +336,14 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     // checkout_url = URL du lien de paiement Booqable
     // payment_charge_id = UUID du payment_charge créé
   },
+  check_payment_link: {
+    label:  'Vérifier si le lien de paiement de la commande est actif ou expiré',
+    reads:  ['id'],
+    writes: ['payment_link_status', 'checkout_url', 'payment_charge_id'],
+    // payment_link_status = 'active' | 'expired' | 'missing'
+    // checkout_url        = URL du lien (null si absent)
+    // payment_charge_id   = UUID du payment_charge (null si absent)
+  },
   capture_stripe_deposit: {
     label:  'Capturer la caution Stripe (débiter l\'autorisation bancaire)',
     reads:  ['provider_id', 'grand_total_euros', 'number'],
