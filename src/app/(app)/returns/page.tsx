@@ -26,6 +26,7 @@ type StreamEvent =
   | { type: 'tool_call'; name: string }
   | { type: 'tool_result'; name: string; result: string }
   | { type: 'choices'; order_id: string; items: Array<{ label: string; tag: string }>; multiSelect?: boolean }
+  | { type: 'text_input'; output_var: string; placeholder: string; unit: string }
   | { type: 'email_editor'; subject: string; body: string }
   | { type: 'email_preview'; document_id: string; subject: string; body: string; name: string }
   | { type: 'done'; caseId: string | null; workflowState?: WorkflowState | null }
@@ -320,6 +321,8 @@ function ChatPanel({ prefill, onPrefillConsumed }: { prefill?: { orderNumber: st
   const [pendingChoices, setPendingChoices] = useState<Array<{ label: string; tag: string }> | null>(null)
   const [pendingChoicesMulti, setPendingChoicesMulti] = useState(false)
   const [selectedChoiceTags, setSelectedChoiceTags] = useState<Set<string>>(new Set())
+  const [pendingTextInput, setPendingTextInput] = useState<{ placeholder: string; unit: string } | null>(null)
+  const [textInputValue, setTextInputValue] = useState('')
   const [pendingEmail, setPendingEmail] = useState<{ subject: string; body: string } | null>(null)
   const [emailImproving, setEmailImproving] = useState(false)
   const [emailInstruction, setEmailInstruction] = useState('')
@@ -484,6 +487,10 @@ function ChatPanel({ prefill, onPrefillConsumed }: { prefill?: { orderNumber: st
               setPendingChoicesMulti(event.multiSelect ?? false)
               setSelectedChoiceTags(new Set())
             }
+            if (event.type === 'text_input') {
+              setPendingTextInput({ placeholder: event.placeholder ?? '', unit: event.unit ?? '' })
+              setTextInputValue('')
+            }
             if (event.type === 'email_editor') {
               console.log('[client] email_editor reçu, subject:', event.subject?.slice(0, 40))
               setPendingEmail({ subject: event.subject, body: event.body })
@@ -636,6 +643,10 @@ function ChatPanel({ prefill, onPrefillConsumed }: { prefill?: { orderNumber: st
               setPendingChoices(event.items)
               setPendingChoicesMulti(event.multiSelect ?? false)
               setSelectedChoiceTags(new Set())
+            }
+            if (event.type === 'text_input') {
+              setPendingTextInput({ placeholder: event.placeholder ?? '', unit: event.unit ?? '' })
+              setTextInputValue('')
             }
             if (event.type === 'email_editor') {
               console.log('[client] email_editor reçu, subject:', event.subject?.slice(0, 40))
@@ -1158,6 +1169,40 @@ function ChatPanel({ prefill, onPrefillConsumed }: { prefill?: { orderNumber: st
       </div>
 
       <div className="p-3 border-t border-gray-100 space-y-2">
+        {/* Saisie texte libre (prix de remplacement, etc.) */}
+        {pendingTextInput && (
+          <div className="flex items-center gap-2 px-1">
+            <div className="flex items-center flex-1 border border-gray-300 rounded-lg overflow-hidden bg-white">
+              <input
+                type="text"
+                value={textInputValue}
+                onChange={e => setTextInputValue(e.target.value)}
+                placeholder={pendingTextInput.placeholder}
+                className="flex-1 px-3 py-1.5 text-xs focus:outline-none"
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && textInputValue.trim()) {
+                    setPendingTextInput(null)
+                    quickSend(textInputValue.trim())
+                  }
+                }}
+              />
+              {pendingTextInput.unit && (
+                <span className="px-2 text-xs text-gray-400 bg-gray-50 border-l border-gray-200 py-1.5">{pendingTextInput.unit}</span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                if (!textInputValue.trim()) return
+                setPendingTextInput(null)
+                quickSend(textInputValue.trim())
+              }}
+              disabled={sending || !textInputValue.trim()}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40"
+            >
+              Confirmer
+            </button>
+          </div>
+        )}
         {/* Choix articles / tag problème */}
         {pendingChoices && !pendingChoicesMulti && (
           <div className="flex flex-wrap gap-1.5 px-1">

@@ -208,10 +208,16 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes: [],
   },
   set_replacement_price: {
-    label:  'Fixer le prix de remplacement d\'une ligne',
-    reads:  ['id', 'lines'],
-    writes: ['kept_product_names'],   // accumulé article par article → flush après le step AI
-    // Paramètres injectés par l'IA : line_id, product_name, price_euros, charge_label (optionnel)
+    label:  'Prix de remplacement — saisie des montants',
+    reads:  ['id', 'lines', 'selected_ids', 'chosen_lines'],
+    writes: ['replacement_lines_json'],
+    // Mode code : affiche les lignes, retourne text_input → replacement_prices_raw capturé par la route
+    // Mode AI conservé via executeTool dans returns/chat/route.ts (line_id, price_euros, charge_label)
+  },
+  apply_replacement_prices: {
+    label:  'Appliquer les prix de remplacement',
+    reads:  ['replacement_prices_raw', 'replacement_lines_json'],
+    writes: ['kept_product_names'],
   },
   create_new_return_order: {
     label:       'Créer une return order',

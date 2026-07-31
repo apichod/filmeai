@@ -1265,6 +1265,7 @@ Affiche les {{...}} littéralement, toujours.`
                       || leavingStep?.booqable_action === 'choose_article'
                       || leavingStep?.booqable_action === 'ask_yes_no'
                       || leavingStep?.booqable_action === 'add_discount_with_input_field'
+                      || (leavingStep?.booqable_action === 'set_replacement_price' && leavingStep?.execution === 'code')
 
     // draft_email → l'opérateur renvoie __email_confirm__:{subject,body}
     if (leavingStep?.booqable_action === 'draft_email') {
@@ -1294,6 +1295,8 @@ Affiche les {{...}} littéralement, toujours.`
           wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.${outputVar}`]: chosenTag } }
         } else if (leavingStep!.booqable_action === 'add_discount_with_input_field') {
           wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.discount_proposal`]: chosenTag } }
+        } else if (leavingStep!.booqable_action === 'set_replacement_price') {
+          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.replacement_prices_raw`]: chosenTag } }
         }
 
         // ── Pour choose_article : construire chosen_lines (lignes structurées avec UUIDs) ──
@@ -1422,6 +1425,7 @@ Affiche les {{...}} littéralement, toujours.`
                              || leavingStep2?.booqable_action === 'choose_article'
                              || leavingStep2?.booqable_action === 'ask_yes_no'
                              || leavingStep2?.booqable_action === 'add_discount_with_input_field'
+                             || (leavingStep2?.booqable_action === 'set_replacement_price' && leavingStep2?.execution === 'code')
           if (isChoiceStep2) {
             const lastUserMsg2 = [...messages].reverse().find(m => m.role === 'user')
             const selectionText2 = typeof lastUserMsg2?.content === 'string' ? lastUserMsg2.content.trim() : ''
@@ -1438,6 +1442,8 @@ Affiche les {{...}} littéralement, toujours.`
                   wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.${outputVar2}`]: selectionText2 } }
                 } else if (leavingStep2.booqable_action === 'add_discount_with_input_field') {
                   wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.discount_proposal`]: selectionText2 } }
+                } else if (leavingStep2.booqable_action === 'set_replacement_price') {
+                  wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.replacement_prices_raw`]: selectionText2 } }
                 }
               }
 
