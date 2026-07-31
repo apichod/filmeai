@@ -1731,7 +1731,7 @@ function CategoryTable({ primaryTag }: { primaryTag: string }) {
     // Auto-sync sauf si dernière sync < 2 minutes
     const tooRecent = lastSyncedAt && (Date.now() - new Date(lastSyncedAt).getTime()) < 5 * 60 * 1000
     if (!tooRecent) void sync()
-  }, [sync])
+  }, [sync, storageKey])
 
   // Filtre côté client par tag secondaire
   const rows = filterTag
