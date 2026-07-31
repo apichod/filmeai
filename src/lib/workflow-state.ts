@@ -178,7 +178,7 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     writes: [],
   },
   finalize_invoice: {
-    label:  'Finaliser la facture de la commande',
+    label:  'Finaliser la facture — ou retourner la facture existante si déjà finalisée',
     reads:  ['id'],
     writes: ['document_id', 'invoice_number'],
   },
