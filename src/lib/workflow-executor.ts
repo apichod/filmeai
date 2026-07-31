@@ -419,25 +419,34 @@ export async function executeCodeStep(
       }
 
       case 'set_replacement_price': {
-        // MODE CODE : affiche les lignes et demande les prix via text_input
-        // L'utilisateur saisit les prix séparés par des virgules → apply_replacement_prices applique
+        // MODE CODE : demande les prix un par un (article par article)
+        // Chaque appel vérifie quelles lignes ont déjà un prix (replacement_price_0, _1, …)
+        // et demande le suivant. Quand tous sont collectés, retourne replacement_prices_raw (joint par |).
         const ctx    = step.order_context ?? step.output_context ?? 'return'
         const srcCtx = step.input_context ?? ctx
 
         type PriceLine = { id: string; product_name: string; quantity: number; stock_item_identifier: string }
         let pLines: PriceLine[] = []
 
-        // Priorité 1 : chosen_lines (depuis choose_article)
-        const chosenRaw = vars[`${srcCtx}.chosen_lines`] ?? vars[`${ctx}.chosen_lines`]
-        if (chosenRaw) {
-          try {
-            const cl = JSON.parse(chosenRaw) as Array<{ id: string; product_name?: string; quantity?: number; stock_item_identifier?: string }>
-            pLines = cl.map(l => ({ id: l.id, product_name: l.product_name ?? '?', quantity: l.quantity ?? 1, stock_item_identifier: l.stock_item_identifier ?? '' }))
-          } catch { /* ignore */ }
+        // Réutiliser les lignes déjà stockées (itérations suivantes)
+        const storedLinesJson = vars[`${ctx}.replacement_lines_json`]
+        if (storedLinesJson) {
+          try { pLines = JSON.parse(storedLinesJson) as PriceLine[] } catch { /* ignore */ }
         }
 
-        // Priorité 2 : lines + selected_ids
         if (!pLines.length) {
+          // Priorité 1 : chosen_lines (depuis choose_article)
+          const chosenRaw = vars[`${srcCtx}.chosen_lines`] ?? vars[`${ctx}.chosen_lines`]
+          if (chosenRaw) {
+            try {
+              const cl = JSON.parse(chosenRaw) as Array<{ id: string; product_name?: string; quantity?: number; stock_item_identifier?: string }>
+              pLines = cl.map(l => ({ id: l.id, product_name: l.product_name ?? '?', quantity: l.quantity ?? 1, stock_item_identifier: l.stock_item_identifier ?? '' }))
+            } catch { /* ignore */ }
+          }
+        }
+
+        if (!pLines.length) {
+          // Priorité 2 : lines + selected_ids
           const linesRaw = vars[`${srcCtx}.lines`] ?? vars[`${ctx}.lines`]
           const selectedIdsRaw = vars[`${srcCtx}.selected_ids`] ?? vars[`${ctx}.selected_ids`]
           if (linesRaw) {
@@ -463,20 +472,31 @@ export async function executeCodeStep(
 
         if (!pLines.length) return err('set_replacement_price : aucune ligne trouvée (fetch_order ou choose_article requis avant)')
 
-        const linesList = pLines.map((l, i) => {
-          const shortId = l.stock_item_identifier.match(/(\d+)$/)?.[1] ?? l.stock_item_identifier
-          return `${i + 1}. ${l.quantity} x ${l.product_name}${shortId ? ` ID ${shortId}` : ''}`
-        }).join('\n')
+        // Trouver le premier article sans prix
+        let nextIndex = -1
+        for (let i = 0; i < pLines.length; i++) {
+          if (!vars[`${ctx}.replacement_price_${i}`]) { nextIndex = i; break }
+        }
 
-        const examplePrices = pLines.map(() => '50,00').join(', ')
-        const message = `Prix unitaire HT de remplacement pour chaque article (séparé par des virgules) :\n${linesList}`
+        if (nextIndex === -1) {
+          // Tous les prix collectés — assembler avec | comme séparateur (pas de conflit avec , décimale)
+          const pricesAssembled = pLines.map((_, i) => vars[`${ctx}.replacement_price_${i}`] ?? '0').join('|')
+          return ok({ replacement_prices_raw: pricesAssembled, replacement_lines_json: JSON.stringify(pLines) })
+        }
+
+        // Demander le prix pour l'article nextIndex
+        const line = pLines[nextIndex]
+        const shortId = line.stock_item_identifier.match(/(\d+)$/)?.[1] ?? line.stock_item_identifier
+        const lineLabel = `${line.quantity} x ${line.product_name}${shortId ? ` (ID ${shortId})` : ''}`
+        const progress = pLines.length > 1 ? ` (${nextIndex + 1}/${pLines.length})` : ''
 
         return ok({
           __type__: 'text_input',
-          output_var: 'replacement_prices_raw',
-          message,
-          placeholder: `Ex: ${examplePrices}`,
+          output_var: 'replacement_price_current',
+          message: `Prix HT de remplacement${progress} pour :\n${lineLabel}`,
+          placeholder: 'Ex: 150,00',
           unit: '€ HT',
+          replacement_price_index: String(nextIndex),
           replacement_lines_json: JSON.stringify(pLines),
         })
       }
@@ -498,14 +518,11 @@ export async function executeCodeStep(
           return err('apply_replacement_prices : impossible de parser replacement_lines_json')
         }
 
-        // Gère la notation française (50,00€ ou 50,00) ET la séparation par virgule
-        // Étape 1 : normaliser les espaces autour des virgules
-        // Étape 2 : transformer les virgules décimales (X,YY en fin ou avant une autre virgule) en points
-        // Étape 3 : séparer sur les virgules restantes
-        const priceNormalized = pricesRaw
-          .replace(/\s*,\s*/g, ',')                       // retire espaces autour des virgules
-          .replace(/(\d),(\d{2})(?=[,€]|$)/g, '$1.$2')   // 50,00 → 50.00 (virgule décimale seulement)
-        const prices = priceNormalized.split(',').map((s: string) => parseFloat(s.replace(/[^\d.]/g, '')) || 0)
+        // Prix séparés par | (chaque valeur peut contenir une virgule décimale : 150,50)
+        const prices = pricesRaw.split('|').map((s: string) => {
+          const normalized = s.trim().replace(/,(\d+)$/, '.$1').replace(/[^\d.]/g, '')
+          return parseFloat(normalized) || 0
+        })
         while (prices.length < apLines.length) prices.push(prices[prices.length - 1] ?? 0)
 
         const chargeLabel = String(step.parameters?.charge_label ?? 'Prix de remplacement')

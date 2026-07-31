@@ -1265,7 +1265,6 @@ Affiche les {{...}} littéralement, toujours.`
                       || leavingStep?.booqable_action === 'choose_article'
                       || leavingStep?.booqable_action === 'ask_yes_no'
                       || leavingStep?.booqable_action === 'add_discount_with_input_field'
-                      || (leavingStep?.booqable_action === 'set_replacement_price' && leavingStep?.execution === 'code')
 
     // draft_email → l'opérateur renvoie __email_confirm__:{subject,body}
     if (leavingStep?.booqable_action === 'draft_email') {
@@ -1295,8 +1294,6 @@ Affiche les {{...}} littéralement, toujours.`
           wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.${outputVar}`]: chosenTag } }
         } else if (leavingStep!.booqable_action === 'add_discount_with_input_field') {
           wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.discount_proposal`]: chosenTag } }
-        } else if (leavingStep!.booqable_action === 'set_replacement_price') {
-          wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.replacement_prices_raw`]: chosenTag } }
         }
 
         // ── Pour choose_article : construire chosen_lines (lignes structurées avec UUIDs) ──
@@ -1381,7 +1378,19 @@ Affiche les {{...}} littéralement, toujours.`
         // ────────────────────────────────────────────────────────────────────────────────
       }
     }
-    wfState = advanceStep(wfState, activeSteps.length)
+    // set_replacement_price : capture le prix de l'article courant et reste sur le même step
+    // (le step se ré-exécute jusqu'à ce que tous les articles aient leur prix)
+    if (leavingStep?.booqable_action === 'set_replacement_price' && leavingStep?.execution === 'code') {
+      const lastUserMsgPrice = [...messages].reverse().find(m => m.role === 'user')
+      const priceText = typeof lastUserMsgPrice?.content === 'string' ? lastUserMsgPrice.content.trim() : ''
+      if (priceText) {
+        const ctx = leavingStep.output_context ?? leavingStep.order_context ?? 'return'
+        const priceIndex = wfState.vars[`${ctx}.replacement_price_index`] ?? '0'
+        wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx}.replacement_price_${priceIndex}`]: priceText }, status: 'running' }
+      }
+    } else {
+      wfState = advanceStep(wfState, activeSteps.length)
+    }
   }
 
   // Construire l'instruction pour l'étape courante (si workflow actif avec steps)
@@ -1425,7 +1434,6 @@ Affiche les {{...}} littéralement, toujours.`
                              || leavingStep2?.booqable_action === 'choose_article'
                              || leavingStep2?.booqable_action === 'ask_yes_no'
                              || leavingStep2?.booqable_action === 'add_discount_with_input_field'
-                             || (leavingStep2?.booqable_action === 'set_replacement_price' && leavingStep2?.execution === 'code')
           if (isChoiceStep2) {
             const lastUserMsg2 = [...messages].reverse().find(m => m.role === 'user')
             const selectionText2 = typeof lastUserMsg2?.content === 'string' ? lastUserMsg2.content.trim() : ''
@@ -1442,8 +1450,6 @@ Affiche les {{...}} littéralement, toujours.`
                   wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.${outputVar2}`]: selectionText2 } }
                 } else if (leavingStep2.booqable_action === 'add_discount_with_input_field') {
                   wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.discount_proposal`]: selectionText2 } }
-                } else if (leavingStep2.booqable_action === 'set_replacement_price') {
-                  wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.replacement_prices_raw`]: selectionText2 } }
                 }
               }
 
@@ -1508,13 +1514,18 @@ Affiche les {{...}} littéralement, toujours.`
               }
             }
           }
-          // set_replacement_price → flush kept_product_names dans vars
-          if (leavingStep2?.booqable_action === 'set_replacement_price' && replacementLines.length > 0) {
-            const ctx2 = leavingStep2.output_context ?? leavingStep2.order_context ?? 'return'
-            wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.kept_product_names`]: replacementLines.join('\n') } }
+          // set_replacement_price : capture le prix de l'article courant et reste sur le même step
+          if (leavingStep2?.booqable_action === 'set_replacement_price' && leavingStep2?.execution === 'code') {
+            const lastUserMsgPrice2 = [...messages].reverse().find(m => m.role === 'user')
+            const priceText2 = typeof lastUserMsgPrice2?.content === 'string' ? lastUserMsgPrice2.content.trim() : ''
+            if (priceText2) {
+              const ctx2 = leavingStep2.output_context ?? leavingStep2.order_context ?? 'return'
+              const priceIndex2 = wfState.vars[`${ctx2}.replacement_price_index`] ?? '0'
+              wfState = { ...wfState, vars: { ...wfState.vars, [`${ctx2}.replacement_price_${priceIndex2}`]: priceText2 }, status: 'running' }
+            }
+          } else {
+            wfState = advanceStep(wfState, activeSteps.length)
           }
-
-          wfState = advanceStep(wfState, activeSteps.length)
         }
 
         // ── Seed vars depuis l'historique des messages utilisateur ─────────────
