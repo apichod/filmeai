@@ -78,6 +78,7 @@ type WorkflowStep = {
   variable?: string
   condition?: string
   process_note?: string
+  process_skip?: boolean
 }
 
 // ── Registre I/O des outils (pour affichage éditeur) ──────────────────────────
@@ -570,14 +571,25 @@ function StepList({
             />
           </div>
           {/* Note Process — instruction pour les équipes */}
-          <div className="pl-7">
-            <textarea
-              value={step.process_note ?? ''}
-              onChange={e => updateStep(idx, { process_note: e.target.value || undefined })}
-              placeholder="Note Process (instruction équipe — tutoiement impératif, ex : « Ouvre la commande dans Booqable… »)"
-              rows={2}
-              className="w-full border border-blue-100 bg-blue-50/40 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-300 resize-none placeholder:text-gray-400"
-            />
+          <div className="pl-7 space-y-1.5">
+            <div className="flex items-start gap-2">
+              <textarea
+                value={step.process_note ?? ''}
+                onChange={e => updateStep(idx, { process_note: e.target.value || undefined })}
+                placeholder="Note Process (instruction équipe — tutoiement impératif, ex : « Ouvre la commande dans Booqable… »)"
+                rows={2}
+                className="flex-1 border border-blue-100 bg-blue-50/40 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-300 resize-none placeholder:text-gray-400"
+              />
+              <label className="flex items-center gap-1.5 cursor-pointer select-none flex-shrink-0 mt-1" title="Masquer cette étape dans la page Process">
+                <input
+                  type="checkbox"
+                  checked={step.process_skip ?? false}
+                  onChange={e => updateStep(idx, { process_skip: e.target.checked || undefined })}
+                  className="w-3.5 h-3.5 rounded border-gray-300 accent-blue-500"
+                />
+                <span className="text-[11px] text-gray-400 leading-none">Skip</span>
+              </label>
+            </div>
           </div>
 
           {/* input_context + order_context + output_context + reads/writes */}
@@ -949,6 +961,7 @@ export default function WorkflowsPage() {
       if (s.parameters && Object.keys(s.parameters).length > 0) step.parameters = s.parameters
       if (s.condition)    step.condition    = s.condition
       if (s.process_note) step.process_note = s.process_note
+      if (s.process_skip) step.process_skip = s.process_skip
       return step
     })
     return JSON.stringify({

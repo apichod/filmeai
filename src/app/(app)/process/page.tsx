@@ -19,6 +19,7 @@ type WorkflowStep = {
   execution?:      'code' | 'ai'
   condition?:      string
   process_note?:   string
+  process_skip?:   boolean
 }
 
 type ReturnWorkflow = {
@@ -119,6 +120,7 @@ function formatCondition(raw: string): string {
 
 function ProcessFlow({ workflow }: { workflow: ReturnWorkflow }) {
   const displayable = (workflow.steps || []).filter(s => {
+    if (s.process_skip) return false
     if (s.type === 'instruction') return false
     if (SKIP_ACTIONS.has(s.booqable_action ?? '')) return false
     return true

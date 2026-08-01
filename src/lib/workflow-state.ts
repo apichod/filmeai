@@ -41,6 +41,7 @@ export type WorkflowStep = {
   execution?:      'code' | 'ai'
   condition?:      string         // ex: "original.insurance == 'true' AND original.security_deposit == 'true'"
   process_note?:   string         // instruction en langage naturel pour la page Process (indépendant de description/IA)
+  process_skip?:   boolean        // si true, masque ce step dans la page Process
 }
 
 // ── Registre des outils ───────────────────────────────────────────────────────
