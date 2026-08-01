@@ -438,12 +438,22 @@ export function evaluateCondition(condition: string | undefined, vars: WorkflowV
 
 function evaluateSingleClause(clause: string, vars: WorkflowVars): boolean {
   // Format: "{varname} {op} '{value}'" ou "{varname} {op} {value}"
-  const m = clause.match(/^([\w.]+)\s*(==|!=)\s*'?([^']*)'?$/)
+  const m = clause.match(/^([\w.]+)\s*(==|!=|<=|>=|<|>)\s*'?([^']*)'?$/)
   if (!m) return true // clause non parseable → on ne bloque pas
   const [, varName, op, expected] = m
   const actual = vars[varName] ?? ''
+
   if (op === '==') return actual === expected
   if (op === '!=') return actual !== expected
+
+  // Comparaisons numériques
+  const actualNum   = parseFloat(actual)
+  const expectedNum = parseFloat(expected)
+  if (isNaN(actualNum) || isNaN(expectedNum)) return true // non numérique → ne bloque pas
+  if (op === '<')  return actualNum <  expectedNum
+  if (op === '>')  return actualNum >  expectedNum
+  if (op === '<=') return actualNum <= expectedNum
+  if (op === '>=') return actualNum >= expectedNum
   return true
 }
 
