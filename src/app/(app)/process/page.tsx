@@ -13,8 +13,9 @@ type WorkflowStep = {
   description?:    string
   booqable_action?: string
   parameters?:     Record<string, unknown>
-  order_context?:  OrderContext
-  input_context?:  OrderContext
+  order_context?:  OrderContext | null
+  input_context?:  OrderContext | null
+  output_context?: OrderContext | null
   execution?:      'code' | 'ai'
   condition?:      string
   process_note?:   string
@@ -71,7 +72,8 @@ function getCtx(step: WorkflowStep): { label: string; icon: string } {
   if (step.booqable_action && ACTION_CTX_OVERRIDE[step.booqable_action]) {
     return ACTION_CTX_OVERRIDE[step.booqable_action]
   }
-  const key = step.order_context || 'parent'   // || couvre null, undefined ET ''
+  // Cascade : order_context → output_context → input_context → 'parent'
+  const key = step.order_context || step.output_context || step.input_context || 'parent'
   return {
     label: CTX_LABELS[key] ?? 'Commande principale',
     icon:  CTX_ICONS[key]  ?? 'ti-building-store',
