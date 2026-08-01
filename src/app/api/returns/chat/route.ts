@@ -336,7 +336,7 @@ function buildTools(
   {
     type: 'function',
     function: {
-      name: 'add_replacement_price',
+      name: 'set_replacement_price',
       description: 'Fixe le prix de remplacement d\'une ligne Booqable. Demander le prix à l\'utilisateur pour chaque article, puis appeler ce tool une fois par ligne.',
       parameters: {
         type: 'object',
@@ -653,8 +653,8 @@ async function executeTool(
         return { result: `✓ Ligne ${args.line_id} supprimée` }
       }
 
-      case 'add_replacement_price':
-      case 'set_replacement_price': {   // alias rétrocompat
+      case 'set_replacement_price':
+      case 'add_replacement_price': {   // alias rétrocompat
         const priceEuros  = Number(args.price_euros)
         const chargeLabel = String(args.charge_label ?? 'Prix de remplacement')
         await setLineReplacementPrice(String(args.line_id), priceEuros, chargeLabel)

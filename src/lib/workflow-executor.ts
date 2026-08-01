@@ -418,8 +418,8 @@ export async function executeCodeStep(
         })
       }
 
-      case 'add_replacement_price':
-      case 'set_replacement_price': {   // alias rétrocompat
+      case 'set_replacement_price':
+      case 'add_replacement_price': {   // alias rétrocompat
         // MODE CODE : demande les prix un par un (article par article)
         // Chaque appel vérifie quelles lignes ont déjà un prix (replacement_price_0, _1, …)
         // et demande le suivant. Quand tous sont collectés, retourne replacement_prices_raw (joint par |).

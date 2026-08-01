@@ -207,12 +207,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     reads:  ['id', 'customer_id', 'customer_email', 'active_document_id', 'document_id'],
     writes: [],
   },
-  add_replacement_price: {
+  set_replacement_price: {
     label:  'Prix de remplacement — saisie des montants',
     reads:  ['id', 'lines', 'selected_ids', 'chosen_lines'],
     writes: ['replacement_lines_json', 'replacement_price_index', 'replacement_prices_raw'],
   },
-  set_replacement_price: {   // alias rétrocompat
+  add_replacement_price: {   // alias rétrocompat
     label:  'Prix de remplacement — saisie des montants',
     reads:  ['id', 'lines', 'selected_ids', 'chosen_lines'],
     writes: ['replacement_lines_json', 'replacement_price_index', 'replacement_prices_raw'],
