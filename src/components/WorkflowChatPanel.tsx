@@ -472,6 +472,21 @@ export default function WorkflowChatPanel({ chatType }: WorkflowChatPanelProps) 
     setFetchedCustomerId(null)
     setFetchedCustomerName(null)
     setFetchedCustomerEmail(null)
+
+    // Auto-run si le premier step est redirect_url (même logique que selectOtherWorkflow)
+    const fullWf = availableWorkflows.find(w => w.slug === opt.scenario)
+    if (fullWf?.steps?.[0]?.booqable_action === 'redirect_url') {
+      const assistantId = `a-${Date.now()}`
+      setSending(true)
+      setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', toolCalls: [] }])
+      streamChat([], assistantId, fullWf.slug)
+        .catch(err => {
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId ? { ...m, content: `Erreur : ${err instanceof Error ? err.message : String(err)}` } : m
+          ))
+        })
+        .finally(() => setSending(false))
+    }
   }
 
   function selectOtherWorkflow(wf: ActiveWorkflow) {
