@@ -77,6 +77,7 @@ type WorkflowStep = {
   execution?: 'code' | 'ai'
   variable?: string
   condition?: string
+  process_note?: string
 }
 
 // ── Registre I/O des outils (pour affichage éditeur) ──────────────────────────
@@ -564,8 +565,18 @@ function StepList({
             <input
               value={step.description}
               onChange={e => updateStep(idx, { description: e.target.value })}
-              placeholder="Description"
+              placeholder="Description (contexte IA)"
               className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+            />
+          </div>
+          {/* Note Process — instruction pour les équipes */}
+          <div className="pl-7">
+            <textarea
+              value={step.process_note ?? ''}
+              onChange={e => updateStep(idx, { process_note: e.target.value || undefined })}
+              placeholder="Note Process (instruction équipe — tutoiement impératif, ex : « Ouvre la commande dans Booqable… »)"
+              rows={2}
+              className="w-full border border-blue-100 bg-blue-50/40 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-300 resize-none placeholder:text-gray-400"
             />
           </div>
 
@@ -936,7 +947,8 @@ export default function WorkflowsPage() {
       step.output_context = s.output_context ?? (s.booqable_action ? (TOOL_IO[s.booqable_action]?.outputCtx ?? null) : null) ?? effectiveOrder
       if (s.booqable_action) step.booqable_action  = s.booqable_action
       if (s.parameters && Object.keys(s.parameters).length > 0) step.parameters = s.parameters
-      if (s.condition)  step.condition = s.condition
+      if (s.condition)    step.condition    = s.condition
+      if (s.process_note) step.process_note = s.process_note
       return step
     })
     return JSON.stringify({

@@ -40,6 +40,7 @@ export type WorkflowStep = {
   output_context?: OrderContext   // destination  : préfixe des vars écrites (défaut: order_context)
   execution?:      'code' | 'ai'
   condition?:      string         // ex: "original.insurance == 'true' AND original.security_deposit == 'true'"
+  process_note?:   string         // instruction en langage naturel pour la page Process (indépendant de description/IA)
 }
 
 // ── Registre des outils ───────────────────────────────────────────────────────

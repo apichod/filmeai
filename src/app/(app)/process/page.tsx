@@ -17,6 +17,7 @@ type WorkflowStep = {
   input_context?:  OrderContext
   execution?:      'code' | 'ai'
   condition?:      string
+  process_note?:   string
 }
 
 type ReturnWorkflow = {
@@ -81,6 +82,15 @@ function interpretStep(step: WorkflowStep): Interp | null {
   const desc   = step.description ?? ''
 
   if (SKIP_ACTIONS.has(action)) return null
+
+  // ── process_note prioritaire sur tout ────────────────────────────────────
+  if (step.process_note) {
+    return {
+      title:       step.title,
+      instruction: step.process_note,
+      details:     [],
+    }
+  }
 
   // ── Questions (identification) ─────────────────────────────────────────────
   if (step.type === 'question') {
