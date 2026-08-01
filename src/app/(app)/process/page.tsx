@@ -1,647 +1,616 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState } from 'react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type StepItem = {
-  id: string
-  type: 'step' | 'info' | 'cases'
-  text?: string
-  badge?: { label: string; color: 'green' | 'blue' | 'amber' }
-  lines?: string[]
-  pills?: { label: string; color: 'blue' | 'amber' }[]
-  title?: string
-}
-
-type Process = {
-  id: string
-  slug: string
-  title: string
-  subtitle: string
-  steps: StepItem[]
-  sort_order: number
-  workflow_slug?: string | null
-}
+type OrderContext = 'parent' | 'original' | 'return' | 'child'
 
 type WorkflowStep = {
-  id: string
-  type: 'question' | 'action' | 'instruction'
-  title: string
-  description?: string
+  id:              string
+  type:            'action' | 'question' | 'check' | 'instruction'
+  title:           string
+  description?:    string
   booqable_action?: string
+  parameters?:     Record<string, unknown>
+  order_context?:  OrderContext
+  input_context?:  OrderContext
+  execution?:      'code' | 'ai'
+  condition?:      string
 }
 
 type ReturnWorkflow = {
-  id: string
-  slug: string
-  name: string
-  chat_label: string | null
-  description: string
-  steps: WorkflowStep[]
-  is_active: boolean
+  id:              string
+  slug:            string
+  name:            string
+  chat_label:      string | null
+  description:     string
+  steps:           WorkflowStep[]
+  is_active:       boolean
+  category?:       string
+  parent_category?: string | null
 }
 
-// ── Catégories de workflows retour ────────────────────────────────────────────
-
-const WF_GROUPS: { prefix: string; label: string; color: string }[] = [
-  { prefix: 'r11_', label: 'Retard',    color: 'text-blue-600' },
-  { prefix: 'r12_', label: 'Perte',     color: 'text-amber-600' },
-  { prefix: 'r13_', label: 'Vol',       color: 'text-red-600' },
-  { prefix: 'r14_', label: 'Dommage',   color: 'text-orange-600' },
-  { prefix: 'r00_', label: 'Retour OK', color: 'text-green-600' },
-  { prefix: 'u0',   label: 'Utilitaires', color: 'text-violet-600' },
-]
-
-function getGroup(slug: string) {
-  return WF_GROUPS.find(g => slug.startsWith(g.prefix)) ?? { prefix: '', label: 'Autres', color: 'text-gray-500' }
+type OldProcess = {
+  id:           string
+  title:        string
+  workflow_slug?: string | null
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Contexte commande ─────────────────────────────────────────────────────────
 
-function renderText(text: string) {
-  const BLUE_FIELDS = ['Notes internes', 'Order origine SAV', 'Commentaire problème']
-  let result = text
-  BLUE_FIELDS.forEach(f => {
-    result = result.replace(`**${f}**`, `<span class="text-[#1a73e8] font-medium">${f}</span>`)
-  })
-  result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  return <span dangerouslySetInnerHTML={{ __html: result }} />
+const CTX_LABELS: Record<string, string> = {
+  parent:   'Commande principale',
+  original: 'Commande originale',
+  return:   'Commande retour',
+  child:    'Commande enfant',
 }
 
-const BADGE_CLASSES: Record<string, string> = {
-  green: 'bg-[#34a853] text-white',
-  blue:  'bg-[#1a73e8] text-white',
-  amber: 'bg-[#fbbc04] text-[#3c2a00]',
+const CTX_ICONS: Record<string, string> = {
+  parent:   'ti-building-store',
+  original: 'ti-file-invoice',
+  return:   'ti-refresh',
+  child:    'ti-git-branch',
+  client:   'ti-user',
+  email:    'ti-mail',
 }
 
-const PILL_ICONS: Record<string, string> = { blue: '🔒', amber: '↑' }
+// ── Actions à masquer ─────────────────────────────────────────────────────────
 
-// ── Conversion workflow → process steps ───────────────────────────────────────
+const SKIP_ACTIONS = new Set(['send_email', 'search_products'])
 
-const HIDDEN_ACTIONS = new Set(['fetch_order', 'search_products'])
+// ── Interprétation humaine des actions ───────────────────────────────────────
 
-function workflowToProcessSteps(wfSteps: WorkflowStep[]): StepItem[] {
-  const result: StepItem[] = []
-  let stepNum = 0
-  let i = 0
+type Interp = {
+  title:          string
+  instruction:    string
+  details:        { key: string; val: string }[]
+  ctxLabel?:      string   // override du label contexte
+  ctxIcon?:       string   // override de l'icône contexte
+}
 
-  while (i < wfSteps.length) {
-    const s = wfSteps[i]
+function fmtVal(v: unknown): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'boolean') return v ? 'Oui' : 'Non'
+  return String(v)
+}
 
-    if (s.type === 'action' && HIDDEN_ACTIONS.has(s.booqable_action || '')) { i++; continue }
+function interpretStep(step: WorkflowStep): Interp | null {
+  const action = step.booqable_action ?? ''
+  const params = step.parameters ?? {}
+  const desc   = step.description ?? ''
 
-    if (s.type === 'question') {
-      const titles: string[] = []
-      while (i < wfSteps.length && wfSteps[i].type === 'question') {
-        titles.push(wfSteps[i].title); i++
-      }
-      stepNum++
-      result.push({
-        id: String(stepNum), type: 'step',
-        text: titles.length === 1
-          ? `Identifier la **${titles[0]}**`
-          : `Identifier ${titles.map(t => `**${t}**`).join(' et ')}`,
-      })
-      continue
+  if (SKIP_ACTIONS.has(action)) return null
+
+  // ── Questions (identification) ─────────────────────────────────────────────
+  if (step.type === 'question') {
+    return {
+      title:       step.title,
+      instruction: `Identifie ${step.title.toLowerCase()} dans le dossier ou demande-le au client si nécessaire.`,
+      details:     [],
     }
-
-    if (s.type === 'instruction') {
-      stepNum++
-      result.push({ id: String(stepNum), type: 'step', text: s.title, badge: { color: 'green', label: 'Return' } })
-      i++; continue
-    }
-
-    if (s.booqable_action === 'create_new_return_order') {
-      stepNum++
-      result.push({ id: String(stepNum), type: 'step', text: `Créer la **commande de retour** (return_order)`, badge: { color: 'blue', label: 'Add order' } })
-      const infoLines = ['Même client que la commande d\'origine', 'Remise 100%, caution = aucune', 'Date de fin = 31/12 à 23h45']
-      i++
-      if (wfSteps[i]?.booqable_action === 'add_new_product_line') {
-        infoLines.push('Ajouter les articles manquants avec leurs IDs'); i++
-      }
-      result.push({ id: `${stepNum}b`, type: 'info', lines: infoLines, pills: [{ color: 'blue', label: 'Reserve' }, { color: 'amber', label: 'Pickup' }] })
-      continue
-    }
-
-    if (s.booqable_action === 'add_new_product_line') {
-      stepNum++
-      result.push({ id: String(stepNum), type: 'step', text: `Ajouter les **articles** à la commande de retour` })
-      i++; continue
-    }
-
-    if (s.booqable_action === 'add_internal_note') {
-      stepNum++
-      result.push({ id: String(stepNum), type: 'step', text: `Ajouter une **note interne** à la commande d'origine` })
-      if (s.description) result.push({ id: `${stepNum}b`, type: 'info', lines: [s.description] })
-      i++; continue
-    }
-
-    if (s.booqable_action === 'add_original_order' || s.booqable_action === 'set_original_order') {
-      stepNum++
-      result.push({ id: String(stepNum), type: 'step', text: `Renseigner la **commande d'origine** (original_order)` })
-      result.push({ id: `${stepNum}b`, type: 'info', lines: ['= numéro de la commande d\'origine'] })
-      i++; continue
-    }
-
-    if (s.booqable_action === 'add_sav_comment') {
-      stepNum++
-      result.push({ id: String(stepNum), type: 'step', text: `Renseigner le **commentaire SAV**` })
-      if (s.description) result.push({ id: `${stepNum}b`, type: 'info', lines: [s.description] })
-      i++; continue
-    }
-
-    if (s.booqable_action === 'add_tag') {
-      stepNum++
-      const tagMatch = (s.title + ' ' + (s.description || '')).match(/r\d+_\w+/)
-      result.push({ id: String(stepNum), type: 'step', text: `Ajouter le tag **${tagMatch?.[0] ?? s.title}**` })
-      i++; continue
-    }
-
-    if (s.booqable_action === 'draft_email') {
-      stepNum++
-      result.push({ id: String(stepNum), type: 'step', text: `Envoyer l'email client`, badge: { color: 'blue', label: 'Send email' } })
-      i++
-      if (wfSteps[i]?.booqable_action === 'send_email') i++
-      if (s.description) result.push({ id: `${stepNum}b`, type: 'info', lines: [s.description] })
-      continue
-    }
-
-    if (s.booqable_action === 'send_email') { i++; continue }
-
-    if (s.booqable_action === 'log_case') {
-      stepNum++
-      result.push({ id: String(stepNum), type: 'step', text: `Logger le cas dans le tableau de suivi` })
-      i++; continue
-    }
-
-    stepNum++
-    result.push({ id: String(stepNum), type: 'step', text: s.title })
-    i++
   }
 
-  return result
+  // ── Actions ───────────────────────────────────────────────────────────────
+  switch (action) {
+
+    case 'fetch_order':
+      return {
+        title:       step.title || 'Ouvrir la commande',
+        instruction: 'Ouvre la commande dans Booqable et relève le numéro, le statut, le client et la liste des articles.',
+        details:     [{ key: 'À noter', val: 'Numéro, statut, nom du client, articles loués' }],
+      }
+
+    case 'fetch_order_by_number':
+      return {
+        title:       step.title || 'Rechercher la commande',
+        instruction: 'Recherche la commande dans Booqable via son numéro.',
+        details:     [],
+      }
+
+    case 'fetch_original_from_field':
+      return {
+        title:       step.title || 'Ouvrir la commande d\'origine',
+        instruction: 'Ouvre la commande d\'origine en lisant le champ personnalisé « Commande d\'origine » de la commande retour.',
+        details:     [{ key: 'Champ Booqable', val: 'order_sav' }],
+      }
+
+    case 'fetch_original_amount_HT':
+      return {
+        title:       step.title || 'Relever le montant HT',
+        instruction: 'Note le montant HT de la commande d\'origine — il servira à calculer l\'assurance.',
+        details:     [],
+      }
+
+    case 'add_internal_note':
+      return {
+        title:       step.title || 'Ajouter une note interne',
+        instruction: desc
+          ? `Ajoute une note interne sur la commande avec le contenu suivant :`
+          : 'Ajoute une note interne sur la commande pour tracer l\'action avec la date et le contexte.',
+        details: desc ? [{ key: 'Contenu', val: desc }] : [],
+      }
+
+    case 'add_tag':
+      return {
+        title:       step.title || 'Ajouter un tag',
+        instruction: 'Ajoute le tag ci-dessous sur la commande pour l\'identifier dans le suivi.',
+        details:     params.tag ? [{ key: 'Tag', val: fmtVal(params.tag) }] : [],
+      }
+
+    case 'create_new_return_order':
+      return {
+        title:       step.title || 'Créer la commande retour',
+        instruction: 'Crée une nouvelle commande SAV dans Booqable pour le même client avec les paramètres suivants :',
+        details:     [
+          { key: 'Remise',     val: '100 %' },
+          { key: 'Caution',    val: 'Aucune' },
+          { key: 'Date de fin', val: '31 décembre à 23 h 45' },
+        ],
+        ctxLabel: 'Commande retour',
+        ctxIcon:  'ti-refresh',
+      }
+
+    case 'add_new_product_line':
+      return {
+        title:       step.title || 'Ajouter des articles',
+        instruction: 'Ajoute les articles à la commande avec les bons identifiants et quantités.',
+        details:     [],
+      }
+
+    case 'add_product_line_by_id':
+      return {
+        title:       step.title || 'Ajouter un produit',
+        instruction: 'Ajoute le produit suivant à la commande.',
+        details: [
+          ...(params.product_group_id ? [{ key: 'ID produit', val: fmtVal(params.product_group_id) }] : []),
+          ...(params.quantity          ? [{ key: 'Quantité',   val: fmtVal(params.quantity) }]          : []),
+        ],
+      }
+
+    case 'add_original_order':
+    case 'set_original_order':
+      return {
+        title:       step.title || 'Renseigner la commande d\'origine',
+        instruction: 'Dans la commande retour, renseigne le champ « Commande d\'origine » avec le numéro de la commande principale.',
+        details:     [{ key: 'Champ Booqable', val: 'order_sav' }],
+      }
+
+    case 'add_sav_comment':
+      return {
+        title:       step.title || 'Ajouter un commentaire SAV',
+        instruction: desc
+          ? `Renseigne le commentaire SAV avec le contenu suivant :`
+          : 'Renseigne le commentaire SAV avec les détails du problème constaté.',
+        details: [
+          ...(desc ? [{ key: 'Contenu', val: desc }] : []),
+          { key: 'Champ Booqable', val: 'notes_sav' },
+        ],
+      }
+
+    case 'add_sav_date':
+    case 'set_sav_date':
+      return {
+        title:       step.title || 'Renseigner la date SAV',
+        instruction: 'Renseigne la date d\'ouverture du dossier SAV avec la date du jour.',
+        details:     [{ key: 'Champ Booqable', val: 'date_sav' }],
+      }
+
+    case 'draft_email':
+      return {
+        title:       step.title || 'Envoyer l\'email client',
+        instruction: 'Rédige et envoie l\'email au client en t\'appuyant sur le modèle ci-dessous.',
+        details:     params.template_id ? [{ key: 'Modèle email', val: fmtVal(params.template_id) }] : [],
+        ctxLabel:    'Client',
+        ctxIcon:     'ti-mail',
+      }
+
+    case 'log_case':
+      return {
+        title:       step.title || 'Logger le cas',
+        instruction: 'Enregistre le cas dans le tableau de suivi FilmeAI.',
+        details:     params.problem_type ? [{ key: 'Type de problème', val: fmtVal(params.problem_type) }] : [],
+      }
+
+    case 'redirect_url':
+      return {
+        title:       step.title || 'Ouvrir la page',
+        instruction: 'Ouvre le lien suivant dans le navigateur.',
+        details:     params.url ? [{ key: 'URL', val: fmtVal(params.url) }] : [],
+        ctxLabel:    'Navigation',
+        ctxIcon:     'ti-external-link',
+      }
+
+    case 'set_replacement_price':
+    case 'add_replacement_price':
+      return {
+        title:       step.title || 'Saisir les prix de remplacement',
+        instruction: 'Saisis le prix de remplacement HT pour chaque article endommagé ou perdu, article par article.',
+        details:     [],
+      }
+
+    case 'apply_replacement_prices':
+      return {
+        title:       step.title || 'Appliquer les prix de remplacement',
+        instruction: 'Applique les prix de remplacement saisis sur la commande retour.',
+        details:     params.charge_label ? [{ key: 'Libellé de la ligne', val: fmtVal(params.charge_label) }] : [],
+      }
+
+    case 'remove_deposit':
+      return {
+        title:       step.title || 'Supprimer la caution',
+        instruction: 'Supprime la caution de la commande.',
+        details:     [],
+      }
+
+    case 'remove_discount':
+      return {
+        title:       step.title || 'Supprimer la remise',
+        instruction: 'Supprime la remise de la commande.',
+        details:     [],
+      }
+
+    case 'remove_other_lines':
+      return {
+        title:       step.title || 'Supprimer les autres articles',
+        instruction: 'Supprime toutes les lignes de la commande sauf l\'article sélectionné.',
+        details:     [],
+      }
+
+    case 'check_payment_link':
+      return {
+        title:       step.title || 'Vérifier le lien de paiement',
+        instruction: 'Vérifie s\'il existe un lien de paiement actif pour cette commande.',
+        details:     [],
+      }
+
+    case 'create_payment_link':
+      return {
+        title:       step.title || 'Créer un lien de paiement',
+        instruction: 'Crée un lien de paiement Stripe et envoie-le au client.',
+        details:     [],
+        ctxLabel:    'Client',
+        ctxIcon:     'ti-credit-card',
+      }
+
+    case 'capture_stripe_deposit':
+      return {
+        title:       step.title || 'Encaisser la caution',
+        instruction: 'Procède à l\'encaissement de la caution Stripe de la commande.',
+        details:     [],
+      }
+
+    case 'check_insurance_request_status':
+      return {
+        title:       step.title || 'Vérifier le statut assurance',
+        instruction: 'Vérifie si le client a souscrit l\'assurance FILME sur sa commande.',
+        details:     [{ key: 'Résultat possible', val: 'Assuré FILME / Assurance perso / Non renseigné' }],
+      }
+
+    case 'add_product_insurance_8':
+      return {
+        title:       step.title || 'Ajouter l\'assurance FILME',
+        instruction: 'Ajoute la ligne assurance FILME à la commande et fixe son prix à 8 % du montant HT de la commande d\'origine.',
+        details:     [],
+      }
+
+    case 'read_customer_notes':
+      return {
+        title:       step.title || 'Consulter les notes client',
+        instruction: 'Consulte les commentaires et notes du client dans sa fiche Booqable.',
+        details:     [],
+        ctxLabel:    'Client',
+        ctxIcon:     'ti-user',
+      }
+
+    case 'read_delivery_options':
+      return {
+        title:       step.title || 'Consulter les options de livraison',
+        instruction: 'Consulte les options de livraison disponibles pour cette commande.',
+        details:     [],
+      }
+
+    default:
+      // Fallback générique pour les actions inconnues
+      if (!action) return null
+      return {
+        title:       step.title || action,
+        instruction: desc || `Exécute l'action "${action}".`,
+        details:     Object.entries(params).map(([k, v]) => ({ key: k, val: fmtVal(v) })),
+      }
+  }
 }
 
-// ── Composant infographie ─────────────────────────────────────────────────────
+// ── Formatage de la condition ─────────────────────────────────────────────────
 
-function ProcessFlow({ process: p, onEdit, readOnly = false }: { process: Process; onEdit: (step: StepItem, field: string, value: string) => void; readOnly?: boolean }) {
-  return (
-    <div className="max-w-[480px] mx-auto">
-      <div className="text-center mb-6">
-        {p.subtitle && <div className="text-xs text-gray-400 mb-2">{p.subtitle}</div>}
-        <div className="inline-block border-2 border-gray-900 rounded-xl px-6 py-3 text-sm font-bold text-gray-900 leading-snug text-center">
-          {p.title}
-        </div>
+const FIELD_LABELS: Record<string, string> = {
+  grand_total_euros:         'montant total',
+  insurance:                 'assurance',
+  authorisation_card:        'autorisation carte',
+  status:                    'statut',
+  tags:                      'tags',
+  customer_email:            'email client',
+  security_deposit:          'caution',
+  notes_sav:                 'commentaire SAV',
+  order_sav:                 'commande d\'origine',
+}
+
+const CTX_COND_LABELS: Record<string, string> = {
+  parent:   'commande principale',
+  return:   'commande retour',
+  original: 'commande originale',
+  child:    'commande enfant',
+}
+
+function formatCondition(raw: string): string {
+  return raw
+    .replace(/(parent|return|original|child)\.(\w+)/g, (_m: string, ctx: string, field: string) => {
+      const ctxL   = CTX_COND_LABELS[ctx]   ?? ctx
+      const fieldL = FIELD_LABELS[field]     ?? field.replace(/_/g, ' ')
+      return `${fieldL} (${ctxL})`
+    })
+    .replace(/\s*AND\s*/g,       ' et ')
+    .replace(/\s*OR\s*/g,        ' ou ')
+    .replace(/==\s*'true'/g,     '= oui')
+    .replace(/==\s*'false'/g,    '= non')
+    .replace(/==\s*'([^']+)'/g,  '= $1')
+    .replace(/!=\s*'([^']+)'/g,  '≠ $1')
+    .replace(/<=/g,              '≤')
+    .replace(/>=/g,              '≥')
+    .replace(/'([^']+)'/g,       '$1')
+    .trim()
+}
+
+// ── Composant ProcessFlow ─────────────────────────────────────────────────────
+
+function ProcessFlow({ workflow }: { workflow: ReturnWorkflow }) {
+  const steps = workflow.steps || []
+
+  // Construire la liste des étapes affichables
+  const displayed: { step: WorkflowStep; interp: Interp; num: number }[] = []
+  let num = 0
+
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i]
+    if (s.type === 'instruction') continue
+    if (s.type === 'action' && SKIP_ACTIONS.has(s.booqable_action ?? '')) continue
+
+    const interp = interpretStep(s)
+    if (!interp) continue
+
+    num++
+    displayed.push({ step: s, interp, num })
+  }
+
+  if (displayed.length === 0) {
+    return (
+      <div className="text-sm text-gray-400 text-center py-16">
+        Aucune étape à afficher pour ce workflow.
       </div>
-      <div className="flex flex-col">
-        {p.steps.map((step, idx) => (
+    )
+  }
+
+  return (
+    <div className="flex flex-col max-w-[500px] mx-auto">
+      {displayed.map(({ step, interp, num: n }, idx) => {
+        // Déterminer le contexte commande
+        const ctxKey   = step.order_context ?? 'parent'
+        const ctxLabel = interp.ctxLabel ?? CTX_LABELS[ctxKey] ?? 'Commande principale'
+        const ctxIcon  = interp.ctxIcon  ?? CTX_ICONS[ctxKey]  ?? 'ti-building-store'
+        const cond     = step.condition ? formatCondition(step.condition) : null
+
+        return (
           <div key={step.id}>
-            {idx > 0 && <div className="w-0.5 h-4 bg-gray-300 mx-auto" />}
-            {step.type === 'step' && <StepBox step={step} onEdit={onEdit} readOnly={readOnly} />}
-            {step.type === 'info' && <InfoBox step={step} onEdit={onEdit} readOnly={readOnly} />}
-            {step.type === 'cases' && <CasesBox step={step} onEdit={onEdit} readOnly={readOnly} />}
+            {idx > 0 && (
+              <div className="w-px h-3 bg-gray-200 mx-auto" />
+            )}
+
+            {/* Étape bleue */}
+            <div className="bg-[#e8f0fe] border border-[#c5d3f5] rounded-xl px-4 py-3 flex items-start gap-3">
+              <div className="min-w-[26px] h-[26px] rounded-full bg-[#4a86e8] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                {n}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13.5px] font-medium text-gray-900 leading-snug mb-1.5">
+                  {interp.title}
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-[#1a4fa8]">
+                  <i className={`ti ${ctxIcon}`} aria-hidden="true" style={{ fontSize: 13 }} />
+                  <span>Contexte : {ctxLabel}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Connecteur */}
+            <div className="w-px h-0.5 bg-gray-200 mx-auto" />
+
+            {/* Carré blanc — instructions */}
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+              <p className="text-[13px] text-gray-900 leading-relaxed mb-2">
+                {interp.instruction}
+              </p>
+              {interp.details.length > 0 && (
+                <div className="border-t border-gray-100 pt-2 space-y-1">
+                  {interp.details.map((d, di) => (
+                    <div key={di} className="flex items-baseline gap-3">
+                      <span className="text-[11px] text-gray-400 min-w-[120px] flex-shrink-0">
+                        {d.key}
+                      </span>
+                      <span className="text-[12px] text-gray-700">{d.val}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {cond && (
+                <div className="mt-2.5 flex items-start gap-1.5 text-[11.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-snug">
+                  <i className="ti ti-filter flex-shrink-0" aria-hidden="true" style={{ fontSize: 12, marginTop: 1 }} />
+                  <span><strong>Seulement si</strong> : {cond}</span>
+                </div>
+              )}
+            </div>
           </div>
-        ))}
-        {p.steps.length === 0 && (
-          <div className="text-center py-12 text-sm text-gray-400">
-            Aucune étape définie dans ce workflow.
-          </div>
-        )}
-      </div>
+        )
+      })}
     </div>
   )
 }
 
-// ── Step box ──────────────────────────────────────────────────────────────────
+// ── Sidebar ───────────────────────────────────────────────────────────────────
 
-function StepBox({ step, onEdit, readOnly }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void; readOnly?: boolean }) {
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState(step.text || '')
-
-  useEffect(() => { setVal(step.text || '') }, [step.text])
-
-  function commit() {
-    setEditing(false)
-    if (val !== step.text) onEdit(step, 'text', val)
-  }
-
-  return (
-    <div className="bg-[#e8f0fe] border border-[#c5d3f5] rounded-xl px-4 py-3 flex items-start gap-3 group">
-      <div className="min-w-[26px] h-[26px] rounded-full bg-[#4a86e8] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
-        {step.id}
-      </div>
-      <div className="flex-1 flex items-center gap-3">
-        {editing && !readOnly ? (
-          <textarea
-            value={val}
-            autoFocus
-            rows={2}
-            onChange={e => setVal(e.target.value)}
-            onBlur={commit}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit() } if (e.key === 'Escape') { setVal(step.text || ''); setEditing(false) } }}
-            className="flex-1 text-sm bg-white border border-[#4a86e8] rounded-lg px-2 py-1 resize-none focus:outline-none focus:ring-2 focus:ring-[#4a86e8]/30"
-          />
-        ) : (
-          <div
-            className={`flex-1 text-sm text-gray-900 leading-snug rounded-lg px-1 py-0.5 transition-colors ${!readOnly ? 'cursor-pointer hover:bg-[#d2e3fc]' : ''}`}
-            title={readOnly ? undefined : 'Cliquer pour modifier'}
-            onClick={() => !readOnly && setEditing(true)}
-          >
-            {renderText(val)}
-          </div>
-        )}
-        {step.badge && !editing && (
-          <span className={`flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-md ${BADGE_CLASSES[step.badge.color]}`}>
-            {step.badge.color === 'blue' && step.badge.label.toLowerCase().includes('email') ? '✉ ' : ''}{step.badge.label}
-          </span>
-        )}
-      </div>
-    </div>
-  )
+const CATEGORY_LABELS: Record<string, string> = {
+  retours:        'Retours',
+  planning:       'Planning',
+  'sous-location': 'Sous-location',
 }
 
-// ── Info box ──────────────────────────────────────────────────────────────────
-
-function InfoBox({ step, onEdit, readOnly }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void; readOnly?: boolean }) {
-  const [editingIdx, setEditingIdx] = useState<number | null>(null)
-  const [vals, setVals] = useState<string[]>(step.lines || [])
-
-  useEffect(() => { setVals(step.lines || []) }, [step.lines])
-
-  function commit(idx: number, newVal: string) {
-    setEditingIdx(null)
-    const next = [...vals]; next[idx] = newVal; setVals(next)
-    onEdit(step, 'lines', JSON.stringify(next))
-  }
-
-  return (
-    <div className="bg-white border border-[#dadce0] rounded-xl px-4 py-3 text-sm text-gray-800 leading-relaxed">
-      {vals.map((line, i) => (
-        <div key={i} className="flex items-center gap-1 py-0.5">
-          <span className="text-gray-400 mr-1">–</span>
-          {editingIdx === i && !readOnly ? (
-            <input
-              autoFocus
-              value={line}
-              onChange={e => { const n = [...vals]; n[i] = e.target.value; setVals(n) }}
-              onBlur={() => commit(i, vals[i])}
-              onKeyDown={e => { if (e.key === 'Enter') commit(i, vals[i]); if (e.key === 'Escape') { setVals(step.lines || []); setEditingIdx(null) } }}
-              className="flex-1 text-sm border border-[#4a86e8] rounded px-1 py-0.5 focus:outline-none"
-            />
-          ) : (
-            <span
-              className={`rounded px-1 py-0.5 transition-colors ${!readOnly ? 'cursor-pointer hover:bg-gray-100' : ''}`}
-              onClick={() => !readOnly && setEditingIdx(i)}
-            >
-              {line}
-            </span>
-          )}
-        </div>
-      ))}
-      {step.pills && step.pills.length > 0 && (
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
-          <span className="text-gray-400">–</span>
-          {step.pills.map((pill, i) => (
-            <span key={i} className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2.5 py-1 rounded ${BADGE_CLASSES[pill.color]}`}>
-              {PILL_ICONS[pill.color]} {pill.label}
-            </span>
-          ))}
-          <span className="text-sm text-gray-700">des produits</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Cases box ─────────────────────────────────────────────────────────────────
-
-function CasesBox({ step, onEdit, readOnly }: { step: StepItem; onEdit: (s: StepItem, f: string, v: string) => void; readOnly?: boolean }) {
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [title, setTitle] = useState(step.title || '')
-  const [editingIdx, setEditingIdx] = useState<number | null>(null)
-  const [vals, setVals] = useState<string[]>(step.lines || [])
-
-  useEffect(() => { setTitle(step.title || ''); setVals(step.lines || []) }, [step.title, step.lines])
-
-  function commitTitle(v: string) { setEditingTitle(false); onEdit(step, 'title', v) }
-  function commitLine() { setEditingIdx(null); onEdit(step, 'lines', JSON.stringify(vals)) }
-
-  return (
-    <div className="bg-white border border-[#dadce0] rounded-xl px-4 py-3 text-sm text-gray-800 leading-relaxed">
-      {editingTitle && !readOnly ? (
-        <input
-          autoFocus value={title}
-          onChange={e => setTitle(e.target.value)}
-          onBlur={() => commitTitle(title)}
-          onKeyDown={e => { if (e.key === 'Enter') commitTitle(title) }}
-          className="w-full font-medium text-sm border border-[#4a86e8] rounded px-1 py-0.5 focus:outline-none mb-1"
-        />
-      ) : (
-        <div
-          className={`font-medium mb-1 rounded px-1 py-0.5 transition-colors ${!readOnly ? 'cursor-pointer hover:bg-gray-100' : ''}`}
-          onClick={() => !readOnly && setEditingTitle(true)}
-        >
-          {title}
-        </div>
-      )}
-      {vals.map((line, i) => (
-        <div key={i} className="flex items-center gap-1 py-0.5">
-          {editingIdx === i && !readOnly ? (
-            <input
-              autoFocus value={line}
-              onChange={e => { const n = [...vals]; n[i] = e.target.value; setVals(n) }}
-              onBlur={() => commitLine()}
-              onKeyDown={e => { if (e.key === 'Enter') commitLine(); if (e.key === 'Escape') { setVals(step.lines || []); setEditingIdx(null) } }}
-              className="flex-1 text-sm border border-[#4a86e8] rounded px-1 py-0.5 focus:outline-none"
-            />
-          ) : (
-            <span
-              className={`rounded px-1 py-0.5 transition-colors ${!readOnly ? 'cursor-pointer hover:bg-gray-100' : ''}`}
-              onClick={() => !readOnly && setEditingIdx(i)}
-            >
-              {line}
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
+const CATEGORY_ORDER = ['retours', 'planning', 'sous-location']
 
 // ── Page principale ───────────────────────────────────────────────────────────
 
-type ActiveItem =
-  | { kind: 'process'; id: string }
-  | { kind: 'workflow'; id: string }
-
 export default function ProcessPage() {
-  const [processes, setProcesses]   = useState<Process[]>([])
   const [workflows, setWorkflows]   = useState<ReturnWorkflow[]>([])
-  const [active, setActive]         = useState<ActiveItem | null>(null)
+  const [oldProcs, setOldProcs]     = useState<OldProcess[]>([])
+  const [selectedSlug, setSelected] = useState<string | null>(null)
   const [loading, setLoading]       = useState(true)
-  const [saving, setSaving]         = useState(false)
-  const [saved, setSaved]           = useState(false)
-  const [syncing, setSyncing]       = useState(false)
-  const [syncError, setSyncError]   = useState<string | null>(null)
-  const [editingTitle, setEditingTitle]       = useState(false)
-  const [editingSubtitle, setEditingSubtitle] = useState(false)
-  const pendingRef = useRef<Record<string, unknown>>({})
+  const [deleting, setDeleting]     = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/processes').then(r => r.json()) as Promise<{ processes?: Process[] }>,
       fetch('/api/returns/workflows').then(r => r.json()) as Promise<{ workflows?: ReturnWorkflow[] }>,
-    ]).then(([pd, wd]) => {
-      const procs = pd.processes || []
-      const wfs   = wd.workflows || []
-      setProcesses(procs)
-      setWorkflows(wfs.filter(w => w.is_active))
-      // Sélection par défaut
-      if (procs.length > 0) setActive({ kind: 'process', id: procs[0].id })
-      else if (wfs.length > 0) setActive({ kind: 'workflow', id: wfs[0].id })
+      fetch('/api/processes').then(r => r.json())         as Promise<{ processes?: OldProcess[] }>,
+    ]).then(([wd, pd]) => {
+      const wfs  = (wd.workflows || []).filter(w => w.is_active)
+      const prcs = pd.processes || []
+      setWorkflows(wfs)
+      setOldProcs(prcs)
+      if (wfs.length > 0) setSelected(wfs[0].slug)
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [])
 
-  const selectedProcess  = active?.kind === 'process'  ? processes.find(p => p.id === active.id) : undefined
-  const selectedWorkflow = active?.kind === 'workflow' ? workflows.find(w => w.id === active.id) : undefined
+  const selectedWorkflow = workflows.find(w => w.slug === selectedSlug)
 
-  // Process virtuel construit depuis le workflow retour
-  const workflowAsProcess: Process | undefined = selectedWorkflow ? {
-    id:       selectedWorkflow.id,
-    slug:     selectedWorkflow.slug,
-    title:    selectedWorkflow.name,
-    subtitle: selectedWorkflow.chat_label ?? selectedWorkflow.slug,
-    steps:    workflowToProcessSteps(selectedWorkflow.steps || []),
-    sort_order: 0,
-  } : undefined
-
-  const updateLocal = useCallback((id: string, patch: Partial<Process>) => {
-    setProcesses(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
-  }, [])
-
-  const saveTimer = useRef<NodeJS.Timeout | null>(null)
-
-  const scheduleSave = useCallback((id: string, patch: Record<string, unknown>) => {
-    pendingRef.current = { ...pendingRef.current, ...patch }
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      setSaving(true)
-      await fetch('/api/processes', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, ...pendingRef.current }),
-      })
-      pendingRef.current = {}
-      setSaving(false)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    }, 800)
-  }, [])
-
-  const handleStepEdit = useCallback((step: StepItem, field: string, value: string) => {
-    if (!selectedProcess) return
-    const newSteps = selectedProcess.steps.map(s => {
-      if (s.id !== step.id) return s
-      if (field === 'text')  return { ...s, text: value }
-      if (field === 'lines') return { ...s, lines: JSON.parse(value) as string[] }
-      if (field === 'title') return { ...s, title: value }
-      return s
-    })
-    updateLocal(selectedProcess.id, { steps: newSteps })
-    scheduleSave(selectedProcess.id, { steps: newSteps })
-  }, [selectedProcess, updateLocal, scheduleSave])
-
-  const handleTitleSave = useCallback((val: string) => {
-    if (!selectedProcess) return
-    setEditingTitle(false)
-    updateLocal(selectedProcess.id, { title: val })
-    scheduleSave(selectedProcess.id, { title: val })
-  }, [selectedProcess, updateLocal, scheduleSave])
-
-  const handleSubtitleSave = useCallback((val: string) => {
-    if (!selectedProcess) return
-    setEditingSubtitle(false)
-    updateLocal(selectedProcess.id, { subtitle: val })
-    scheduleSave(selectedProcess.id, { subtitle: val })
-  }, [selectedProcess, updateLocal, scheduleSave])
-
-  const syncFromWorkflow = useCallback(async () => {
-    if (!selectedProcess?.workflow_slug) return
-    setSyncing(true); setSyncError(null)
-    try {
-      const res  = await fetch('/api/returns/workflows')
-      const data = await res.json() as { workflows?: Array<{ slug: string; name: string; steps: WorkflowStep[] }> }
-      const wf   = (data.workflows || []).find(w => w.slug === selectedProcess.workflow_slug)
-      if (!wf) throw new Error(`Workflow "${selectedProcess.workflow_slug}" introuvable`)
-      const newSteps = workflowToProcessSteps(wf.steps || [])
-      updateLocal(selectedProcess.id, { steps: newSteps })
-      scheduleSave(selectedProcess.id, { steps: newSteps })
-    } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Erreur de sync')
-    } finally { setSyncing(false) }
-  }, [selectedProcess, updateLocal, scheduleSave])
-
-  // Grouper les workflows par catégorie
-  const wfByGroup: Record<string, ReturnWorkflow[]> = {}
+  // Grouper par catégorie → parent_category
+  const grouped: Record<string, Record<string, ReturnWorkflow[]>> = {}
   for (const wf of workflows) {
-    const g = getGroup(wf.slug).label
-    if (!wfByGroup[g]) wfByGroup[g] = []
-    wfByGroup[g].push(wf)
+    const cat    = wf.category ?? 'retours'
+    const parent = wf.parent_category ?? ''
+    if (!grouped[cat])        grouped[cat]        = {}
+    if (!grouped[cat][parent]) grouped[cat][parent] = []
+    grouped[cat][parent].push(wf)
   }
-  const groupOrder = [...WF_GROUPS.map(g => g.label), 'Autres']
-  const sortedGroups = groupOrder.filter(g => wfByGroup[g]?.length > 0)
 
-  if (loading) return <div className="text-sm text-gray-400 py-8 text-center">Chargement…</div>
+  const deleteOldProc = async (id: string) => {
+    setDeleting(id)
+    await fetch('/api/processes', {
+      method:  'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ id }),
+    })
+    setOldProcs(prev => prev.filter(p => p.id !== id))
+    setDeleting(null)
+  }
+
+  if (loading) {
+    return <div className="text-sm text-gray-400 py-12 text-center">Chargement…</div>
+  }
 
   return (
-    <div className="flex gap-6 min-h-[600px]">
+    <div className="flex gap-0 min-h-[600px] border border-gray-200 rounded-xl overflow-hidden">
 
       {/* ── Sidebar ── */}
-      <div className="w-56 flex-shrink-0 space-y-4 overflow-y-auto max-h-[calc(100vh-120px)]">
+      <div className="w-52 flex-shrink-0 border-r border-gray-100 overflow-y-auto max-h-[calc(100vh-120px)] bg-gray-50 py-2">
 
-        {/* Process éditables */}
-        {processes.length > 0 && (
-          <div>
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2">Process</p>
-            <div className="space-y-0.5">
-              {processes.map(p => (
+        {CATEGORY_ORDER.filter(cat => grouped[cat]).map(cat => (
+          <div key={cat} className="mb-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-3 pt-3 pb-1">
+              {CATEGORY_LABELS[cat] ?? cat}
+            </p>
+            {Object.entries(grouped[cat]).map(([parent, wfs]) => (
+              <div key={parent}>
+                {parent && (
+                  <div className="flex items-center gap-1 px-3 py-1">
+                    <i className="ti ti-chevron-right text-gray-400" aria-hidden="true" style={{ fontSize: 10 }} />
+                    <span className="text-[11px] font-medium text-gray-500">{parent}</span>
+                  </div>
+                )}
+                {wfs.map(wf => (
+                  <button
+                    key={wf.slug}
+                    onClick={() => setSelected(wf.slug)}
+                    className={`w-full text-left py-1.5 text-[12.5px] leading-snug transition-colors ${
+                      parent ? 'px-5 pl-7' : 'px-3'
+                    } ${
+                      selectedSlug === wf.slug
+                        ? 'bg-blue-50 text-blue-700 font-medium'
+                        : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                    }`}
+                  >
+                    {wf.chat_label || wf.name}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {/* Process archivés (sans workflow actif correspondant) */}
+        {oldProcs.length > 0 && (
+          <div className="border-t border-gray-200 mt-2 pt-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-3 pb-1">
+              Archivés
+            </p>
+            {oldProcs.map(p => (
+              <div key={p.id} className="flex items-center justify-between px-3 py-1.5 group">
+                <span className="text-[11.5px] text-gray-400 line-through leading-tight truncate flex-1 mr-2">
+                  {p.title}
+                </span>
                 <button
-                  key={p.id}
-                  onClick={() => setActive({ kind: 'process', id: p.id })}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                    active?.kind === 'process' && active.id === p.id
-                      ? 'bg-black text-white font-medium'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
+                  onClick={() => deleteOldProc(p.id)}
+                  disabled={deleting === p.id}
+                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity disabled:opacity-30 flex-shrink-0"
+                  title="Supprimer définitivement"
                 >
-                  <span className="block leading-snug text-[13px]">{p.title}</span>
-                  <span className={`text-[11px] mt-0.5 block ${active?.kind === 'process' && active.id === p.id ? 'text-gray-300' : 'text-gray-400'}`}>
-                    {p.steps.filter(s => s.type === 'step').length} étapes
-                  </span>
+                  <i className="ti ti-trash" aria-hidden="true" style={{ fontSize: 14 }} />
                 </button>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         )}
-
-        {/* Workflows retours — groupés par catégorie */}
-        {sortedGroups.map(groupLabel => {
-          const group = WF_GROUPS.find(g => g.label === groupLabel) ?? { color: 'text-gray-500', label: groupLabel, prefix: '' }
-          const wfs   = wfByGroup[groupLabel] || []
-          return (
-            <div key={groupLabel}>
-              <p className={`text-[10px] font-semibold uppercase tracking-wider px-2 mb-1.5 ${group.color}`}>
-                {groupLabel}
-              </p>
-              <div className="space-y-0.5">
-                {wfs.map(wf => {
-                  const isActive = active?.kind === 'workflow' && active.id === wf.id
-                  return (
-                    <button
-                      key={wf.id}
-                      onClick={() => setActive({ kind: 'workflow', id: wf.id })}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                        isActive
-                          ? 'bg-gray-900 text-white font-medium'
-                          : 'text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      <span className="block leading-snug text-[13px]">{wf.chat_label || wf.name}</span>
-                      <span className={`text-[11px] mt-0.5 block font-mono ${isActive ? 'text-gray-400' : 'text-gray-400'}`}>
-                        {wf.slug}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
       </div>
 
       {/* ── Zone principale ── */}
-      <div className="flex-1 min-w-0 overflow-y-auto">
-
-        {/* === Vue workflow retour (lecture seule) === */}
-        {workflowAsProcess && (
+      <div className="flex-1 min-w-0 overflow-y-auto bg-white p-6">
+        {selectedWorkflow ? (
           <>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <div className="text-xs text-gray-400 font-mono">{selectedWorkflow!.slug}</div>
-                <h2 className="text-base font-semibold text-gray-900 mt-0.5">{selectedWorkflow!.name}</h2>
-                {selectedWorkflow!.description && (
-                  <p className="text-xs text-gray-500 mt-0.5 max-w-lg">{selectedWorkflow!.description}</p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-mono">
-                  {(selectedWorkflow!.steps || []).length} steps bruts → {workflowAsProcess.steps.filter(s => s.type === 'step').length} étapes visuelles
+            {/* En-tête */}
+            <div className="mb-7">
+              <div className="flex items-baseline gap-2 text-[11px] text-gray-400 mb-1.5">
+                <span>
+                  {CATEGORY_LABELS[selectedWorkflow.category ?? 'retours'] ?? selectedWorkflow.category}
+                  {selectedWorkflow.parent_category && (
+                    <> › {selectedWorkflow.parent_category}</>
+                  )}
                 </span>
+                <span className="text-gray-300">·</span>
+                <span className="font-mono text-[10px]">{selectedWorkflow.slug}</span>
               </div>
+              <h2 className="text-[17px] font-semibold text-gray-900 leading-tight">
+                {selectedWorkflow.chat_label || selectedWorkflow.name}
+              </h2>
+              {selectedWorkflow.description && (
+                <p className="text-[12.5px] text-gray-500 mt-1.5 max-w-lg leading-relaxed">
+                  {selectedWorkflow.description}
+                </p>
+              )}
             </div>
-            <ProcessFlow process={workflowAsProcess} onEdit={() => {}} readOnly />
-          </>
-        )}
 
-        {/* === Vue process éditable === */}
-        {selectedProcess && (
-          <>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                {editingSubtitle ? (
-                  <input
-                    autoFocus defaultValue={selectedProcess.subtitle}
-                    onBlur={e => handleSubtitleSave(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSubtitleSave((e.target as HTMLInputElement).value) }}
-                    className="text-xs text-gray-400 border-b border-gray-300 focus:outline-none bg-transparent w-64"
-                  />
-                ) : (
-                  <div className="text-xs text-gray-400 cursor-pointer hover:text-gray-600" onClick={() => setEditingSubtitle(true)}>
-                    {selectedProcess.subtitle || '(sous-titre)'}
-                  </div>
-                )}
-                {editingTitle ? (
-                  <input
-                    autoFocus defaultValue={selectedProcess.title}
-                    onBlur={e => handleTitleSave(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleTitleSave((e.target as HTMLInputElement).value) }}
-                    className="text-base font-semibold text-gray-900 border-b border-gray-400 focus:outline-none bg-transparent w-96 mt-0.5"
-                  />
-                ) : (
-                  <h2 className="text-base font-semibold text-gray-900 cursor-pointer hover:text-gray-600 mt-0.5" onClick={() => setEditingTitle(true)}>
-                    {selectedProcess.title}
-                  </h2>
-                )}
-              </div>
-              <div className="text-xs text-gray-400 flex items-center gap-2 flex-wrap">
-                {selectedProcess.workflow_slug && (
-                  <>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 text-[11px] font-medium">
-                      ⇄ {selectedProcess.workflow_slug}
-                    </span>
-                    <button
-                      onClick={syncFromWorkflow}
-                      disabled={syncing}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-[11px] font-medium hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                    >
-                      {syncing ? '↻ Sync…' : '↻ Synchroniser'}
-                    </button>
-                    {syncError && <span className="text-red-500 text-[11px]">{syncError}</span>}
-                  </>
-                )}
-                {saving && <span className="text-gray-400">Sauvegarde…</span>}
-                {saved  && <span className="text-green-600 font-medium">✓ Sauvegardé</span>}
-                <span className="text-gray-300 italic">Cliquez sur un champ pour modifier</span>
-              </div>
-            </div>
-            <ProcessFlow process={selectedProcess} onEdit={handleStepEdit} />
+            <ProcessFlow workflow={selectedWorkflow} />
           </>
-        )}
-
-        {!selectedProcess && !workflowAsProcess && (
-          <p className="text-sm text-gray-400">Sélectionnez un process ou un workflow.</p>
+        ) : (
+          <p className="text-sm text-gray-400 py-12 text-center">
+            Sélectionne un workflow dans la liste.
+          </p>
         )}
       </div>
     </div>
