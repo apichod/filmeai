@@ -71,7 +71,7 @@ function getCtx(step: WorkflowStep): { label: string; icon: string } {
   if (step.booqable_action && ACTION_CTX_OVERRIDE[step.booqable_action]) {
     return ACTION_CTX_OVERRIDE[step.booqable_action]
   }
-  const key = step.order_context ?? 'parent'
+  const key = step.order_context || 'parent'   // || couvre null, undefined ET ''
   return {
     label: CTX_LABELS[key] ?? 'Commande principale',
     icon:  CTX_ICONS[key]  ?? 'ti-building-store',
