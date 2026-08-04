@@ -547,6 +547,78 @@ export async function executeCodeStep(
         return ok({ kept_product_names, message: `✓ Prix de remplacement appliqués :\n${summaryLines.join('\n')}` })
       }
 
+      case 'log_case': {
+        // Mode Code : on log tout — toutes les vars + paramètres du step — sans passer par l'IA
+        const supabase = getSupabase()
+
+        const v = vars
+        const origCtx    = 'original'
+        const retCtx     = 'return'
+
+        // Champs principaux
+        const originOrder   = v[`${origCtx}.number`]     ?? v['parent.number']    ?? ''
+        const originOrderId = v[`${origCtx}.id`]          ?? v['parent.id']        ?? null
+        const savOrderId    = v[`${retCtx}.id`]           ?? null
+
+        // Type de problème — depuis params ou tag
+        const savTag = v[`${retCtx}.sav_tag`] ?? v[`parent.sav_tag`] ?? ''
+        const paramType = params.problem_type as string | undefined
+        const problemType: string = paramType
+          || (savTag.includes('damage') ? 'casse' : 'manquant')
+
+        // Description — depuis params ou construction auto depuis les vars
+        const paramDesc = params.problem_description as string | undefined
+        const autoDesc = [
+          savTag          ? `Tag : ${savTag}` : '',
+          v[`${retCtx}.notes_sav`] ? `Commentaire SAV : ${v[`${retCtx}.notes_sav`]}` : '',
+          v[`${retCtx}.kept_product_names`] ? `Articles : ${v[`${retCtx}.kept_product_names`]}` : '',
+        ].filter(Boolean).join(' | ')
+        const problemDescription = paramDesc || autoDesc || 'Cas SAV'
+
+        // Metadata : toutes les vars + snapshot complet
+        const metadata: Record<string, unknown> = {}
+        // Vars structurées
+        for (const [k, val] of Object.entries(v)) {
+          if (val !== undefined && val !== null && val !== '') {
+            metadata[k] = val
+          }
+        }
+        // Champs sémantiques clés en plus (pour lisibilité dans le dashboard)
+        metadata['insurance']             = v[`${retCtx}.insurance`]         ?? v[`${origCtx}.insurance`]         ?? null
+        metadata['caution']               = v[`${retCtx}.authorisation_card`]?? v[`${origCtx}.authorisation_card`]?? null
+        metadata['security_deposit']      = v[`${retCtx}.security_deposit`]  ?? v[`${origCtx}.security_deposit`]  ?? null
+        metadata['grand_total_euros']     = v[`${retCtx}.grand_total_euros`]  ?? null
+        metadata['invoice_number']        = v[`${retCtx}.invoice_number`]     ?? null
+        metadata['stripe_charged']        = !!v[`${retCtx}.stripe_charge_id`]
+        metadata['stripe_charge_id']      = v[`${retCtx}.stripe_charge_id`]   ?? null
+        metadata['stripe_amount_euros']   = v[`${retCtx}.captured_amount`]
+          ? (parseFloat(v[`${retCtx}.captured_amount`]!) / 100).toFixed(2)
+          : null
+        metadata['payment_link_created']  = !!v[`${retCtx}.checkout_url`]
+        metadata['checkout_url']          = v[`${retCtx}.checkout_url`]       ?? null
+
+        const { data, error } = await supabase
+          .from('return_cases')
+          .insert({
+            origin_order:        originOrder,
+            origin_order_id:     originOrderId,
+            sav_order_id:        savOrderId,
+            problem_type:        problemType,
+            problem_description: problemDescription,
+            metadata,
+            status: 'open',
+          })
+          .select('id, case_number')
+          .single()
+
+        if (error) return err(`log_case : ${error.message}`)
+        return ok({
+          case_id:     data.id,
+          case_number: data.case_number,
+          message:     `✓ Cas #${data.case_number} enregistré (ID : ${data.id})`,
+        })
+      }
+
       case 'add_sav_comment': {
         if (!orderId) return err('add_sav_comment : order_id manquant')
 

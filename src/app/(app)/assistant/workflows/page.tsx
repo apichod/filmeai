@@ -150,6 +150,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   create_payment_link:       { reads: ['id', 'grand_total_euros'],                   writes: ['payment_charge_id', 'checkout_url'] },
   capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'payment_charge_id', 'captured_amount'] },
   redirect_url:              { reads: [], writes: [] },
+  log_case:                  { reads: ['id', 'number', 'sav_tag', 'notes_sav', 'kept_product_names', 'insurance', 'authorisation_card', 'security_deposit', 'grand_total_euros', 'invoice_number', 'stripe_charge_id', 'captured_amount', 'checkout_url'], writes: ['case_id', 'case_number'] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
@@ -207,6 +208,7 @@ const TOOL_DEFAULT_EXECUTION: Record<string, 'code' | 'ai'> = {
   create_payment_link:               'code',
   capture_stripe_deposit:            'code',
   redirect_url:                      'code',
+  log_case:                          'code',
 }
 
 /** Compatibilité d'exécution par outil */
@@ -243,7 +245,7 @@ const TOOL_COMPAT: Record<string, ToolCompat> = {
   send_email:              'both',
   draft_email_booqable:    'code',
   send_email_booqable:     'code',
-  log_case:                'ai',
+  log_case:                'code',
   check_insurance:                 'code',
   check_insurance_request_status:  'code',
   read_customer_notes:             'code',
