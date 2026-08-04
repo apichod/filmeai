@@ -1186,7 +1186,7 @@ export default function WorkflowsPage() {
         {/* Liste des workflows */}
         <div className="w-52 shrink-0">
           {/* Tabs Retours / Planning */}
-          <div className="flex mb-3 border border-gray-200 rounded-lg overflow-hidden text-xs font-medium">
+          <div className="flex mb-2 border border-gray-200 rounded-lg overflow-hidden text-xs font-medium">
             {(['retours', 'planning', 'sous-location'] as WorkflowCategory[]).map(tab => (
               <button
                 key={tab}
@@ -1196,13 +1196,13 @@ export default function WorkflowsPage() {
                   if (first) select(first)
                   else setSelected(null)
                 }}
-                className={`flex-1 py-1.5 transition-colors ${
+                className={`flex-1 py-1.5 whitespace-nowrap transition-colors ${
                   activeTab === tab
                     ? 'bg-black text-white'
                     : 'text-gray-500 hover:bg-gray-50'
                 }`}
               >
-                {tab === 'retours' ? 'Retours' : tab === 'planning' ? 'Planning' : 'Sous-location'}
+                {tab === 'retours' ? 'Retours' : tab === 'planning' ? 'Planning' : 'S/loc.'}
               </button>
             ))}
           </div>
