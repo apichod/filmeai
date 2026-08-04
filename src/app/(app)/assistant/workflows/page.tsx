@@ -150,7 +150,7 @@ const TOOL_IO: Record<string, ToolIO> = {
   create_payment_link:       { reads: ['id', 'grand_total_euros'],                   writes: ['payment_charge_id', 'checkout_url'] },
   capture_stripe_deposit:    { reads: ['provider_id', 'grand_total_euros', 'number'], writes: ['stripe_charge_id', 'payment_charge_id', 'captured_amount'] },
   redirect_url:              { reads: [], writes: [] },
-  log_case:                  { reads: ['id', 'number', 'sav_tag', 'notes_sav', 'kept_product_names', 'insurance', 'authorisation_card', 'security_deposit', 'grand_total_euros', 'invoice_number', 'stripe_charge_id', 'captured_amount', 'checkout_url'], writes: ['case_id', 'case_number'] },
+  log_case:                  { reads: [], writes: ['case_id', 'case_number'] },
 }
 
 /** Exécution par défaut selon l'outil — 'code' = API directe, 'ai' = LLM requis */
